@@ -7,6 +7,26 @@
 
   let client = null;
   let currentSession = null;
+
+  let lastAuthState = null;
+
+  function dispatchAuthState(authenticated) {
+    const nextState = authenticated === true;
+
+    if (lastAuthState === nextState) {
+      return;
+    }
+
+    lastAuthState = nextState;
+
+    window.dispatchEvent(
+      new CustomEvent("gv-auth-state-changed", {
+        detail: {
+          authenticated: nextState
+        }
+      })
+    );
+  }
   let initialized = false;
   let managerProfile = null;
   let initializationPromise = null;
@@ -221,13 +241,7 @@
       );
     }
 
-    window.dispatchEvent(
-      new CustomEvent("gv-auth-state-changed", {
-        detail: {
-          authenticated: true
-        }
-      })
-    );
+    dispatchAuthState(true);
 
     setTimeout(closeLogin, 500);
 
@@ -248,13 +262,7 @@
 
     setLoggedInUI(null);
 
-    window.dispatchEvent(
-      new CustomEvent("gv-auth-state-changed", {
-        detail: {
-          authenticated: false
-        }
-      })
-    );
+    dispatchAuthState(false);
 
     setAuthStatus("Signed out.", "success");
 
@@ -430,16 +438,7 @@
               "success"
             );
 
-            window.dispatchEvent(
-              new CustomEvent(
-                "gv-auth-state-changed",
-                {
-                  detail: {
-                    authenticated: false
-                  }
-                }
-              )
-            );
+            dispatchAuthState(false);
 
             return;
           }
@@ -451,16 +450,7 @@
                 true
               );
 
-            window.dispatchEvent(
-              new CustomEvent(
-                "gv-auth-state-changed",
-                {
-                  detail: {
-                    authenticated
-                  }
-                }
-              )
-            );
+            dispatchAuthState(authenticated);
           } else {
             managerProfile = null;
             currentSession = null;
@@ -474,16 +464,6 @@
         data: sessionData,
         error: sessionError
       } = await client.auth.getSession();
-
-      console.log(
-        "GotaVita Supabase session:",
-        sessionData?.session ?? null
-      );
-
-      console.log(
-        "GotaVita Supabase user:",
-        sessionData?.session?.user ?? null
-      );
 
       console.log(
         "GotaVita Supabase auth error:",
@@ -503,16 +483,7 @@
             true
           );
 
-        window.dispatchEvent(
-          new CustomEvent(
-            "gv-auth-state-changed",
-            {
-              detail: {
-                authenticated
-              }
-            }
-          )
-        );
+        dispatchAuthState(authenticated);
       } else {
         setLoggedInUI(null);
 
