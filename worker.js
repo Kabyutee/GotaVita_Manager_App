@@ -58,6 +58,16 @@ export default {
       return configResponse(env);
     }
 
+    // Legacy Node/JSON server API is intentionally retired in the Cloudflare
+    // + Supabase production architecture. Return an explicit 410 so browser
+    // diagnostics are clear instead of surfacing a platform 500.
+    if (url.pathname === "/api/data" || url.pathname.startsWith("/api/")) {
+      return jsonResponse({
+        error: "Legacy server API is not part of the production Worker.",
+        code: "LEGACY_API_RETIRED"
+      }, 410);
+    }
+
     return env.ASSETS.fetch(request);
   }
 };

@@ -810,6 +810,12 @@ async function writeAndVerifyResource(resource, merged, expectedRemoteBeforeWrit
 async function syncChangedResources(force = false) {
   if (window.location.protocol === "file:") { updateSyncStatus("Local", "local"); return false; }
   if (!navigator.onLine) { updateSyncStatus("Offline", "offline"); return false; }
+  // Do not call the retired Node/JSON /api/* server in the Cloudflare build.
+  // A configured Supabase gateway will be the only cloud sync path.
+  if (!window.GVAuth?.isConfigured?.()) {
+    updateSyncStatus("Local", "local");
+    return false;
+  }
   if (syncInFlight) return false;
   const queued = getSyncQueue();
   if (!force && !queued.length && serverSnapshot) return true;
@@ -878,6 +884,14 @@ async function syncNow() {
 async function loadServerState() {
   if (window.location.protocol === "file:") { updateSyncStatus("Local", "local"); return false; }
   if (!navigator.onLine) { updateSyncStatus("Offline", "offline"); return false; }
+  // The production build is Cloudflare Workers + Supabase. The old Node/JSON
+  // server API (/api/data) is intentionally not used in production. Until the
+  // Supabase data gateway is configured, remain local-first instead of calling
+  // a nonexistent legacy endpoint and generating 500 errors.
+  if (!window.GVAuth?.isConfigured?.()) {
+    updateSyncStatus("Local", "local");
+    return false;
+  }
   try {
     updateSyncStatus("Connecting…", "syncing");
     const server = await apiRequest("/api/data");
