@@ -1,47 +1,27 @@
-# GotaVita Manager — Cloudflare Pages Deployment
+# GotaVita Manager — Cloudflare Workers Static Assets Deployment
 
-## Architecture
-GitHub -> Cloudflare Pages -> Supabase
+## Current architecture
+GitHub -> Cloudflare Workers Builds -> Cloudflare Worker + Static Assets -> Supabase
 
-The static application is deployed by Cloudflare Pages. A small Pages Function at `/gv-config` injects only the public Supabase URL and publishable key at runtime. This avoids hard-coding project-specific configuration in source control.
+This project is deployed as a Cloudflare Worker with Static Assets. `worker.js` handles the small production endpoints and delegates all other requests to the static asset binding.
 
-## Cloudflare Pages settings
-- Connect the GitHub repository.
-- Production branch: `main`.
-- Build command: leave blank (static HTML application).
-- Build output directory: `.`
-- Framework preset: none / static HTML.
+## Build settings
+- Production branch: `main`
+- Build command: leave empty
+- Deploy command: `npx wrangler deploy`
+- Static asset directory: `.`
 
 ## Variables
-In Cloudflare Pages -> Settings -> Environment variables / Variables and Secrets, add:
+In Cloudflare Worker Settings -> Variables and Secrets, add for Production:
 - `SUPABASE_URL` = your Supabase project URL
-- `SUPABASE_PUBLISHABLE_KEY` = your `sb_publishable_...` key
+- `SUPABASE_PUBLISHABLE_KEY` = your browser-safe `sb_publishable_...` key
 
-Set them for Production and Preview as appropriate.
+Do NOT add service-role, secret, database password, or other private credentials to public/browser configuration.
 
-Do NOT add `SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, or database passwords to the browser/public configuration.
+## Production routes
+- `/` -> GotaVita static application
+- `/gv-health` -> non-secret production health JSON
+- `/gv-config` -> browser-safe Supabase runtime configuration
 
-## Supabase setup order
-1. Run migration `supabase/migrations/202608180001_master_data.sql`.
-2. Run `202608180002_operational_transactions.sql`.
-3. Run `202608180003_security_sync_hardening.sql`.
-4. Create the manager account in Supabase Auth.
-5. Create/verify the manager profile and company membership.
-6. Import master data using the dry-run migration first.
-7. Verify counts and relationships.
-8. Only then perform the controlled live migration/cutover.
-
-## Cutover rule
-Do not switch production writes to Supabase until:
-- master-data counts match the source snapshot;
-- transaction counts match the source snapshot;
-- RLS tests pass;
-- login/logout works;
-- refresh/reopen persistence works;
-- multi-device edits are verified;
-- offline queue/retry is verified;
-- backup/restore is verified;
-- no secrets appear in the public bundle.
-
-## Local mode
-Opening `index.html` directly remains supported. The Cloudflare-only `/gv-config` endpoint will be unavailable and the app will safely remain in local/offline mode unless public Supabase values are supplied another way.
+## Repository hygiene
+`.assetsignore` excludes Git metadata, Wrangler temporary files, deployment-only source folders, documentation, and secrets/templates from the public static asset set.

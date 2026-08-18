@@ -1,0 +1,10 @@
+.git
+.wrangler
+worker.js
+wrangler.jsonc
+.env
+.env.*
+functions
+supabase
+docs
+*.md

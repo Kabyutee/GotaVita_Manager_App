@@ -1,0 +1,63 @@
+/**
+ * GotaVita Manager — Cloudflare Workers Static Assets entry point.
+ * Serves the static application and exposes the two production endpoints
+ * that were previously defined as Cloudflare Pages Functions.
+ */
+
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-content-type-options": "nosniff"
+    }
+  });
+}
+
+function configResponse(env) {
+  const body = `window.GV_PUBLIC_CONFIG=${JSON.stringify({
+    supabaseUrl: String(env.SUPABASE_URL || "").trim(),
+    supabasePublishableKey: String(env.SUPABASE_PUBLISHABLE_KEY || "").trim()
+  })};`;
+
+  return new Response(body, {
+    headers: {
+      "content-type": "application/javascript; charset=UTF-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-content-type-options": "nosniff"
+    }
+  });
+}
+
+function healthResponse(env) {
+  return jsonResponse({
+    service: "gotavita-manager",
+    status: "ok",
+    supabaseConfigured: Boolean(String(env.SUPABASE_URL || "").trim()),
+    publishableKeyConfigured: Boolean(String(env.SUPABASE_PUBLISHABLE_KEY || "").trim()),
+    serverTime: new Date().toISOString()
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/gv-health") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      return healthResponse(env);
+    }
+
+    if (url.pathname === "/gv-config") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      return configResponse(env);
+    }
+
+    return env.ASSETS.fetch(request);
+  }
+};
