@@ -1,10 +1,12 @@
-.git
-.wrangler
+.git/
+.wrangler/
+node_modules/
 worker.js
 wrangler.jsonc
 .env
 .env.*
-functions
-supabase
-docs
+.dev.vars
+functions/
+supabase/
+docs/
 *.md

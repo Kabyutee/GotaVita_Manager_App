@@ -1,55 +1,194 @@
--- GotaVita Manager — Phase 5 Sprint 6 Step 1
--- Production RLS policy cleanup.
+/*
+ * GotaVita Manager
+ * Phase 5 Sprint 6 — Step 11E
+ * Production RLS Policy Cleanup
+ */
+
+BEGIN;
+
+-- ============================================================
+-- 1. Enable RLS
+-- ============================================================
+
+ALTER TABLE IF EXISTS public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.payroll_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.order_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.delivery_routes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.daily_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.deleted_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.order_group_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.delivery_route_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- 2. Remove existing policies on transaction tables
+-- ============================================================
+
+DO $$
+DECLARE
+  t text;
+  policy_record record;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'orders',
+    'payments',
+    'expenses',
+    'payroll_records',
+    'order_groups',
+    'delivery_routes',
+    'daily_reports',
+    'deleted_orders',
+    'order_group_items',
+    'delivery_route_items',
+    'audit_logs'
+  ]
+  LOOP
+    FOR policy_record IN
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = t
+    LOOP
+      EXECUTE format(
+        'DROP POLICY IF EXISTS %I ON public.%I',
+        policy_record.policyname,
+        t
+      );
+    END LOOP;
+  END LOOP;
+END
+$$;
+
+-- ============================================================
+-- 3. Company-isolated authenticated access
+-- ============================================================
 --
--- Sprint 2/3 intentionally created broad authenticated policies as a migration
--- foundation. Sprint 4 added gv_company_scope policies, but PostgreSQL combines
--- permissive policies with OR semantics, so the old broad policies must be
--- removed explicitly before production. This migration is safe to re-run.
+-- company_id is UUID in the database.
+-- auth.jwt() ->> 'company_id' returns text.
+-- Therefore the JWT value is explicitly cast to UUID.
+-- ============================================================
 
--- Companies: managers may only see their own company.
-drop policy if exists companies_authenticated_select on public.companies;
-drop policy if exists gv_company_scope on public.companies;
-create policy gv_company_scope on public.companies
-  for select to authenticated
-  using (id = public.gv_current_company_id());
+CREATE POLICY orders_manager_access
+ON public.orders
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
 
--- Master data: remove the Sprint 2 broad policies before applying the company boundary.
-drop policy if exists clients_authenticated_all on public.clients;
-drop policy if exists products_authenticated_all on public.products;
-drop policy if exists employees_authenticated_all on public.employees;
-drop policy if exists services_authenticated_all on public.services;
+CREATE POLICY payments_manager_access
+ON public.payments
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
 
-do $$ declare t text; begin
-  foreach t in array array['clients','products','employees','services'] loop
-    if to_regclass(format('public.%I', t)) is not null then
-      execute format('drop policy if exists gv_company_scope on public.%I', t);
-      execute format('create policy gv_company_scope on public.%I for all to authenticated using (company_id = public.gv_current_company_id()) with check (company_id = public.gv_current_company_id())', t);
-    end if;
-  end loop;
-end $$;
+CREATE POLICY expenses_manager_access
+ON public.expenses
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
 
--- Operational data and child tables: remove all broad Sprint 3 policies.
-drop policy if exists orders_authenticated_all on public.orders;
-drop policy if exists payments_authenticated_all on public.payments;
-drop policy if exists expenses_authenticated_all on public.expenses;
-drop policy if exists payroll_authenticated_all on public.payroll_records;
-drop policy if exists order_groups_authenticated_all on public.order_groups;
-drop policy if exists order_group_items_authenticated_all on public.order_group_items;
-drop policy if exists delivery_routes_authenticated_all on public.delivery_routes;
-drop policy if exists delivery_route_items_authenticated_all on public.delivery_route_items;
-drop policy if exists daily_reports_authenticated_all on public.daily_reports;
-drop policy if exists deleted_orders_authenticated_all on public.deleted_orders;
-drop policy if exists audit_logs_authenticated_all on public.audit_logs;
+CREATE POLICY payroll_records_manager_access
+ON public.payroll_records
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
 
-do $$ declare t text; begin
-  foreach t in array [
-    'orders','payments','expenses','payroll_records','order_groups',
-    'order_group_items','delivery_routes','delivery_route_items',
-    'daily_reports','deleted_orders','audit_logs'
-  ] loop
-    if to_regclass(format('public.%I', t)) is not null then
-      execute format('drop policy if exists gv_company_scope on public.%I', t);
-      execute format('create policy gv_company_scope on public.%I for all to authenticated using (company_id = public.gv_current_company_id()) with check (company_id = public.gv_current_company_id())', t);
-    end if;
-  end loop;
-end $$;
+CREATE POLICY order_groups_manager_access
+ON public.order_groups
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY delivery_routes_manager_access
+ON public.delivery_routes
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY daily_reports_manager_access
+ON public.daily_reports
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY deleted_orders_manager_access
+ON public.deleted_orders
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY order_group_items_manager_access
+ON public.order_group_items
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY delivery_route_items_manager_access
+ON public.delivery_route_items
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+CREATE POLICY audit_logs_manager_access
+ON public.audit_logs
+FOR ALL
+TO authenticated
+USING (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+)
+WITH CHECK (
+  company_id = (auth.jwt() ->> 'company_id')::uuid
+);
+
+COMMIT;

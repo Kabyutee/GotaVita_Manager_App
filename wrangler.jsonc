@@ -7,6 +7,12 @@
     "enabled": true
   },
   "assets": {
-    "directory": "."
+    "directory": ".",
+    "exclude": [
+      ".wrangler/**",
+      ".git/**",
+      "docs/**",
+      "supabase/**"
+    ]
   }
 }
