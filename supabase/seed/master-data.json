@@ -1,0 +1,735 @@
+{
+  "schema_version": 1,
+  "source": "GotaVita_Backup_2026_NoData_Reset.json",
+  "company_legacy_id": "gotavita",
+  "products": [
+    {
+      "id": "p1",
+      "name": "Standard Refill (Round/Slim)",
+      "category": "Refill",
+      "price": 30
+    },
+    {
+      "id": "p2",
+      "name": "300ml Bottled Water",
+      "category": "Bottled Water",
+      "price": 10
+    },
+    {
+      "id": "p3",
+      "name": "500ml Bottled Water",
+      "category": "Bottled Water",
+      "price": 150
+    },
+    {
+      "id": "p4",
+      "name": "1 Liter Bottled Water",
+      "category": "Bottled Water",
+      "price": 150
+    },
+    {
+      "id": "p5",
+      "name": "1 Gallon (Round)",
+      "category": "Container",
+      "price": 35
+    },
+    {
+      "id": "p6",
+      "name": "1 Gallon (Slim)",
+      "category": "Container",
+      "price": 40
+    },
+    {
+      "id": "p7",
+      "name": "New Container / Delivery Set",
+      "category": "Container / New",
+      "price": 250
+    }
+  ],
+  "clients": [
+    {
+      "id": 1785747479826,
+      "name": "Alberto",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785738652739,
+      "name": "Asics -ATC",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785738311324,
+      "name": "Automatic Center",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785338758339,
+      "name": "Bawang",
+      "group": "Residential",
+      "phone": "",
+      "address": "Alabang",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785746881824,
+      "name": "Biblio",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785331228320,
+      "name": "Billiard",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masanaga",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785216330158,
+      "name": "BOG",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC- Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785188437878,
+      "name": "Buko",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    },
+    {
+      "id": 1785188558679,
+      "name": "Cecille",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    },
+    {
+      "id": 1785197939038,
+      "name": "Cinema",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 30
+    },
+    {
+      "id": 1785330996792,
+      "name": "Cousin",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785330402814,
+      "name": "CW - AED",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785738084560,
+      "name": "CW Blims- Home Depo",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785330807725,
+      "name": "E.P.",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785188355167,
+      "name": "Edgar",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    },
+    {
+      "id": 1785197033518,
+      "name": "Electrical Engineering - Festival",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785868317353,
+      "name": "Evelyn",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785331009405,
+      "name": "FB",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785868969880,
+      "name": "Flow G",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785339039001,
+      "name": "Garmin Store",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785196666487,
+      "name": "Gigahertz 4th floor",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785196767174,
+      "name": "Healthway - Sir Charles",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 30
+    },
+    {
+      "id": 1785338948627,
+      "name": "Henry's Camera",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785868276558,
+      "name": "J.P.",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785330591973,
+      "name": "Joyce",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masanaga",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785188459671,
+      "name": "Ladislao",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    },
+    {
+      "id": 1785235824161,
+      "name": "Lazy Fare",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785331294322,
+      "name": "Long Hair",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masanaga",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785199907402,
+      "name": "Lyric",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785738229406,
+      "name": "Mahilum - Masagana",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785738426282,
+      "name": "Maintenance - ATC",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785198005958,
+      "name": "Makati Supermarket - Ducay",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785738197453,
+      "name": "Makati Supermarket - Mahilum",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785220997597,
+      "name": "Max's - Festival",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Albang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785196570511,
+      "name": "Max's - Westgate",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785222759338,
+      "name": "National Bookstore",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785330923635,
+      "name": "Nene",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785331603612,
+      "name": "Nicole",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masanaga",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785741552477,
+      "name": "Octagon",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785869639329,
+      "name": "Overlanders - Kubo",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785738519057,
+      "name": "Overlanders -BoyG",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785211294366,
+      "name": "Pacific Temple - Sir James",
+      "group": "Residential",
+      "phone": "",
+      "address": "ATC - Alabang - 2 Dona Pilar Aguire",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785221035948,
+      "name": "Pandora",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785338843139,
+      "name": "Pet Lover",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 30
+    },
+    {
+      "id": 1785235972221,
+      "name": "PLDT / SMART",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785330726797,
+      "name": "Qeusbe",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785188213287,
+      "name": "Regie",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785188573278,
+      "name": "Reimy",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    },
+    {
+      "id": 1785869005296,
+      "name": "Remy",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785741959252,
+      "name": "Ronquillo - Ma'am Ellen",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785868942496,
+      "name": "Rosita",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785338905831,
+      "name": "Shopwise Robinsons Supermarket",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785198059145,
+      "name": "Silicon Valley",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785200284217,
+      "name": "Silver Finds",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785330449177,
+      "name": "SNR - Canteen",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 35
+    },
+    {
+      "id": 1785216371484,
+      "name": "SONY - Festival",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785338999473,
+      "name": "Techone Others",
+      "group": "Commercial",
+      "phone": "",
+      "address": "ATC - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785330656023,
+      "name": "Tess",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785196728881,
+      "name": "Timezone -Sir Ronnie",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 45
+    },
+    {
+      "id": 1785867867554,
+      "name": "Torres",
+      "group": "Residential",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785196805687,
+      "name": "Trendy Bazaar",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 30
+    },
+    {
+      "id": 1786274202499,
+      "name": "Walk-In",
+      "group": "Residential",
+      "phone": "",
+      "address": "Alabang",
+      "defaultPrice": 25
+    },
+    {
+      "id": 1785225912417,
+      "name": "Watson - 2nd Floor",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785746794303,
+      "name": "Watson - Baba",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785199765344,
+      "name": "Ystillo",
+      "group": "Commercial",
+      "phone": "",
+      "address": "Festival - Alabang",
+      "defaultPrice": 40
+    },
+    {
+      "id": 1785188182215,
+      "name": "Zaldy",
+      "phone": "",
+      "address": "Masagana",
+      "defaultPrice": 25,
+      "group": "Residential"
+    }
+  ],
+  "employees": [
+    {
+      "id": 1785335637202,
+      "name": "Carl Eugene Tolentino",
+      "position": "Station Attendant",
+      "salaryType": "Daily",
+      "salaryRate": 200,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    },
+    {
+      "id": 1785742990779,
+      "name": "Richard Tolentino",
+      "position": "Manager",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Inactive",
+      "phone": ""
+    },
+    {
+      "id": 1785743003923,
+      "name": "Grace Tolentino",
+      "position": "Manager",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Inactive",
+      "phone": ""
+    },
+    {
+      "id": 1785743031235,
+      "name": "Argie Ropan",
+      "position": "Station Washer",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    },
+    {
+      "id": 1785743053580,
+      "name": "Christian Millare",
+      "position": "Delivery Rider",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    },
+    {
+      "id": 1785743087116,
+      "name": "Edongski Tolentinotski",
+      "position": "Driver",
+      "salaryType": "Daily",
+      "salaryRate": 600,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    },
+    {
+      "id": 1785743101860,
+      "name": "Jaymark Cellon",
+      "position": "Delivery Rider",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Inactive",
+      "phone": ""
+    },
+    {
+      "id": 1785743127736,
+      "name": "Micheal Angelo Rotor",
+      "position": "Station Washer",
+      "salaryType": "Daily",
+      "salaryRate": 500,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    },
+    {
+      "id": 1785743153260,
+      "name": "Ronnie Ribaya",
+      "position": "Cashier/Admin",
+      "salaryType": "Daily",
+      "salaryRate": 600,
+      "schedule": {
+        "Mon": 0,
+        "Tue": 0,
+        "Wed": 0,
+        "Thu": 0,
+        "Fri": 0,
+        "Sat": 0
+      },
+      "status": "Active",
+      "phone": ""
+    }
+  ],
+  "services": []
+}
