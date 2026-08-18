@@ -8086,6 +8086,21 @@ window.addEventListener(
         await window.GVAuth.init();
       }
 
+const authorized =
+  window.GVAuth?.isAuthorized?.() === true;
+
+if (!authorized) {
+  // Authentication boundary:
+  // do not restore cached business data,
+  // do not seed protected records,
+  // and do not render the application.
+  replaceState(
+    window.GV_STATE.createInitialState()
+  );
+
+  return;
+}
+
       initProductionHardening();
       installDuplicateOperationGuards();
       installUIEventDelegation();
