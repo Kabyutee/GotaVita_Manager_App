@@ -1,4 +1,4 @@
-/* GotaVita Manager — Phase 5 Sprint 6 Manager Authentication
+/* GotaVita Manager — Phase 5 Sprint 8 Manager Authentication
  * Supabase cloud-auth layer.
  * Remains dormant until a valid Supabase URL + publishable key are configured.
  */
@@ -9,6 +9,7 @@
   let currentSession = null;
   let initialized = false;
   let managerProfile = null;
+  let initializationPromise = null;
 
   function config() {
     return window.GV_SUPABASE_CONFIG || {};
@@ -218,19 +219,15 @@
       throw new Error(
         "Manager authentication succeeded, but this account is not authorized for GotaVita."
       );
+    }
 
     window.dispatchEvent(
-             new CustomEvent(
-            "gv-auth-state-changed",
-        {
-      detail: {
-        authenticated: true
-      }
-    }
-  )
-);
-
-    }
+      new CustomEvent("gv-auth-state-changed", {
+        detail: {
+          authenticated: true
+        }
+      })
+    );
 
     setTimeout(closeLogin, 500);
 
@@ -238,198 +235,303 @@
   }
 
   async function logout() {
-  if (!client) return false;
+    if (!client) return false;
 
-  const { error } = await client.auth.signOut();
+    const { error } = await client.auth.signOut();
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
+
+    managerProfile = null;
+    currentSession = null;
+
+    setLoggedInUI(null);
+
+    window.dispatchEvent(
+      new CustomEvent("gv-auth-state-changed", {
+        detail: {
+          authenticated: false
+        }
+      })
+    );
+
+    setAuthStatus("Signed out.", "success");
+
+    setTimeout(() => {
+      openLogin();
+    }, 100);
+
+    return true;
   }
 
-  managerProfile = null;
-  currentSession = null;
-
-  setLoggedInUI(null);
-
-  window.dispatchEvent(
-    new CustomEvent("gv-auth-state-changed", {
-      detail: {
-        authenticated: false
-      }
-    })
-  );
-
-  setAuthStatus("Signed out.", "success");
-
-  // Return the manager to the login screen.
-  setTimeout(() => {
-    openLogin();
-  }, 100);
-
-  return true;
-}
-
   async function init() {
-    if (initialized) {
-      return client;
+    if (initializationPromise) {
+      return initializationPromise;
     }
 
-    initialized = true;
+    initializationPromise = (async () => {
+      if (initialized) {
+        return client;
+      }
 
-    const loginButton = document.getElementById("gvCloudLoginBtn");
-    const logoutButton = document.getElementById("gvCloudLogoutBtn");
-    const form = document.getElementById("gvAuthForm");
-    const closeButton = document.getElementById("gvAuthCloseBtn");
+      initialized = true;
 
-    if (loginButton) {
-      loginButton.addEventListener("click", openLogin);
-    }
+      const loginButton =
+        document.getElementById("gvCloudLoginBtn");
 
-    if (logoutButton) {
-      logoutButton.addEventListener("click", () => {
-        logout().catch((error) => {
-          setAuthStatus(
-            error?.message || "Sign out failed.",
-            "error"
-          );
-        });
-      });
-    }
+      const logoutButton =
+        document.getElementById("gvCloudLogoutBtn");
 
-    if (closeButton) {
-      closeButton.addEventListener("click", closeLogin);
-    }
+      const form =
+        document.getElementById("gvAuthForm");
 
-    if (form) {
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        const email = String(
-          document.getElementById("gvAuthEmail")?.value || ""
-        ).trim();
-
-        const password = String(
-          document.getElementById("gvAuthPassword")?.value || ""
-        );
-
-        if (!email || !password) {
-          setAuthStatus(
-            "Enter the manager email and password.",
-            "error"
-          );
-          return;
-        }
-
-        setAuthStatus("Authenticating…", "syncing");
-
-        try {
-          await login(email, password);
-        } catch (error) {
-          setAuthStatus(
-            error?.message || "Authentication failed.",
-            "error"
-          );
-        }
-      });
-    }
-
-    if (!isConfigured()) {
-      setAuthStatus(
-        "Cloud authentication is not configured yet. Local/offline mode remains active.",
-        "neutral"
-      );
+      const closeButton =
+        document.getElementById("gvAuthCloseBtn");
 
       if (loginButton) {
-        loginButton.title =
-          "Configure Supabase first to enable manager login.";
+        loginButton.addEventListener(
+          "click",
+          openLogin
+        );
       }
 
-      return null;
-    }
+      if (logoutButton) {
+        logoutButton.addEventListener(
+          "click",
+          () => {
+            logout().catch((error) => {
+              setAuthStatus(
+                error?.message || "Sign out failed.",
+                "error"
+              );
+            });
+          }
+        );
+      }
 
-    const cfg = config();
+      if (closeButton) {
+        closeButton.addEventListener(
+          "click",
+          closeLogin
+        );
+      }
 
-    try {
-      client = window.supabase.createClient(
-        String(cfg.url).trim(),
-        String(cfg.publishableKey).trim(),
-        {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: false
+      if (form) {
+        form.addEventListener(
+          "submit",
+          async (event) => {
+            event.preventDefault();
+
+            const email = String(
+              document.getElementById(
+                "gvAuthEmail"
+              )?.value || ""
+            ).trim();
+
+            const password = String(
+              document.getElementById(
+                "gvAuthPassword"
+              )?.value || ""
+            );
+
+            if (!email || !password) {
+              setAuthStatus(
+                "Enter the manager email and password.",
+                "error"
+              );
+              return;
+            }
+
+            setAuthStatus(
+              "Authenticating…",
+              "syncing"
+            );
+
+            try {
+              await login(
+                email,
+                password
+              );
+            } catch (error) {
+              setAuthStatus(
+                error?.message ||
+                  "Authentication failed.",
+                "error"
+              );
+            }
+          }
+        );
+      }
+
+      if (!isConfigured()) {
+        setAuthStatus(
+          "Cloud authentication is not configured yet. Local/offline mode remains active.",
+          "neutral"
+        );
+
+        if (loginButton) {
+          loginButton.title =
+            "Configure Supabase first to enable manager login.";
+        }
+
+        return null;
+      }
+
+      const cfg = config();
+
+      try {
+        client =
+          window.supabase.createClient(
+            String(cfg.url).trim(),
+            String(
+              cfg.publishableKey
+            ).trim(),
+            {
+              auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: false
+              }
+            }
+          );
+      } catch (error) {
+        client = null;
+
+        setAuthStatus(
+          error?.message ||
+            "Unable to initialize Supabase.",
+          "error"
+        );
+
+        console.error(
+          "GotaVita Supabase client initialization failed:",
+          error
+        );
+
+        return null;
+      }
+
+      /*
+       * Register exactly one auth-state listener.
+       * This listener is established before the initial getSession()
+       * result is processed so subsequent auth-state restoration is
+       * captured consistently.
+       */
+      client.auth.onAuthStateChange(
+        async (_event, session) => {
+          if (_event === "SIGNED_OUT") {
+            managerProfile = null;
+            currentSession = null;
+
+            setLoggedInUI(null);
+            setAuthStatus(
+              "Signed out.",
+              "success"
+            );
+
+            window.dispatchEvent(
+              new CustomEvent(
+                "gv-auth-state-changed",
+                {
+                  detail: {
+                    authenticated: false
+                  }
+                }
+              )
+            );
+
+            return;
+          }
+
+          if (session) {
+            const authenticated =
+              await validateSession(
+                session,
+                true
+              );
+
+            window.dispatchEvent(
+              new CustomEvent(
+                "gv-auth-state-changed",
+                {
+                  detail: {
+                    authenticated
+                  }
+                }
+              )
+            );
+          } else {
+            managerProfile = null;
+            currentSession = null;
+
+            setLoggedInUI(null);
           }
         }
       );
-    } catch (error) {
-      client = null;
 
-      setAuthStatus(
-        error?.message || "Unable to initialize Supabase.",
-        "error"
+      const {
+        data: sessionData,
+        error: sessionError
+      } = await client.auth.getSession();
+
+      console.log(
+        "GotaVita Supabase session:",
+        sessionData?.session ?? null
       );
 
-      console.error(
-        "GotaVita Supabase client initialization failed:",
-        error
+      console.log(
+        "GotaVita Supabase user:",
+        sessionData?.session?.user ?? null
       );
 
-      return null;
-    }
-
-    const {
-      data: sessionData,
-      error: sessionError
-    } = await client.auth.getSession();
-
-    console.log(
-      "GotaVita Supabase session:",
-      sessionData?.session ?? null
-    );
-
-    console.log(
-      "GotaVita Supabase user:",
-      sessionData?.session?.user ?? null
-    );
-
-    console.log(
-      "GotaVita Supabase auth error:",
-      sessionError ?? null
-    );
-
-    if (sessionError) {
-      setAuthStatus(
-        sessionError.message ||
-          "Unable to read Supabase session.",
-        "error"
+      console.log(
+        "GotaVita Supabase auth error:",
+        sessionError ?? null
       );
-    } else if (sessionData?.session) {
-      await validateSession(sessionData.session, true);
-    } else {
-      setLoggedInUI(null);
-      setAuthStatus(
-        "Ready for manager login.",
-        "neutral"
-      );
-    }
 
-    client.auth.onAuthStateChange(async (_event, session) => {
-      if (_event === "SIGNED_OUT") {
-        managerProfile = null;
-        setLoggedInUI(null);
-        setAuthStatus("Signed out.", "success");
-        return;
-      }
+      if (sessionError) {
+        setAuthStatus(
+          sessionError.message ||
+            "Unable to read Supabase session.",
+          "error"
+        );
+      } else if (sessionData?.session) {
+        const authenticated =
+          await validateSession(
+            sessionData.session,
+            true
+          );
 
-      if (session) {
-        await validateSession(session, true);
+        window.dispatchEvent(
+          new CustomEvent(
+            "gv-auth-state-changed",
+            {
+              detail: {
+                authenticated
+              }
+            }
+          )
+        );
       } else {
-        managerProfile = null;
         setLoggedInUI(null);
-      }
-    });
 
-    return client;
+        setAuthStatus(
+          "Ready for manager login.",
+          "neutral"
+        );
+      }
+
+      return client;
+    })();
+
+    try {
+      return await initializationPromise;
+    } catch (error) {
+      initializationPromise = null;
+      initialized = false;
+      throw error;
+    }
   }
 
   window.GVAuth = Object.freeze({
