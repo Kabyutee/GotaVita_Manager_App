@@ -1,12 +1,14 @@
-.git/
 .wrangler/
+.git/
 node_modules/
+docs/
+supabase/
 worker.js
 wrangler.jsonc
 .env
 .env.*
 .dev.vars
 functions/
-supabase/
-docs/
 *.md
+.gitignore
+.assetsignore
