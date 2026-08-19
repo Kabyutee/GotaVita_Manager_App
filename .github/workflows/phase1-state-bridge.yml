@@ -13,6 +13,7 @@ on:
       - sprint12-controlled-write-activation
       - sprint12-convergence-policy
       - sprint12-production-deployment-bridge
+      - sprint12-production-drift-gate
   pull_request:
     branches:
       - main
@@ -26,6 +27,7 @@ on:
       - sprint12-controlled-write-activation
       - sprint12-convergence-policy
       - sprint12-production-deployment-bridge
+      - sprint12-production-drift-gate
 
 jobs:
   verify-gotavita:
@@ -58,3 +60,4 @@ jobs:
           node tests/sprint12-write-roundtrip-contract.test.js
           node tests/sprint12-convergence-policy-contract.test.js
           node tests/sprint12-production-deployment-contract.test.js
+          node tests/sprint12-production-drift-gate-contract.test.js
