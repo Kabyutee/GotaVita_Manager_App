@@ -5,11 +5,13 @@ on:
     branches:
       - phase1-state-bridge
       - sprint11-regression-release
+      - sprint12-state-hydration
   pull_request:
     branches:
       - main
       - phase1-state-bridge
       - sprint11-regression-release
+      - sprint12-state-hydration
 
 jobs:
   verify-gotavita:
@@ -31,3 +33,4 @@ jobs:
           node tests/phase3-hydration-runtime.test.js
           node tests/phase4-cross-device-sync.test.js
           node tests/sprint11-release-readiness.test.js
+          node tests/sprint12-state-hydration-contract.test.js
