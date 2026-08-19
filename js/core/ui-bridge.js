@@ -21,18 +21,19 @@ window.GVUI = Object.freeze({
 
 /*
  * Sprint 10 Phase 3 — Supabase hydration boundary.
+ * Sprint 10 Phase 4 — Cross-device synchronization boundary.
  *
  * The existing script.js startup path already awaits GVData.health() before
  * finishing initial server synchronization. We intentionally hook that single
  * cloud boundary instead of rewriting the large application file.
  *
  * Safety rules:
- * - Never hydrate before manager authorization.
+ * - Never hydrate or sync before manager authorization.
  * - Read every supported cloud resource before replacing local state.
- * - If Supabase is empty, preserve local/seed data.
- * - If any supported resource read fails, keep local data untouched.
+ * - Empty cloud resources do not erase existing local records.
+ * - Cloud read/write failures leave the local state and queue intact.
  * - Replace application state only through the existing replaceState() bridge.
- * - Persist the hydrated snapshot locally without creating a second state store.
+ * - The gateway remains the single cloud adapter; this file only coordinates it.
  */
 (function installSupabaseHydrationBoundary() {
   "use strict";
@@ -55,8 +56,20 @@ window.GVUI = Object.freeze({
     audit_logs: "auditLog"
   });
 
+  const cloudAliases = Object.freeze({
+    payrollRecords: "payroll_records",
+    orderGroups: "order_groups",
+    deliveryRoutes: "delivery_routes",
+    orderGroupItems: "order_group_items",
+    deliveryRouteItems: "delivery_route_items",
+    dailyReports: "daily_reports",
+    deletedOrders: "deleted_orders",
+    auditLog: "audit_logs"
+  });
+
   let hydrationPromise = null;
   let gatewayWrapped = false;
+  let syncPromise = null;
 
   function mergePayload(payload, fallback) {
     return payload && typeof payload === "object"
@@ -78,19 +91,11 @@ window.GVUI = Object.freeze({
   }
 
   function rebuildChildLinks(nextState) {
-    const groups = Array.isArray(nextState.orderGroups)
-      ? nextState.orderGroups
-      : [];
-    const routes = Array.isArray(nextState.deliveryRoutes)
-      ? nextState.deliveryRoutes
-      : [];
+    const groups = Array.isArray(nextState.orderGroups) ? nextState.orderGroups : [];
+    const routes = Array.isArray(nextState.deliveryRoutes) ? nextState.deliveryRoutes : [];
 
-    const groupById = new Map(
-      groups.map((group) => [String(group.id), group])
-    );
-    const routeById = new Map(
-      routes.map((route) => [String(route.id), route])
-    );
+    const groupById = new Map(groups.map((group) => [String(group.id), group]));
+    const routeById = new Map(routes.map((route) => [String(route.id), route]));
 
     for (const group of groups) {
       if (!Array.isArray(group.orderIds)) group.orderIds = [];
@@ -121,35 +126,38 @@ window.GVUI = Object.freeze({
     }
   }
 
-  async function hydrateFromSupabase() {
+  function normalizeResourceRows(resource, rows) {
+    if (resource === "services") return rows.map(mapService);
+    return rows;
+  }
+
+  async function hydrateFromSupabase(original) {
     if (hydrationPromise) return hydrationPromise;
 
     hydrationPromise = (async () => {
       if (
         !window.GVAuth?.isAuthorized?.() ||
-        !window.GVData?.supportedResources ||
+        !original?.supportedResources ||
         typeof window.getStateSnapshot !== "function" ||
         typeof window.replaceState !== "function"
       ) {
         return { hydrated: false, reason: "not-authorized-or-bridge-unavailable" };
       }
 
-      const supported = window.GVData.supportedResources();
+      const supported = original.supportedResources();
       if (!Array.isArray(supported) || !supported.length) {
         return { hydrated: false, reason: "no-supported-resources" };
       }
 
       const entries = await Promise.all(
         supported.map(async (resource) => {
-          const rows = await window.GVData.selectResource(resource);
+          const rows = await original.selectResource(resource);
           return [resource, Array.isArray(rows) ? rows : []];
         })
       );
 
       const cloudRows = Object.fromEntries(entries);
-      const cloudHasData = Object.values(cloudRows).some(
-        (rows) => rows.length > 0
-      );
+      const cloudHasData = Object.values(cloudRows).some((rows) => rows.length > 0);
 
       if (!cloudHasData) {
         return { hydrated: false, reason: "cloud-empty" };
@@ -160,10 +168,7 @@ window.GVUI = Object.freeze({
       for (const [resource, rows] of Object.entries(cloudRows)) {
         const stateName = resourceStateNames[resource];
         if (!stateName || !rows.length) continue;
-
-        nextState[stateName] = resource === "services"
-          ? rows.map(mapService)
-          : rows;
+        nextState[stateName] = normalizeResourceRows(resource, rows);
       }
 
       rebuildChildLinks(nextState);
@@ -201,7 +206,151 @@ window.GVUI = Object.freeze({
     return hydrationPromise;
   }
 
-  function wrapGateway() {
+  function getQueuedResources() {
+    try {
+      if (typeof window.getSyncQueue === "function") {
+        const queue = window.getSyncQueue();
+        return Array.isArray(queue) ? queue.filter(Boolean) : [];
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  function stateResourceName(resource) {
+    return resourceStateNames[resource] || resource;
+  }
+
+  function cloudResourceName(resource) {
+    return cloudAliases[resource] || resource;
+  }
+
+  async function syncCrossDevice(original) {
+    if (syncPromise) return syncPromise;
+
+    syncPromise = (async () => {
+      if (!window.GVAuth?.isAuthorized?.()) {
+        return { ok: false, status: "authentication-required" };
+      }
+
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return { ok: false, status: "offline" };
+      }
+
+      if (
+        typeof original?.supportedResources !== "function" ||
+        typeof original?.selectResource !== "function" ||
+        typeof original?.upsertResource !== "function"
+      ) {
+        return { ok: false, status: "gateway-incomplete" };
+      }
+
+      const queued = getQueuedResources();
+      const snapshot =
+        typeof window.getStateSnapshot === "function"
+          ? window.getStateSnapshot()
+          : null;
+
+      if (!snapshot || typeof snapshot !== "object") {
+        return { ok: false, status: "state-bridge-unavailable" };
+      }
+
+      const pushed = [];
+
+      // Local queued resources win their current-device write, then we pull the
+      // complete cloud surface back so every device converges on the same state.
+      for (const resource of queued) {
+        const cloudName = cloudResourceName(resource);
+        const stateName = stateResourceName(resource);
+        const rows = Array.isArray(snapshot[stateName]) ? snapshot[stateName] : [];
+
+        if (!rows.length) continue;
+
+        await original.upsertResource(cloudName, rows);
+        pushed.push(resource);
+      }
+
+      const supported = original.supportedResources();
+      const entries = await Promise.all(
+        supported.map(async (resource) => {
+          const rows = await original.selectResource(resource);
+          return [resource, Array.isArray(rows) ? rows : []];
+        })
+      );
+
+      const cloudRows = Object.fromEntries(entries);
+      const nextState = window.getStateSnapshot();
+      let pulled = 0;
+
+      for (const [resource, rows] of Object.entries(cloudRows)) {
+        const stateName = stateResourceName(resource);
+        if (!stateName || !rows.length) continue;
+        nextState[stateName] = normalizeResourceRows(resource, rows);
+        pulled += rows.length;
+      }
+
+      rebuildChildLinks(nextState);
+
+      const now = Date.now();
+      nextState._meta = Object.assign({}, nextState._meta, {
+        lastUpdated: now,
+        lastSynchronizedAt: now,
+        synchronizationVersion: 1,
+        lastSynchronizedResources: pushed
+      });
+
+      window.replaceState(nextState);
+
+      if (typeof window.writeLocalStateSnapshot === "function") {
+        window.writeLocalStateSnapshot(nextState);
+      }
+
+      if (
+        pushed.length &&
+        typeof window.setSyncQueue === "function"
+      ) {
+        window.setSyncQueue([]);
+      }
+
+      if (typeof window.setSyncMeta === "function") {
+        try {
+          const meta = typeof window.getSyncMeta === "function" ? window.getSyncMeta() : {};
+          window.setSyncMeta(Object.assign({}, meta, {
+            lastSync: now,
+            lastSyncAt: new Date(now).toISOString(),
+            lastSyncStatus: "synced",
+            pushedResources: pushed,
+            pulledRows: pulled
+          }));
+        } catch (_) {}
+      }
+
+      return {
+        ok: true,
+        mode: "supabase",
+        status: "synced",
+        pushedResources: pushed,
+        pulledRows: pulled
+      };
+    })().catch((error) => {
+      console.warn(
+        "GotaVita cross-device sync failed; local queue preserved:",
+        error?.message || error
+      );
+      return {
+        ok: false,
+        status: "sync-error",
+        error: String(error?.message || error)
+      };
+    });
+
+    try {
+      return await syncPromise;
+    } finally {
+      syncPromise = null;
+    }
+  }
+
+  function installGatewayFacade() {
     if (!window.GVData || gatewayWrapped) return;
 
     const original = window.GVData;
@@ -209,31 +358,32 @@ window.GVUI = Object.freeze({
 
     if (typeof originalHealth !== "function") return;
 
-    const wrappedHealth = async function hydratedHealth(...args) {
-      const health = await originalHealth.apply(original, args);
-      if (health?.ok === true && health?.mode === "supabase") {
-        await hydrateFromSupabase();
-      }
-      return health;
-    };
+    const facade = Object.assign({}, original, {
+      health: async function wrappedHealth(...args) {
+        const health = await originalHealth.apply(original, args);
+        if (health?.ok === true && health?.mode === "supabase") {
+          await hydrateFromSupabase(original);
+        }
+        return health;
+      },
 
-    const wrappedGateway = Object.freeze({
-      ...original,
-      health: wrappedHealth
+      sync: async function wrappedSync(...args) {
+        return syncCrossDevice(original, ...args);
+      }
     });
 
     gatewayWrapped = true;
-    window.GVData = wrappedGateway;
+    window.GVData = Object.freeze(facade);
   }
 
   window.addEventListener(
     "DOMContentLoaded",
     () => {
       try {
-        wrapGateway();
+        installGatewayFacade();
       } catch (error) {
         console.warn(
-          "GotaVita hydration boundary could not initialize:",
+          "GotaVita cloud boundary could not initialize:",
           error?.message || error
         );
       }
