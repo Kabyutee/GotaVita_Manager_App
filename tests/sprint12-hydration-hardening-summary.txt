@@ -1,0 +1,4 @@
+Sprint 12 hydration hardening:
+PASS — transient cloud-read failure releases the hydration promise for retry.
+PASS — successful hydration remains single-install and single-persist.
+PASS — local state remains protected on failed hydration.

@@ -34,3 +34,4 @@ jobs:
           node tests/phase4-cross-device-sync.test.js
           node tests/sprint11-release-readiness.test.js
           node tests/sprint12-state-hydration-contract.test.js
+          node tests/sprint12-hydration-hardening.test.js

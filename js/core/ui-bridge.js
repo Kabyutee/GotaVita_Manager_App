@@ -201,6 +201,12 @@ window.GVUI = Object.freeze({
         error?.message || error
       );
       return { hydrated: false, reason: "cloud-read-failed" };
+    }).then((result) => {
+      // A transient cloud failure must not permanently poison the one-shot
+      // hydration promise. Keep successful hydration single-install, but allow
+      // the next authorized health check to retry a failed cloud read.
+      if (result?.reason === "cloud-read-failed") hydrationPromise = null;
+      return result;
     });
 
     return hydrationPromise;
