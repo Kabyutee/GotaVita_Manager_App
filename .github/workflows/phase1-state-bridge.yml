@@ -18,6 +18,7 @@ on:
       - sprint12-record-versioning
       - sprint12-conflict-detection
       - sprint12-conflict-resolution
+      - sprint12-controlled-conflict-integration
   pull_request:
     branches:
       - main
@@ -36,6 +37,7 @@ on:
       - sprint12-record-versioning
       - sprint12-conflict-detection
       - sprint12-conflict-resolution
+      - sprint12-controlled-conflict-integration
 
 jobs:
   verify-gotavita:
@@ -50,6 +52,8 @@ jobs:
           node --check js/core/state.js
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
+          node --check js/core/production-guard.js
+          node --check js/core/conflict-resolution-integration.js
           node --check worker.js
 
       - name: Run automated contracts
@@ -73,3 +77,5 @@ jobs:
           node tests/sprint12-record-versioning-contract.test.js
           node tests/sprint12-conflict-detection-contract.test.js
           node tests/sprint12-conflict-resolution-policy-contract.test.js
+          node tests/sprint12-controlled-conflict-integration-contract.test.js
+          node tests/sprint12-two-device-conflict-scenarios.test.js

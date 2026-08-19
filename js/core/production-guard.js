@@ -186,4 +186,19 @@
 
   window.GVProductionGuard = Object.freeze({ diagnostics, run, isLocal, cloudConfigured });
   window.addEventListener("load", () => { try { run(); } catch (_) {} }, { once: true });
+
+  /* Sprint 12 controlled integration loader. It waits until the deferred
+   * application has initialized, then activates the safe integration layer.
+   * The integration itself is side-effect guarded and never runs on file/local mode.
+   */
+  window.addEventListener("DOMContentLoaded", () => {
+    try {
+      if (document.querySelector('script[data-gv-conflict-integration="true"]')) return;
+      const script = document.createElement("script");
+      script.src = "/js/core/conflict-resolution-integration.js";
+      script.defer = true;
+      script.dataset.gvConflictIntegration = "true";
+      document.head.appendChild(script);
+    } catch (_) {}
+  }, { once: true });
 })();
