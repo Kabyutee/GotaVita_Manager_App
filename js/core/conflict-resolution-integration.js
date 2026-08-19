@@ -91,10 +91,6 @@
     return map;
   }
 
-  function sameJson(a, b) {
-    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  }
-
   function policy(localRow, remoteRow, baselineAt) {
     if (!window.GVConflictDetector?.resolveConflictPolicy) {
       return { action: "manual-review", reason: "policy-unavailable", mutation: false };
@@ -117,24 +113,46 @@
     };
   }
 
-  function buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows = [], remoteDeletedRows = []) {
+  function baselinePlaceholder(id, baselineAt) {
+    if (!baselineAt) return null;
+    return {
+      id,
+      updatedAt: baselineAt,
+      createdAt: baselineAt
+    };
+  }
+
+  function buildResolutionPlan(
+    localRows,
+    remoteRows,
+    baselineAt,
+    localDeletedRows = [],
+    remoteDeletedRows = [],
+    baselineRows = []
+  ) {
     const localMap = indexRows(localRows);
     const remoteMap = indexRows(remoteRows);
+    const baselineMap = indexRows(baselineRows);
     const ids = new Set([...localMap.keys(), ...remoteMap.keys()]);
     const decisions = [];
 
     for (const id of ids) {
       let localRow = localMap.get(id) || null;
       let remoteRow = remoteMap.get(id) || null;
+      const existedAtBaseline = baselineMap.has(id);
 
       if (!localRow) {
         const evidence = deletionEvidence(localDeletedRows, id);
-        localRow = tombstone(evidence, evidence?.archivedAt || evidence?.deletedAt);
+        localRow = evidence
+          ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt)
+          : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
       if (!remoteRow) {
         const evidence = deletionEvidence(remoteDeletedRows, id);
-        remoteRow = tombstone(evidence, evidence?.archivedAt || evidence?.deletedAt);
+        remoteRow = evidence
+          ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt)
+          : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
       const result = policy(localRow, remoteRow, baselineAt);
@@ -246,8 +264,8 @@
     }
   }
 
-  async function reconcileResource(resource, localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, nextState) {
-    const decisions = buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows);
+  async function reconcileResource(resource, localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows, nextState) {
+    const decisions = buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows);
     const summary = summarize(decisions);
     const manual = decisions.filter((decision) => decision.action === "manual-review");
 
@@ -303,6 +321,7 @@
           continue;
         }
 
+        const baselineRows = Array.isArray(baseline[resource]?.rows) ? baseline[resource].rows : [];
         const localDeletedRows = resource === "orders" ? (nextState.deletedOrders || []) : [];
         const remoteDeletedRows = resource === "orders" ? await window.GVData.selectResource("deleted_orders") : [];
         const result = await reconcileResource(
@@ -312,6 +331,7 @@
           baselineAt,
           localDeletedRows,
           remoteDeletedRows,
+          baselineRows,
           nextState
         );
         results.push(result);
