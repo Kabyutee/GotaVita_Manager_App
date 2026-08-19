@@ -3766,8 +3766,33 @@ window.addEventListener(
       event?.detail?.authenticated === true;
 
     if (authenticated) {
-      return;
+  try {
+    installProductionHardening();
+    installDuplicateOperationGuards();
+    installUIEventDelegation();
+    installProfessionalPolish();
+    installBulkSelectionUX();
+    installSearchOptimization();
+    initDarkMode();
+
+    if (typeof renderAll === "function") {
+      renderAll();
     }
+
+    switchTab("dashboard");
+  } catch (error) {
+    handleAppError(
+      "post-auth-ui-init",
+      error,
+      {
+        userMessage:
+          "Manager authorization succeeded, but the application UI could not finish initializing."
+      }
+    );
+  }
+
+  return;
+}
 
     stopSyncReliability();
 
