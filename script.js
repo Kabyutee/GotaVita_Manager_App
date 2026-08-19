@@ -8114,6 +8114,7 @@ window.addEventListener(
       if (
         window.GVAuth
       ) {
+        initSyncReliability();
         await window.GVAuth.init();
       }
 
@@ -8160,7 +8161,6 @@ if (!authorized) {
         );
       }
 
-      initSyncReliability();
 
       const cachedState =
         readLocalStateSnapshot();
