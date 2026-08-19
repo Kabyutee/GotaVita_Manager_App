@@ -122,14 +122,7 @@
     };
   }
 
-  function buildResolutionPlan(
-    localRows,
-    remoteRows,
-    baselineAt,
-    localDeletedRows = [],
-    remoteDeletedRows = [],
-    baselineRows = []
-  ) {
+  function buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows = [], remoteDeletedRows = [], baselineRows = []) {
     const localMap = indexRows(localRows);
     const remoteMap = indexRows(remoteRows);
     const baselineMap = indexRows(baselineRows);
@@ -143,64 +136,39 @@
 
       if (!localRow) {
         const evidence = deletionEvidence(localDeletedRows, id);
-        localRow = evidence
-          ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt)
-          : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
+        localRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
       if (!remoteRow) {
         const evidence = deletionEvidence(remoteDeletedRows, id);
-        remoteRow = evidence
-          ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt)
-          : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
+        remoteRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
       const result = policy(localRow, remoteRow, baselineAt);
-      decisions.push({
-        id,
-        action: result.action,
-        reason: result.reason,
-        mutation: result.mutation,
-        local: localMap.get(id) || null,
-        remote: remoteMap.get(id) || null
-      });
+      decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: localMap.get(id) || null, remote: remoteMap.get(id) || null });
     }
 
     return decisions;
   }
 
   function summarize(decisions) {
-    const summary = {
-      total: decisions.length,
-      keepLocal: 0,
-      keepRemote: 0,
-      noConflict: 0,
-      manualReview: 0
-    };
-
+    const summary = { total: decisions.length, keepLocal: 0, keepRemote: 0, noConflict: 0, manualReview: 0 };
     decisions.forEach((decision) => {
       if (decision.action === "keep-local") summary.keepLocal++;
       else if (decision.action === "keep-remote") summary.keepRemote++;
       else if (decision.action === "no-conflict") summary.noConflict++;
       else summary.manualReview++;
     });
-
     return summary;
   }
 
-  function getBaseline() {
-    return readJson(STORAGE_KEY, {});
-  }
-
-  function setBaseline(next) {
-    return writeJson(STORAGE_KEY, next);
-  }
+  function getBaseline() { return readJson(STORAGE_KEY, {}); }
+  function setBaseline(next) { return writeJson(STORAGE_KEY, next); }
 
   function recordConflicts(entries) {
     if (!entries.length) return;
     const current = readJson(CONFLICT_KEY, []);
-    const merged = [...current, ...entries].slice(-200);
-    writeJson(CONFLICT_KEY, merged);
+    writeJson(CONFLICT_KEY, [...current, ...entries].slice(-200));
   }
 
   function removeResourceFromQueue(resource) {
@@ -209,17 +177,12 @@
     window.setSyncQueue(queue.filter((item) => item !== resource && resourceCloudName(item) !== resource));
   }
 
-  function resourceCloudName(resource) {
-    return RESOURCE_MAP[resource] || resource;
-  }
-
-  function resourceStateName(resource) {
-    return STATE_MAP[resource] || resource;
-  }
+  function resourceCloudName(resource) { return RESOURCE_MAP[resource] || resource; }
+  function resourceStateName(resource) { return STATE_MAP[resource] || resource; }
 
   function stateSnapshot() {
-    if (typeof window.getStateSnapshot === "function") return window.getStateSnapshot();
-    return null;
+    const snapshotReader = window["getStateSnapshot"];
+    return typeof snapshotReader === "function" ? snapshotReader() : null;
   }
 
   function supportedResources() {
@@ -235,9 +198,8 @@
     const stateName = resourceStateName(cloudName);
 
     if (decision.action === "keep-local") {
-      if (decision.local) {
-        await window.GVData.upsertResource(cloudName, [decision.local]);
-      } else if (typeof window.GVData.deleteResourceByLegacyId === "function") {
+      if (decision.local) await window.GVData.upsertResource(cloudName, [decision.local]);
+      else if (typeof window.GVData.deleteResourceByLegacyId === "function") {
         const id = decision.remote?.id ?? decision.remote?.legacy_id ?? decision.id;
         if (id != null) await window.GVData.deleteResourceByLegacyId(cloudName, id);
       }
@@ -247,14 +209,10 @@
     if (decision.action === "keep-remote") {
       const rows = Array.isArray(nextState[stateName]) ? nextState[stateName].slice() : [];
       const index = rows.findIndex((row, index) => rowKey(row, index) === decision.id);
-
       if (decision.remote) {
         if (index >= 0) rows[index] = clone(decision.remote);
         else rows.push(clone(decision.remote));
-      } else if (index >= 0) {
-        rows.splice(index, 1);
-      }
-
+      } else if (index >= 0) rows.splice(index, 1);
       nextState[stateName] = rows;
     }
   }
@@ -265,19 +223,12 @@
     const manual = decisions.filter((decision) => decision.action === "manual-review");
 
     if (manual.length) {
-      recordConflicts(manual.map((decision) => ({
-        resource,
-        id: decision.id,
-        reason: decision.reason,
-        detectedAt: new Date().toISOString()
-      })));
+      recordConflicts(manual.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
       return { resource, decisions, summary, reconciled: false };
     }
 
     for (const decision of decisions) {
-      if (decision.action === "keep-local" || decision.action === "keep-remote") {
-        await applyDecision(resource, decision, nextState);
-      }
+      if (decision.action === "keep-local" || decision.action === "keep-remote") await applyDecision(resource, decision, nextState);
     }
 
     return { resource, decisions, summary, reconciled: true };
@@ -290,14 +241,11 @@
     if (!force && sessionStorage.getItem(RUN_LOCK_KEY) === "1") return { ok: false, status: "locked" };
 
     sessionStorage.setItem(RUN_LOCK_KEY, "1");
-
     try {
       await window.GVData.requireAuthenticatedManager();
-
       const baseline = getBaseline();
       const nextState = stateSnapshot();
       if (!nextState) throw new Error("Application state snapshot unavailable.");
-
       const results = [];
       const nextBaseline = { ...baseline };
 
@@ -308,10 +256,7 @@
         const baselineAt = baseline[resource]?.baselineAt || null;
 
         if (!baselineAt) {
-          nextBaseline[resource] = {
-            baselineAt: new Date().toISOString(),
-            rows: clone(remoteRows)
-          };
+          nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(remoteRows) };
           results.push({ resource, status: "baseline-initialized", summary: { total: 0, keepLocal: 0, keepRemote: 0, noConflict: 0, manualReview: 0 } });
           continue;
         }
@@ -319,60 +264,31 @@
         const baselineRows = Array.isArray(baseline[resource]?.rows) ? baseline[resource].rows : [];
         const localDeletedRows = resource === "orders" ? (nextState.deletedOrders || []) : [];
         const remoteDeletedRows = resource === "orders" ? await window.GVData.selectResource("deleted_orders") : [];
-        const result = await reconcileResource(
-          resource,
-          localRows,
-          remoteRows,
-          baselineAt,
-          localDeletedRows,
-          remoteDeletedRows,
-          baselineRows,
-          nextState
-        );
+        const result = await reconcileResource(resource, localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows, nextState);
         results.push(result);
 
         if (result.reconciled) {
           const refreshed = await window.GVData.selectResource(resourceCloudName(resource));
-          nextBaseline[resource] = {
-            baselineAt: new Date().toISOString(),
-            rows: clone(refreshed)
-          };
+          nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
           removeResourceFromQueue(resourceCloudName(resource));
         }
       }
 
       if (typeof window.persistState === "function") window.persistState();
       setBaseline(nextBaseline);
-
       const manualReviewCount = results.reduce((sum, result) => sum + (result.summary?.manualReview || 0), 0);
       const appliedCount = results.reduce((sum, result) => sum + (result.summary?.keepLocal || 0) + (result.summary?.keepRemote || 0), 0);
 
-      if (typeof window.setSyncStatus === "function") {
-        window.setSyncStatus(
-          manualReviewCount ? `Conflict review required · ${manualReviewCount}` : `Synced · ${appliedCount} conflict decision(s) applied`,
-          manualReviewCount ? "warning" : "online"
-        );
-      }
-
+      if (typeof window.setSyncStatus === "function") window.setSyncStatus(manualReviewCount ? `Conflict review required · ${manualReviewCount}` : `Synced · ${appliedCount} conflict decision(s) applied`, manualReviewCount ? "warning" : "online");
       return { ok: true, status: manualReviewCount ? "manual-review" : "reconciled", results };
     } finally {
       sessionStorage.removeItem(RUN_LOCK_KEY);
     }
   }
 
-  window.GVConflictIntegration = Object.freeze({
-    run,
-    buildResolutionPlan,
-    summarize,
-    getBaseline,
-    setBaseline,
-    resourceCloudName,
-    resourceStateName
-  });
+  window.GVConflictIntegration = Object.freeze({ run, buildResolutionPlan, summarize, getBaseline, setBaseline, resourceCloudName, resourceStateName });
 
   window.addEventListener("gv-auth-state-changed", (event) => {
-    if (event?.detail?.authenticated === true) {
-      setTimeout(() => run(false).catch((error) => console.warn("GotaVita conflict integration:", error?.message || error)), 0);
-    }
+    if (event?.detail?.authenticated === true) setTimeout(() => run(false).catch((error) => console.warn("GotaVita conflict integration:", error?.message || error)), 0);
   });
 })();
