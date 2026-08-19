@@ -11,6 +11,7 @@ on:
       - sprint12-schema-adapter
       - sprint12-write-safety
       - sprint12-controlled-write-activation
+      - sprint12-convergence-policy
   pull_request:
     branches:
       - main
@@ -22,6 +23,7 @@ on:
       - sprint12-schema-adapter
       - sprint12-write-safety
       - sprint12-controlled-write-activation
+      - sprint12-convergence-policy
 
 jobs:
   verify-gotavita:
@@ -51,3 +53,4 @@ jobs:
           node tests/sprint12-write-safety-contract.test.js
           node tests/sprint12-controlled-write-activation-contract.test.js
           node tests/sprint12-write-roundtrip-contract.test.js
+          node tests/sprint12-convergence-policy-contract.test.js
