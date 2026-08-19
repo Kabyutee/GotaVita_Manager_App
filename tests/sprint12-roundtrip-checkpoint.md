@@ -1,1 +1,0 @@
-Sprint 12 Write Round-Trip Verification checkpoint. This marker exists only to record the checkpoint in Git history; no application behavior is changed by this file.
