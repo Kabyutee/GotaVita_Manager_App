@@ -11,7 +11,7 @@ assert.match(
 );
 assert.match(
   gateway,
-  /result\.profile\.company_id/,
+  /result(?:\?\.)?profile(?:\?\.)?company_id/,
   "Write gateway must require company assignment"
 );
 assert.match(
