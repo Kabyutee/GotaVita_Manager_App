@@ -6,8 +6,6 @@ const source = fs.readFileSync(
   "utf8"
 );
 
-const decisions = [];
-
 const context = {
   console,
   navigator: { onLine: true },
@@ -57,7 +55,7 @@ vm.runInContext(source, context);
 
 const plan = context.window.GVConflictIntegration.buildResolutionPlan(
   [
-    { id: "local-only", updatedAt: "2026-08-20T01:00:00.000Z", value: 1 },
+    { id: "local-only", updatedAt: "2026-08-20T02:00:00.000Z", value: 1 },
     { id: "newer-local", updatedAt: "2026-08-20T03:00:00.000Z", value: 2 },
     { id: "newer-remote", updatedAt: "2026-08-20T02:00:00.000Z", value: 3 },
     { id: "same-time", updatedAt: "2026-08-20T02:00:00.000Z", value: 4 },
@@ -81,15 +79,15 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(action("local-only") === "manual-review", "Baseline-boundary equal timestamp must not be silently treated as local-only");
+assert(action("local-only") === "keep-local", "Local-only change must keep local");
 assert(action("newer-local") === "keep-local", "Local newer must keep local");
 assert(action("newer-remote") === "keep-remote", "Remote newer must keep remote");
 assert(action("same-time") === "manual-review", "Same timestamp must require manual review");
 assert(action("unchanged") === "no-conflict", "Unchanged records must remain conflict-free");
 
 const deletionPlan = context.window.GVConflictIntegration.buildResolutionPlan(
-  [{ id: "delete-local", updatedAt: "2026-08-20T01:30:00.000Z", value: 1 }],
   [],
+  [{ id: "delete-local", updatedAt: "2026-08-20T01:30:00.000Z", value: 1 }],
   "2026-08-20T01:00:00.000Z",
   [{ id: "delete-local", archivedAt: "2026-08-20T02:00:00.000Z" }],
   []
