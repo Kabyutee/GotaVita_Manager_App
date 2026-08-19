@@ -14,6 +14,7 @@ on:
       - sprint12-convergence-policy
       - sprint12-production-deployment-bridge
       - sprint12-production-drift-gate
+      - sprint12-conflict-policy
   pull_request:
     branches:
       - main
@@ -28,6 +29,7 @@ on:
       - sprint12-convergence-policy
       - sprint12-production-deployment-bridge
       - sprint12-production-drift-gate
+      - sprint12-conflict-policy
 
 jobs:
   verify-gotavita:
@@ -61,3 +63,4 @@ jobs:
           node tests/sprint12-convergence-policy-contract.test.js
           node tests/sprint12-production-deployment-contract.test.js
           node tests/sprint12-production-drift-gate-contract.test.js
+          node tests/sprint12-conflict-policy-contract.test.js
