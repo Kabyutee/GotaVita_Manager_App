@@ -10,6 +10,7 @@ on:
       - sprint12-state-ownership
       - sprint12-schema-adapter
       - sprint12-write-safety
+      - sprint12-controlled-write-activation
   pull_request:
     branches:
       - main
@@ -20,6 +21,7 @@ on:
       - sprint12-state-ownership
       - sprint12-schema-adapter
       - sprint12-write-safety
+      - sprint12-controlled-write-activation
 
 jobs:
   verify-gotavita:
@@ -47,3 +49,4 @@ jobs:
           node tests/sprint12-state-ownership-contract.test.js
           node tests/sprint12-schema-adapter-contract.test.js
           node tests/sprint12-write-safety-contract.test.js
+          node tests/sprint12-controlled-write-activation-contract.test.js
