@@ -24,4 +24,6 @@ jobs:
           node --check js/core/ui-bridge.js
 
       - name: Run State Bridge and Supabase Hydration contract tests
-        run: node tests/phase1-state-bridge.test.js
+        run: |
+          node tests/phase1-state-bridge.test.js
+          node tests/phase3-hydration-runtime.test.js
