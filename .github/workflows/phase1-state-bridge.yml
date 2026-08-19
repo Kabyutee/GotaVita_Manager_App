@@ -1,0 +1,25 @@
+name: GotaVita Phase 1 State Bridge
+
+on:
+  push:
+    branches:
+      - phase1-state-bridge
+  pull_request:
+    branches:
+      - phase1-state-bridge
+
+jobs:
+  verify-state-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check script.js
+          node --check js/core/state.js
+          node --check js/core/data-gateway.js
+
+      - name: Run Phase 1 state bridge contract tests
+        run: node tests/phase1-state-bridge.test.js
