@@ -78,3 +78,4 @@ jobs:
           node tests/sprint12-conflict-detection-contract.test.js
           node tests/sprint12-conflict-resolution-policy-contract.test.js
           node tests/sprint12-controlled-conflict-integration-contract.test.js
+          node tests/sprint12-two-device-conflict-scenarios.test.js
