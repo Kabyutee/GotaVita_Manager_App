@@ -45,6 +45,7 @@ function makeDevice(shared) {
       removeItem: (key) => session.delete(key)
     },
     window: {
+      location: { protocol: "https:" },
       addEventListener() {},
       getStateSnapshot: () => state,
       replaceState: (next) => {
@@ -101,24 +102,20 @@ function assert(condition, message) {
   deviceA.state.products = JSON.parse(JSON.stringify(shared.remote.products));
   deviceB.state.products = JSON.parse(JSON.stringify(shared.remote.products));
 
-  // Initial device baselines.
   await deviceA.context.window.GVConflictIntegration.run(true);
   await deviceB.context.window.GVConflictIntegration.run(true);
 
-  // Device A changes while B remains stale: A must win and write remotely.
   deviceA.state.products = [{ id: "p1", updatedAt: "2026-08-20T02:00:00.000Z", value: "A" }];
   const aResult = await deviceA.context.window.GVConflictIntegration.run(true);
   assert(aResult.status === "reconciled", "Device A change should reconcile");
   assert(shared.remote.products[0].value === "A", "Device A newer change must reach remote");
   assert(deviceA.counters.upserts === 1, "Device A should perform exactly one cloud write");
 
-  // Device B is still on the baseline: remote-only change must be adopted locally.
   const bResult = await deviceB.context.window.GVConflictIntegration.run(true);
   assert(bResult.status === "reconciled", "Device B should reconcile remote-only change");
   assert(deviceB.state.products[0].value === "A", "Device B must adopt the remote winner");
   assert(deviceB.counters.upserts === 0, "Device B must not write for keep-remote");
 
-  // Same-time concurrent edits must remain manual-review with no cloud write or queue clearing.
   const deviceC = makeDevice(shared);
   const deviceD = makeDevice(shared);
   deviceC.state.products = JSON.parse(JSON.stringify(shared.remote.products));
@@ -136,6 +133,8 @@ function assert(condition, message) {
   assert(dResult.status === "manual-review", "Same-time concurrent edit must require manual review");
   assert(JSON.stringify(shared.remote.products) === remoteBeforeManual, "Manual review must not write to remote");
   assert(deviceD.counters.upserts === 0, "Manual review must perform zero cloud writes");
+  assert(deviceD.counters.replaces === 1, "Baseline initialization should replace state once before the conflict");
+  assert(deviceD.counters.persists === 1, "Baseline initialization should persist once before the conflict");
   assert(deviceD.queue.length === 1, "Manual review must preserve the sync queue");
   assert(deviceD.counters.queueClears === 0, "Manual review must not clear the sync queue");
   assert(deviceD.state.products[0].value === "D", "Manual review must preserve the local candidate");
