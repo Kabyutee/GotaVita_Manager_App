@@ -1,0 +1,119 @@
+name: ANTI BIG BANG — apply controlled queue adapter patch
+
+on:
+  push:
+    branches:
+      - sprint12-queue-drain-activation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Apply narrowly scoped queue adapter bridge
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("script.js")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''function cloudSyncAdapterReady() {
+  return false;
+}'''
+
+          new = '''function cloudSyncAdapterReady() {
+  // The modular GVData facade is now the authoritative Supabase adapter.
+  // Legacy script.js must delegate to it rather than hold the transaction queue.
+  return (
+    typeof window.GVData?.sync === "function" &&
+    typeof window.GVData?.health === "function"
+  );
+}'''
+
+          if old not in text:
+              raise SystemExit("Expected cloudSyncAdapterReady boundary not found")
+
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+      - name: Replace legacy transaction branch with authoritative GVData sync
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("script.js")
+          text = path.read_text(encoding="utf-8")
+
+          marker = '''    /*
+     * Do not write transaction records until the schema
+     * adapter exists. Authentication/RLS has already been
+     * validated separately and this keeps the application
+     * safely local-first rather than sending malformed rows.
+     */
+    if (
+      !cloudSyncAdapterReady()
+    ) {'''
+
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit("Expected legacy sync guard not found")
+
+          body_start = start + len(marker)
+          end_marker = '''    /*
+     * Reserved for the schema-adapter phase.
+     */'''
+          end = text.find(end_marker, body_start)
+          if end < 0:
+              raise SystemExit("Expected reserved adapter boundary not found")
+
+          replacement = '''
+      const result =
+        typeof window.GVData?.sync === "function"
+          ? await window.GVData.sync(true)
+          : false;
+
+      const currentQueue = getSyncQueue();
+
+      if (result?.ok === true || result === true) {
+        updateSyncStatus(
+          currentQueue.length
+            ? "Cloud connected · queue protected · " + currentQueue.length + " queued"
+            : "Cloud connected",
+          "online"
+        );
+        return true;
+      }
+
+      updateSyncStatus(
+        currentQueue.length
+          ? "Cloud connected · local queue protected · " + currentQueue.length + " queued"
+          : "Cloud connected",
+        "online"
+      );
+
+      return false;
+    }
+
+'''
+
+          text = text[:body_start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+      - name: Syntax check
+        run: node --check script.js
+
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add script.js .github/workflows/anti-big-bang-queue-patch.yml
+          git rm .github/workflows/anti-big-bang-queue-patch.yml
+          git commit -m "Sprint 12 — delegate legacy sync to authoritative GVData adapter"
+          git push
