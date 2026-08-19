@@ -99,17 +99,27 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /const wrappedGateway = Object\.freeze\(\{/,
+  /const facade = Object\.assign\(\{\}, original, \{/,
   "Hydration must preserve the frozen gateway contract with a wrapped facade"
 );
 assert.match(
   uiBridge,
-  /health: wrappedHealth/,
+  /health: async function wrappedHealth\(/,
   "Hydration must wrap the gateway health method"
 );
 assert.match(
   uiBridge,
-  /await hydrateFromSupabase\(\)/,
+  /sync: async function wrappedSync\(/,
+  "Cross-device sync must wrap the gateway sync method"
+);
+assert.match(
+  uiBridge,
+  /window\.GVData = Object\.freeze\(facade\)/,
+  "Wrapped gateway must remain frozen"
+);
+assert.match(
+  uiBridge,
+  /await hydrateFromSupabase\(original\)/,
   "Hydration must execute from the existing health boundary"
 );
 assert.match(
@@ -131,6 +141,21 @@ assert.match(
   uiBridge,
   /return \{ hydrated: false, reason: \"cloud-read-failed\" \}/,
   "Cloud read failures must preserve local state"
+);
+assert.match(
+  uiBridge,
+  /function syncCrossDevice\(original\)/,
+  "Cross-device synchronization boundary is missing"
+);
+assert.match(
+  uiBridge,
+  /window\.replaceState\(nextState\)/,
+  "Synchronization must converge through the authoritative state bridge"
+);
+assert.match(
+  uiBridge,
+  /window\.setSyncQueue\(\[\]\)/,
+  "Successful synchronization must clear the local sync queue"
 );
 
 console.log("Sprint 10 State Bridge + Hydration verification: PASS");
