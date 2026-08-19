@@ -3759,6 +3759,8 @@ function initSyncReliability() {
     "gv-auth-state-changed",
     syncReliabilityAuthListener
   );
+let postAuthUIInitialized = false;
+
 window.addEventListener(
   "gv-auth-state-changed",
   async (event) => {
@@ -3766,32 +3768,37 @@ window.addEventListener(
       event?.detail?.authenticated === true;
 
     if (authenticated) {
-  try {
-    installDuplicateOperationGuards();
-    installUIEventDelegation();
-    installProfessionalPolish();
-    installBulkSelectionUX();
-    installSearchOptimization();
-    initDarkMode();
+      if (!postAuthUIInitialized) {
+        try {
+          installDuplicateOperationGuards();
+          installUIEventDelegation();
+          installProfessionalPolish();
+          installBulkSelectionUX();
+          installSearchOptimization();
+          initDarkMode();
 
-    if (typeof renderAll === "function") {
-      renderAll();
+          if (typeof renderAll === "function") {
+            renderAll();
+          }
+
+          switchTab("dashboard");
+          postAuthUIInitialized = true;
+        } catch (error) {
+          handleAppError(
+            "post-auth-ui-init",
+            error,
+            {
+              userMessage:
+                "Manager authorization succeeded, but the application UI could not finish initializing."
+            }
+          );
+        }
+      }
+
+      return;
     }
 
-    switchTab("dashboard");
-  } catch (error) {
-    handleAppError(
-      "post-auth-ui-init",
-      error,
-      {
-        userMessage:
-          "Manager authorization succeeded, but the application UI could not finish initializing."
-      }
-    );
-  }
-
-  return;
-}
+    postAuthUIInitialized = false;
 
     stopSyncReliability();
 
