@@ -189,19 +189,31 @@ function closeLogin() {
   }
 
   async function logout() {
-    if (client) {
-      const { error } = await client.auth.signOut();
-      if (error) throw error;
+  // Lock the application FIRST.
+  // Never leave protected UI exposed while waiting for Supabase.
+  authorized = false;
+  currentSession = null;
+  managerProfile = null;
+
+  setLoggedInUI(null);
+  setApplicationLock(true);
+  setAuthStatus("Signed out. Login required.", "success");
+  emitAuthState();
+
+  // Destroy the Supabase session after the UI is already locked.
+  if (client) {
+    const { error } = await client.auth.signOut();
+
+    if (error) {
+      // Keep the application locked even if remote/session cleanup reports an error.
+      console.warn("GotaVita Supabase sign-out:", error.message);
+      setAuthStatus("Signed out locally. Session cleanup will retry.", "error");
+      return false;
     }
-    authorized = false;
-    currentSession = null;
-    managerProfile = null;
-    setLoggedInUI(null);
-    setApplicationLock(true);
-    setAuthStatus("Signed out. Login required.", "success");
-    emitAuthState();
-    return true;
   }
+
+  return true;
+}
 
   async function init() {
     if (initialized) return client;
@@ -242,15 +254,25 @@ function closeLogin() {
     else await validateSession(data?.session || null, true);
 
     client.auth.onAuthStateChange(async (_event, session) => {
-      if (_event === "SIGNED_OUT") {
-        authorized = false; managerProfile = null; currentSession = null;
-        setLoggedInUI(null); setApplicationLock(true); emitAuthState();
-        return;
-      }
-      if (session) await validateSession(session, true);
-      else await validateSession(null);
-    });
-    return client;
+  if (_event === "SIGNED_OUT") {
+    authorized = false;
+    managerProfile = null;
+    currentSession = null;
+
+    setLoggedInUI(null);
+    setApplicationLock(true);
+    setAuthStatus("Signed out. Login required.", "success");
+    emitAuthState();
+
+    return;
+  }
+
+  if (session) {
+    await validateSession(session, true);
+  } else {
+    await validateSession(null);
+  }
+});
   }
 
   window.GVAuth = Object.freeze({
