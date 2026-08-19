@@ -1,16 +1,18 @@
-name: GotaVita Sprint 10 State Migration
+name: GotaVita State and Release Verification
 
 on:
   push:
     branches:
       - phase1-state-bridge
+      - sprint11-regression-release
   pull_request:
     branches:
       - main
       - phase1-state-bridge
+      - sprint11-regression-release
 
 jobs:
-  verify-state-migration:
+  verify-gotavita:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,8 +25,9 @@ jobs:
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
 
-      - name: Run State Bridge, Hydration, and Cross-Device contracts
+      - name: Run automated contracts
         run: |
           node tests/phase1-state-bridge.test.js
           node tests/phase3-hydration-runtime.test.js
           node tests/phase4-cross-device-sync.test.js
+          node tests/sprint11-release-readiness.test.js
