@@ -1,0 +1,49 @@
+name: GotaVita Production Drift Gate
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
+
+jobs:
+  verify-production-drift:
+    runs-on: ubuntu-latest
+    name: Verify live Worker matches main
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Determine expected main SHA
+        id: expected
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify live production release SHA
+        env:
+          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS --retry 3 --retry-delay 2 "$PRODUCTION_URL/gv-health")"
+          echo "$response"
+          deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const x=JSON.parse(s);console.log(x.releaseSha||"")})')"
+          if [ "$deployed_sha" != "$EXPECTED_SHA" ]; then
+            echo "Production drift detected. Expected $EXPECTED_SHA but Worker reports $deployed_sha"
+            exit 1
+          fi
+          echo "Production matches main: $EXPECTED_SHA"
