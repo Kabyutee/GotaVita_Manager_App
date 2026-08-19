@@ -113,11 +113,11 @@ async function runScenario({ cloudRows, expectHydration, expectReason }) {
 (async () => {
   await runScenario({
     cloudRows: {
-      clients: [{ id: "uuid-client", legacy_id: "cloud-client", name: "Cloud Client" }],
+      clients: [{ id: "cloud-client", name: "Cloud Client" }],
       products: [],
       services: [{ id: "uuid-service", legacy_id: "cloud-service", name: "Cloud Service", category: "Refill", price: 55, active: true }],
       employees: [],
-      orders: [{ id: "uuid-order", legacy_id: "cloud-order", order_number: "1001", status: "Paid" }],
+      orders: [{ id: "cloud-order", orderNumber: "1001", status: "Paid" }],
       payments: [],
       expenses: [],
       payroll_records: [],
