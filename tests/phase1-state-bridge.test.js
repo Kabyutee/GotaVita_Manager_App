@@ -92,8 +92,6 @@ assert.match(
   "script.js must integrate with the GVData cloud boundary"
 );
 
-// Phase 3 hydration must hook the existing GVData.health() boundary rather than
-// introducing another application-state store or rewriting script.js.
 assert.match(
   uiBridge,
   /function installSupabaseHydrationBoundary\(\)/,
@@ -101,7 +99,7 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /new Proxy\(original,/, 
+  /new Proxy\(original,/,
   "Hydration must wrap the existing GVData boundary"
 );
 assert.match(
@@ -118,6 +116,11 @@ assert.match(
   uiBridge,
   /if \(!cloudHasData\)/,
   "Empty Supabase must not erase local/seed state"
+);
+assert.match(
+  uiBridge,
+  /if \(!stateName \|\| !rows\.length\) continue;/,
+  "Empty cloud resources must not erase local state"
 );
 assert.match(
   uiBridge,
