@@ -56,6 +56,7 @@ window.GVUI = Object.freeze({
   });
 
   let hydrationPromise = null;
+  let gatewayWrapped = false;
 
   function mergePayload(payload, fallback) {
     return payload && typeof payload === "object"
@@ -201,7 +202,7 @@ window.GVUI = Object.freeze({
   }
 
   function wrapGateway() {
-    if (!window.GVData || window.GVData.__gotavitaHydrationProxy) return;
+    if (!window.GVData || gatewayWrapped) return;
 
     const original = window.GVData;
     const originalHealth = original.health;
@@ -224,12 +225,7 @@ window.GVUI = Object.freeze({
       }
     });
 
-    Object.defineProperty(proxy, "__gotavitaHydrationProxy", {
-      value: true,
-      enumerable: false,
-      configurable: false
-    });
-
+    gatewayWrapped = true;
     window.GVData = proxy;
   }
 
