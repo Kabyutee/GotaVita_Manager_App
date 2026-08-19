@@ -1,0 +1,33 @@
+name: GotaVita State and Release Verification
+
+on:
+  push:
+    branches:
+      - phase1-state-bridge
+      - sprint11-regression-release
+  pull_request:
+    branches:
+      - main
+      - phase1-state-bridge
+      - sprint11-regression-release
+
+jobs:
+  verify-gotavita:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check script.js
+          node --check js/core/state.js
+          node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
+
+      - name: Run automated contracts
+        run: |
+          node tests/phase1-state-bridge.test.js
+          node tests/phase3-hydration-runtime.test.js
+          node tests/phase4-cross-device-sync.test.js
+          node tests/sprint11-release-readiness.test.js
