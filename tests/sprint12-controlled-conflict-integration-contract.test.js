@@ -53,6 +53,14 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context);
 
+const baselineAt = "2026-08-20T01:00:00.000Z";
+const baselineRows = [
+  { id: "newer-local", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
+  { id: "newer-remote", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
+  { id: "same-time", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
+  { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
+];
+
 const plan = context.window.GVConflictIntegration.buildResolutionPlan(
   [
     { id: "local-only", updatedAt: "2026-08-20T02:00:00.000Z", value: 1 },
@@ -62,13 +70,16 @@ const plan = context.window.GVConflictIntegration.buildResolutionPlan(
     { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
   ],
   [
-    { id: "local-only", updatedAt: "2026-08-20T00:00:00.000Z", value: 0 },
+    { id: "remote-only", updatedAt: "2026-08-20T02:00:00.000Z", value: 6 },
     { id: "newer-local", updatedAt: "2026-08-20T02:00:00.000Z", value: 0 },
     { id: "newer-remote", updatedAt: "2026-08-20T03:00:00.000Z", value: 0 },
     { id: "same-time", updatedAt: "2026-08-20T02:00:00.000Z", value: 0 },
     { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
   ],
-  "2026-08-20T01:00:00.000Z"
+  baselineAt,
+  [],
+  [],
+  baselineRows
 );
 
 function action(id) {
@@ -80,6 +91,7 @@ function assert(condition, message) {
 }
 
 assert(action("local-only") === "keep-local", "Local-only change must keep local");
+assert(action("remote-only") === "keep-remote", "Remote-only change must keep remote");
 assert(action("newer-local") === "keep-local", "Local newer must keep local");
 assert(action("newer-remote") === "keep-remote", "Remote newer must keep remote");
 assert(action("same-time") === "manual-review", "Same timestamp must require manual review");
@@ -88,9 +100,10 @@ assert(action("unchanged") === "no-conflict", "Unchanged records must remain con
 const deletionPlan = context.window.GVConflictIntegration.buildResolutionPlan(
   [],
   [{ id: "delete-local", updatedAt: "2026-08-20T01:30:00.000Z", value: 1 }],
-  "2026-08-20T01:00:00.000Z",
+  baselineAt,
   [{ id: "delete-local", archivedAt: "2026-08-20T02:00:00.000Z" }],
-  []
+  [],
+  [{ id: "delete-local", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 }]
 );
 assert(deletionPlan[0].action === "keep-local", "Newer local deletion must keep local");
 
@@ -99,6 +112,6 @@ const summary = context.window.GVConflictIntegration.summarize(plan);
 const after = JSON.stringify(plan);
 assert(before === after, "Planning must not mutate decisions or source rows");
 assert(summary.manualReview >= 1, "Ambiguous cases must be preserved for manual review");
-assert(summary.keepLocal >= 1 && summary.keepRemote >= 1, "Plan must contain both unambiguous winner directions");
+assert(summary.keepLocal >= 2 && summary.keepRemote >= 2, "Plan must contain both unambiguous winner directions");
 
 console.log("Sprint 12 controlled conflict integration contract: PASS");
