@@ -50,3 +50,4 @@ jobs:
           node tests/sprint12-schema-adapter-contract.test.js
           node tests/sprint12-write-safety-contract.test.js
           node tests/sprint12-controlled-write-activation-contract.test.js
+          node tests/sprint12-write-roundtrip-contract.test.js
