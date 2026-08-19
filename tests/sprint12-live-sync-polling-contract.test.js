@@ -1,0 +1,64 @@
+const fs = require("node:fs");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+
+const source = fs.readFileSync("js/core/sync-manager.js", "utf8");
+
+let syncCalls = 0;
+let scheduled = null;
+let queue = [];
+let localStorageData = {};
+
+const context = {
+  console,
+  Date,
+  JSON,
+  Math,
+  Promise,
+  navigator: { onLine: true },
+  localStorage: {
+    getItem: (key) => localStorageData[key] ?? null,
+    setItem: (key, value) => { localStorageData[key] = String(value); },
+    removeItem: (key) => { delete localStorageData[key]; }
+  },
+  setInterval: (handler, ms) => {
+    scheduled = { handler, ms };
+    return 1;
+  },
+  window: {
+    GVAuth: { isAuthorized: () => true },
+    GVData: {
+      sync: async () => {
+        syncCalls++;
+        return { ok: true, status: "synced" };
+      }
+    },
+    getSyncQueue: () => [...queue],
+    setSyncQueue: (next) => { queue = [...next]; },
+    addEventListener: () => {}
+  }
+};
+
+context.window.window = context.window;
+vm.runInNewContext(source, context, { filename: "sync-manager.js" });
+
+(async () => {
+  // Authorized startup performs one immediate pull even with an empty queue.
+  await Promise.resolve();
+  assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
+
+  const result = await context.window.GVSync.flush();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "synced");
+  assert.equal(syncCalls, 2, "Empty queue must still perform a remote pull/sync");
+  assert.equal(queue.length, 0, "Polling layer must not mutate an empty queue");
+
+  assert.ok(scheduled, "Authorized startup must install polling");
+  assert.equal(scheduled.ms, 5000, "Polling interval must remain bounded at 5 seconds");
+
+  await scheduled.handler();
+  assert.equal(syncCalls, 3, "Polling must invoke the shared sync gateway");
+
+  console.log("Sprint 12 live sync polling contract: PASS");
+})();
