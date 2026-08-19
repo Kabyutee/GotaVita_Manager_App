@@ -148,6 +148,9 @@ input:focus, select:focus { border-color: var(--primary); outline: none; box-sha
 }
 
 /* Buttons */
+[hidden] {
+  display: none !important;
+}
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border: none; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer; transition: all var(--transition); text-align: center; }
 .btn.block { width: 100%; }
 .btn.tiny { padding: 6px 10px; font-size: 0.8rem; }
@@ -1170,3 +1173,23 @@ body[data-theme="dark"] option { color-scheme: dark; }
 
 /* Avoid transition flashes when the theme is applied during startup. */
 html.theme-initializing *, html.theme-initializing *::before, html.theme-initializing *::after { transition: none !important; }
+
+
+/* Authentication Lockdown Sprint — fail-closed UI boundary.
+ * CSS is applied before JavaScript initializes, so the protected application is
+ * never presented as an interactive page while authentication is unresolved.
+ */
+html[data-gv-auth-state="locked"] body > *:not(#gvAuthModal) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+html[data-gv-auth-state="locked"] { overflow: hidden !important; }
+html[data-gv-auth-state="locked"] #gvAuthModal {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: 2147483647 !important;
+}
+html[data-gv-auth-state="locked"] #gvAuthModal .modal-content { pointer-events: auto !important; }
+html[data-gv-auth-state="unlocked"] #gvAuthModal { display: none !important; }

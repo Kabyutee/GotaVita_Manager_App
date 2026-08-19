@@ -61,27 +61,11 @@ export default {
     // Legacy Node/JSON server API is intentionally retired in the Cloudflare
     // + Supabase production architecture. Return an explicit 410 so browser
     // diagnostics are clear instead of surfacing a platform 500.
-
-        if (url.pathname === "/api/data" || url.pathname.startsWith("/api/")) {
+    if (url.pathname === "/api/data" || url.pathname.startsWith("/api/")) {
       return jsonResponse({
         error: "Legacy server API is not part of the production Worker.",
         code: "LEGACY_API_RETIRED"
       }, 410);
-    }
-
-    if (!env.ASSETS) {
-      return new Response(
-        JSON.stringify({
-          error: "Static Assets binding is unavailable",
-          hint: "Check wrangler.jsonc assets.binding configuration."
-        }),
-        {
-          status: 500,
-          headers: {
-            "content-type": "application/json; charset=UTF-8"
-          }
-        }
-      );
     }
 
     return env.ASSETS.fetch(request);

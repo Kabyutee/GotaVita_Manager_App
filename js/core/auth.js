@@ -1,61 +1,27 @@
-/* GotaVita Manager — Phase 5 Sprint 8 Manager Authentication
- * Supabase cloud-auth layer.
- * Remains dormant until a valid Supabase URL + publishable key are configured.
+/* GotaVita Manager — Authentication Lockdown Sprint
+ * Hard boundary: Supabase session -> manager role -> company verification -> unlock.
  */
 (function () {
   "use strict";
 
   let client = null;
   let currentSession = null;
-
-  let lastAuthState = null;
-
-  function dispatchAuthState(authenticated) {
-    const nextState = authenticated === true;
-
-    if (lastAuthState === nextState) {
-      return;
-    }
-
-    lastAuthState = nextState;
-
-    window.dispatchEvent(
-      new CustomEvent("gv-auth-state-changed", {
-        detail: {
-          authenticated: nextState
-        }
-      })
-    );
-  }
   let initialized = false;
   let managerProfile = null;
-  let initializationPromise = null;
+  let authorized = false;
 
-  function config() {
-    return window.GV_SUPABASE_CONFIG || {};
-  }
-
+  function config() { return window.GV_SUPABASE_CONFIG || {}; }
   function isConfigured() {
     const cfg = config();
-
-    return (
-      typeof window.supabase !== "undefined" &&
-      typeof window.supabase.createClient === "function" &&
-      typeof cfg.url === "string" &&
-      cfg.url.trim() !== "" &&
-      typeof cfg.publishableKey === "string" &&
-      cfg.publishableKey.trim() !== ""
-    );
+    return typeof window.supabase !== "undefined" && !!cfg.url && !!cfg.publishableKey;
   }
 
   function setAuthStatus(message, type) {
     const el = document.getElementById("gvAuthStatus");
     if (!el) return;
-
     el.textContent = message || "";
     el.dataset.status = type || "neutral";
   }
-
   function setLoggedInUI(session) {
     currentSession = session || null;
 
@@ -73,441 +39,224 @@
     }
   }
 
-  function openLogin() {
-    const modal = document.getElementById("gvAuthModal");
-    if (!modal) return;
-
-    modal.classList.add("open");
-    modal.setAttribute("aria-hidden", "false");
-
-    const input = document.getElementById("gvAuthEmail");
-    if (input) input.focus();
+  function emitAuthState() {
+    window.dispatchEvent(
+      new CustomEvent("gv-auth-state-changed", {
+        detail: {
+          authenticated: authorized === true
+        }
+      })
+    );
   }
 
-  function closeLogin() {
-    const modal = document.getElementById("gvAuthModal");
-    if (!modal) return;
 
-    modal.classList.remove("open");
-    modal.setAttribute("aria-hidden", "true");
+  function setApplicationLock(locked, reason = "") {
+  const root = document.documentElement;
+  const modal = document.getElementById("gvAuthModal");
+  const closeButton = document.getElementById("gvAuthCloseBtn");
 
-    setAuthStatus("", "neutral");
+  root.dataset.gvAuthState = locked ? "locked" : "unlocked";
+  root.setAttribute("aria-busy", locked ? "true" : "false");
+
+  if (modal) {
+    if (locked) {
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+
+      // Move focus into the login form after the modal becomes visible.
+      requestAnimationFrame(() => {
+        const emailInput = document.getElementById("gvAuthEmail");
+        if (emailInput && !modal.hidden) {
+          emailInput.focus();
+        }
+      });
+    } else {
+      // Remove focus from anything inside the modal BEFORE hiding it.
+      if (modal.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+    }
   }
 
+  if (closeButton) closeButton.hidden = locked;
+
+  if (locked && reason) {
+    setAuthStatus(reason, "error");
+  }
+}
+
+function openLogin() {
+  setApplicationLock(true);
+}
+
+function closeLogin() {
+  if (!authorized) return;
+
+  const modal = document.getElementById("gvAuthModal");
+  if (!modal) return;
+
+  // Critical: release focus before aria-hidden is applied.
+  if (modal.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+
+  setAuthStatus("Manager authenticated ✓", "success");
+}
   async function getManagerProfile(session) {
     if (!client || !session?.user?.id) return null;
-
     const { data, error } = await client
       .from("profiles")
       .select("id, company_id, role")
       .eq("id", session.user.id)
       .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data) {
-      throw new Error(
-        "This manager account is not assigned to a GotaVita company profile."
-      );
-    }
-
+    if (error) throw error;
+    if (!data) throw new Error("This account has no GotaVita manager profile.");
     if (String(data.role || "").toLowerCase() !== "manager") {
-      throw new Error(
-        "This account is not authorized as a GotaVita manager."
-      );
+      throw new Error("This account is not authorized as a GotaVita manager.");
     }
+    if (!data.company_id) throw new Error("This manager is not assigned to a company.");
 
-    if (!data.company_id) {
-      throw new Error(
-        "This manager account is not assigned to a GotaVita company."
-      );
-    }
+    // Company verification is deliberately performed after manager verification.
+    // RLS must return only the company identified by the authenticated profile.
+    const companyResult = await client
+      .from("companies")
+      .select("id, name")
+      .eq("id", data.company_id)
+      .maybeSingle();
+    if (companyResult.error) throw companyResult.error;
+    if (!companyResult.data) throw new Error("The manager's company could not be verified.");
 
-    return data;
+    return { ...data, company: companyResult.data };
   }
 
   async function validateSession(session, signOutInvalid = false) {
     if (!session) {
+      authorized = false;
       managerProfile = null;
       setLoggedInUI(null);
+      setApplicationLock(true, "Login required.");
+      emitAuthState();
       return false;
     }
-
     try {
-      managerProfile = await getManagerProfile(session);
-
+      const profile = await getManagerProfile(session);
+      managerProfile = profile;
+      currentSession = session;
+      authorized = true;
       setLoggedInUI(session);
-      setAuthStatus("Manager authenticated ✓", "success");
-
+      setAuthStatus("Manager + company verified ✓", "success");
+      setApplicationLock(false);
+      emitAuthState();
       return true;
     } catch (error) {
+      authorized = false;
       managerProfile = null;
+      currentSession = null;
       setLoggedInUI(null);
-
-      setAuthStatus(
-        error?.message || "Manager authorization failed.",
-        "error"
-      );
-
-      if (signOutInvalid && client) {
-        try {
-          await client.auth.signOut();
-        } catch (_) {
-          // Ignore cleanup errors after authorization failure.
-        }
-      }
-
+      setApplicationLock(true, error?.message || "Authorization failed.");
+      if (signOutInvalid && client) { try { await client.auth.signOut(); } catch (_) {} }
+      emitAuthState();
       return false;
     }
   }
 
   async function requireManagerSession() {
     if (!isConfigured()) {
-      return {
-        configured: false,
-        authenticated: false,
-        profile: null,
-        session: null
-      };
+      setApplicationLock(true, "Supabase authentication is required before GotaVita can unlock.");
+      return { configured: false, authenticated: false, profile: null, session: null };
     }
-
-    if (!client) {
-      await init();
-    }
-
-    if (!client) {
-      return {
-        configured: true,
-        authenticated: false,
-        profile: null,
-        session: null
-      };
-    }
-
+    if (!client) await init();
     const { data, error } = await client.auth.getSession();
-
-    if (error) {
-      return {
-        configured: true,
-        authenticated: false,
-        profile: null,
-        session: null,
-        error
-      };
-    }
-
-    const session = data?.session || null;
-    const ok = await validateSession(session, true);
-
-    return {
-      configured: true,
-      authenticated: ok,
-      profile: managerProfile,
-      session: ok ? session : null
-    };
+    if (error) return { configured: true, authenticated: false, profile: null, session: null, error };
+    const ok = await validateSession(data?.session || null, true);
+    return { configured: true, authenticated: ok, profile: managerProfile, session: ok ? data.session : null };
   }
 
   async function login(email, password) {
-    if (!client) {
-      throw new Error(
-        "Supabase authentication is not configured."
-      );
-    }
-
-    const result = await client.auth.signInWithPassword({
-      email,
-      password
-    });
-
-    if (result.error) {
-      throw result.error;
-    }
-
-    const session = result.data?.session || null;
-
-    if (!session) {
-      throw new Error(
-        "Authentication succeeded but no Supabase session was returned."
-      );
-    }
-
-    const authorized = await validateSession(session, true);
-
-    if (!authorized) {
-      throw new Error(
-        "Manager authentication succeeded, but this account is not authorized for GotaVita."
-      );
-    }
-
-    dispatchAuthState(true);
-
-    setTimeout(closeLogin, 500);
-
-    return session;
+    if (!client) throw new Error("Supabase authentication is not configured.");
+    const result = await client.auth.signInWithPassword({ email, password });
+    if (result.error) throw result.error;
+    const valid = await validateSession(result.data.session, true);
+    if (!valid) throw new Error("Login succeeded, but manager/company authorization failed.");
+    setTimeout(closeLogin, 300);
+    return result.data.session;
   }
 
   async function logout() {
-    if (!client) return false;
-
-    const { error } = await client.auth.signOut();
-
-    if (error) {
-      throw error;
+    if (client) {
+      const { error } = await client.auth.signOut();
+      if (error) throw error;
     }
-
-    managerProfile = null;
+    authorized = false;
     currentSession = null;
-
+    managerProfile = null;
     setLoggedInUI(null);
-
-    dispatchAuthState(false);
-
-    setAuthStatus("Signed out.", "success");
-
-    setTimeout(() => {
-      openLogin();
-    }, 100);
-
+    setApplicationLock(true);
+    setAuthStatus("Signed out. Login required.", "success");
+    emitAuthState();
     return true;
   }
 
   async function init() {
-    if (initializationPromise) {
-      return initializationPromise;
+    if (initialized) return client;
+    initialized = true;
+    setApplicationLock(true);
+
+    const loginButton = document.getElementById("gvCloudLoginBtn");
+    const logoutButton = document.getElementById("gvCloudLogoutBtn");
+    const form = document.getElementById("gvAuthForm");
+    const closeButton = document.getElementById("gvAuthCloseBtn");
+
+    if (loginButton) loginButton.addEventListener("click", openLogin);
+    if (logoutButton) logoutButton.addEventListener("click", () => logout().catch((e) => setAuthStatus(e.message, "error")));
+    if (closeButton) closeButton.addEventListener("click", closeLogin);
+    if (form) {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const email = String(document.getElementById("gvAuthEmail")?.value || "").trim();
+        const password = String(document.getElementById("gvAuthPassword")?.value || "");
+        if (!email || !password) { setAuthStatus("Enter the manager email and password.", "error"); return; }
+        setAuthStatus("Authenticating manager…", "syncing");
+        try { await login(email, password); }
+        catch (error) { setAuthStatus(error?.message || "Authentication failed.", "error"); setApplicationLock(true); }
+      });
     }
 
-    initializationPromise = (async () => {
-      if (initialized) {
-        return client;
-      }
-
-      initialized = true;
-
-      const loginButton =
-        document.getElementById("gvCloudLoginBtn");
-
-      const logoutButton =
-        document.getElementById("gvCloudLogoutBtn");
-
-      const form =
-        document.getElementById("gvAuthForm");
-
-      const closeButton =
-        document.getElementById("gvAuthCloseBtn");
-
-      if (loginButton) {
-        loginButton.addEventListener(
-          "click",
-          openLogin
-        );
-      }
-
-      if (logoutButton) {
-        logoutButton.addEventListener(
-          "click",
-          () => {
-            logout().catch((error) => {
-              setAuthStatus(
-                error?.message || "Sign out failed.",
-                "error"
-              );
-            });
-          }
-        );
-      }
-
-      if (closeButton) {
-        closeButton.addEventListener(
-          "click",
-          closeLogin
-        );
-      }
-
-      if (form) {
-        form.addEventListener(
-          "submit",
-          async (event) => {
-            event.preventDefault();
-
-            const email = String(
-              document.getElementById(
-                "gvAuthEmail"
-              )?.value || ""
-            ).trim();
-
-            const password = String(
-              document.getElementById(
-                "gvAuthPassword"
-              )?.value || ""
-            );
-
-            if (!email || !password) {
-              setAuthStatus(
-                "Enter the manager email and password.",
-                "error"
-              );
-              return;
-            }
-
-            setAuthStatus(
-              "Authenticating…",
-              "syncing"
-            );
-
-            try {
-              await login(
-                email,
-                password
-              );
-            } catch (error) {
-              setAuthStatus(
-                error?.message ||
-                  "Authentication failed.",
-                "error"
-              );
-            }
-          }
-        );
-      }
-
-      if (!isConfigured()) {
-        setAuthStatus(
-          "Cloud authentication is not configured yet. Local/offline mode remains active.",
-          "neutral"
-        );
-
-        if (loginButton) {
-          loginButton.title =
-            "Configure Supabase first to enable manager login.";
-        }
-
-        return null;
-      }
-
-      const cfg = config();
-
-      try {
-        client =
-          window.supabase.createClient(
-            String(cfg.url).trim(),
-            String(
-              cfg.publishableKey
-            ).trim(),
-            {
-              auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-              }
-            }
-          );
-      } catch (error) {
-        client = null;
-
-        setAuthStatus(
-          error?.message ||
-            "Unable to initialize Supabase.",
-          "error"
-        );
-
-        console.error(
-          "GotaVita Supabase client initialization failed:",
-          error
-        );
-
-        return null;
-      }
-
-      /*
-       * Register exactly one auth-state listener.
-       * This listener is established before the initial getSession()
-       * result is processed so subsequent auth-state restoration is
-       * captured consistently.
-       */
-      client.auth.onAuthStateChange(
-        async (_event, session) => {
-          if (_event === "SIGNED_OUT") {
-            managerProfile = null;
-            currentSession = null;
-
-            setLoggedInUI(null);
-            setAuthStatus(
-              "Signed out.",
-              "success"
-            );
-
-            dispatchAuthState(false);
-
-            return;
-          }
-
-          if (session) {
-            const authenticated =
-              await validateSession(
-                session,
-                true
-              );
-
-            dispatchAuthState(authenticated);
-          } else {
-            managerProfile = null;
-            currentSession = null;
-
-            setLoggedInUI(null);
-          }
-        }
-      );
-
-      const {
-        data: sessionData,
-        error: sessionError
-      } = await client.auth.getSession();
-
-      console.log(
-        "GotaVita Supabase auth error:",
-        sessionError ?? null
-      );
-
-      if (sessionError) {
-        setAuthStatus(
-          sessionError.message ||
-            "Unable to read Supabase session.",
-          "error"
-        );
-      } else if (sessionData?.session) {
-        const authenticated =
-          await validateSession(
-            sessionData.session,
-            true
-          );
-
-        dispatchAuthState(authenticated);
-      } else {
-        setLoggedInUI(null);
-
-        setAuthStatus(
-          "Ready for manager login.",
-          "neutral"
-        );
-      }
-
-      return client;
-    })();
-
-    try {
-      return await initializationPromise;
-    } catch (error) {
-      initializationPromise = null;
-      initialized = false;
-      throw error;
+    if (!isConfigured()) {
+      setApplicationLock(true, "Supabase authentication is not configured. The application remains locked.");
+      return null;
     }
+
+    client = window.supabase.createClient(config().url, config().publishableKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+
+    const { data, error } = await client.auth.getSession();
+    if (error) await validateSession(null);
+    else await validateSession(data?.session || null, true);
+
+    client.auth.onAuthStateChange(async (_event, session) => {
+      if (_event === "SIGNED_OUT") {
+        authorized = false; managerProfile = null; currentSession = null;
+        setLoggedInUI(null); setApplicationLock(true); emitAuthState();
+        return;
+      }
+      if (session) await validateSession(session, true);
+      else await validateSession(null);
+    });
+    return client;
   }
 
   window.GVAuth = Object.freeze({
     init,
     isConfigured,
+    isAuthorized: () => authorized,
     getClient: () => client,
     getSession: () => currentSession,
     getProfile: () => managerProfile,
@@ -515,6 +264,8 @@
     openLogin,
     closeLogin,
     login,
-    logout
+    logout,
+    lock: () => setApplicationLock(true),
+    unlock: () => authorized && setApplicationLock(false)
   });
 })();

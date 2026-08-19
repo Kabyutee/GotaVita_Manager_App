@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>document.documentElement.dataset.gvAuthState="locked";document.documentElement.setAttribute("aria-busy","true");</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GotaVita Manager — Navigation & Interaction Polish · Step 19</title>
-  <meta name="description" content="Professional local-first bookkeeping and operations manager for GotaVita purified drinking water station.">
+  <title>GotaVita Manager — Secure Manager Access</title>
+  <meta name="description" content="Secure manager-only GotaVita business management application.">
   <meta name="theme-color" content="#0f766e">
   <meta name="color-scheme" content="light dark">
   
@@ -12,7 +13,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="style.css">
   
   <!-- Scripts deferred to optimize page load times -->
@@ -797,10 +797,10 @@
         <span class="confirm-badge">Manager access</span>
         <h3 style="margin:.45rem 0 0">🔐 Secure Manager Login</h3>
       </div>
-      <button class="close-btn" type="button" id="gvAuthCloseBtn" aria-label="Close manager login">✕</button>
+      <button class="close-btn" type="button" id="gvAuthCloseBtn" aria-label="Close manager login" hidden>✕</button>
     </div>
     <div class="modal-body">
-      <p class="emp-meta" style="margin-top:0">This connects GotaVita Manager to the configured Supabase Authentication service. Local/offline mode remains available until cloud configuration is complete.</p>
+      <p class="emp-meta" style="margin-top:0">GotaVita is locked until Supabase login, manager authorization, and company verification all succeed. No protected business data is loaded before authorization.</p>
       <form id="gvAuthForm" autocomplete="on">
         <label class="field wide"><span>Manager Email</span><input id="gvAuthEmail" type="email" autocomplete="username" required></label>
         <label class="field wide"><span>Password</span><input id="gvAuthPassword" type="password" autocomplete="current-password" required></label>
