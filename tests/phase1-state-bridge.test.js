@@ -5,6 +5,7 @@ const script = fs.readFileSync("script.js", "utf8");
 const stateFactory = fs.readFileSync("js/core/state.js", "utf8");
 const config = fs.readFileSync("js/core/config.js", "utf8");
 const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
+const uiBridge = fs.readFileSync("js/core/ui-bridge.js", "utf8");
 
 function count(pattern, source) {
   return (source.match(pattern) || []).length;
@@ -28,7 +29,6 @@ const requiredCollections = [
   "auditLog"
 ];
 
-// Phase 1 contract: one authoritative whole-state replacement boundary.
 assert.equal(
   count(/function replaceState\s*\(/g, script),
   1,
@@ -51,8 +51,6 @@ assert.match(
   "getStateSnapshot() must return a cloned authoritative state"
 );
 
-// The only whole-state assignments allowed in the main file are the bridge's
-// replacement assignment and its invalid-state recovery assignment.
 const assignmentLines = script
   .split(/\r?\n/)
   .map((line, index) => ({ line: index + 1, text: line }))
@@ -63,19 +61,13 @@ assert.ok(
   `Unexpected number of top-level state assignments: ${assignmentLines.length}`
 );
 
-// Sprint 10 state factory contract.
 for (const name of requiredCollections) {
   assert.match(
     stateFactory,
     new RegExp(`${name}\\s*:\\s*\\[\\]`),
     `Missing state collection in state factory: ${name}`
   );
-}
 
-// The sync bridge must observe every authoritative state collection. This is
-// the Phase 1 hardening fix that prevents newer resources from being skipped
-// when persistState() builds its changed-resource queue.
-for (const name of requiredCollections) {
   assert.match(
     config,
     new RegExp(`\\b${name}\\b`),
@@ -89,7 +81,6 @@ assert.match(
   "SYNC_RESOURCES must include the complete Sprint 10 state surface"
 );
 
-// The gateway remains the cloud boundary rather than a second application-state authority.
 assert.match(
   gateway,
   /window\.GVData\s*=/,
@@ -101,6 +92,39 @@ assert.match(
   "script.js must integrate with the GVData cloud boundary"
 );
 
-console.log("Phase 1 State Bridge verification: PASS");
+// Phase 3 hydration must hook the existing GVData.health() boundary rather than
+// introducing another application-state store or rewriting script.js.
+assert.match(
+  uiBridge,
+  /function installSupabaseHydrationBoundary\(\)/,
+  "Supabase hydration boundary is missing"
+);
+assert.match(
+  uiBridge,
+  /new Proxy\(original,/, 
+  "Hydration must wrap the existing GVData boundary"
+);
+assert.match(
+  uiBridge,
+  /await hydrateFromSupabase\(\)/,
+  "Hydration must execute from the existing health boundary"
+);
+assert.match(
+  uiBridge,
+  /typeof window\.replaceState === \"function\"/,
+  "Hydration must use the authoritative replaceState bridge"
+);
+assert.match(
+  uiBridge,
+  /if \(!cloudHasData\)/,
+  "Empty Supabase must not erase local/seed state"
+);
+assert.match(
+  uiBridge,
+  /return \{ hydrated: false, reason: \"cloud-read-failed\" \}/,
+  "Cloud read failures must preserve local state"
+);
+
+console.log("Sprint 10 State Bridge + Hydration verification: PASS");
 console.log(`Authoritative collections verified: ${requiredCollections.length}`);
 console.log(`Top-level state assignment sites: ${assignmentLines.map((x) => x.line).join(", ")}`);
