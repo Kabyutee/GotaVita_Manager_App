@@ -159,7 +159,7 @@ window.GVUI = Object.freeze({
 
       for (const [resource, rows] of Object.entries(cloudRows)) {
         const stateName = resourceStateNames[resource];
-        if (!stateName) continue;
+        if (!stateName || !rows.length) continue;
 
         nextState[stateName] = resource === "services"
           ? rows.map(mapService)
