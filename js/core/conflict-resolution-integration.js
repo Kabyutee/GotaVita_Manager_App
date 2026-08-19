@@ -222,11 +222,6 @@
     return null;
   }
 
-  function replaceState(nextState) {
-    if (typeof window.replaceState !== "function") throw new Error("State replacement boundary unavailable.");
-    window.replaceState(nextState);
-  }
-
   function supportedResources() {
     return Object.keys(RESOURCE_MAP).filter((resource) => {
       const cloudName = resourceCloudName(resource);
@@ -346,7 +341,6 @@
         }
       }
 
-      replaceState(nextState);
       if (typeof window.persistState === "function") window.persistState();
       setBaseline(nextBaseline);
 
