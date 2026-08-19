@@ -34,8 +34,13 @@ assert.match(
 );
 assert.match(
   workflow,
-  /gotavita-manager-app\.carleugenetolentino22\.workers\.dev\/gv-health/,
-  "Deployment verification must target the production Worker"
+  /PRODUCTION_URL:\s*https:\/\/gotavita-manager-app\.carleugenetolentino22\.workers\.dev/,
+  "Deployment must target the production Worker"
+);
+assert.match(
+  workflow,
+  /\$PRODUCTION_URL\/gv-health/,
+  "Deployment verification must query the production health endpoint"
 );
 assert.match(
   worker,
