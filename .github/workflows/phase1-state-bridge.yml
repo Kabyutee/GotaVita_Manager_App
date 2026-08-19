@@ -12,6 +12,7 @@ on:
       - sprint12-write-safety
       - sprint12-controlled-write-activation
       - sprint12-convergence-policy
+      - sprint12-production-deployment-bridge
   pull_request:
     branches:
       - main
@@ -24,6 +25,7 @@ on:
       - sprint12-write-safety
       - sprint12-controlled-write-activation
       - sprint12-convergence-policy
+      - sprint12-production-deployment-bridge
 
 jobs:
   verify-gotavita:
@@ -38,6 +40,7 @@ jobs:
           node --check js/core/state.js
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
+          node --check worker.js
 
       - name: Run automated contracts
         run: |
@@ -54,3 +57,4 @@ jobs:
           node tests/sprint12-controlled-write-activation-contract.test.js
           node tests/sprint12-write-roundtrip-contract.test.js
           node tests/sprint12-convergence-policy-contract.test.js
+          node tests/sprint12-production-deployment-contract.test.js

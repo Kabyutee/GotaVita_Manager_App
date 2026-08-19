@@ -1,0 +1,77 @@
+name: GotaVita Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Verify main and deploy to Cloudflare
+
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check script.js
+          node --check js/core/state.js
+          node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
+
+      - name: Run full regression contracts
+        run: |
+          node tests/phase1-state-bridge.test.js
+          node tests/phase3-hydration-runtime.test.js
+          node tests/phase4-cross-device-sync.test.js
+          node tests/sprint11-release-readiness.test.js
+          node tests/sprint12-state-hydration-contract.test.js
+          node tests/sprint12-hydration-hardening.test.js
+          node tests/sprint12-hydration-ordering-contract.test.js
+          node tests/sprint12-state-ownership-contract.test.js
+          node tests/sprint12-schema-adapter-contract.test.js
+          node tests/sprint12-write-safety-contract.test.js
+          node tests/sprint12-controlled-write-activation-contract.test.js
+          node tests/sprint12-write-roundtrip-contract.test.js
+
+      - name: Deploy exact main commit to Cloudflare
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          vars: |
+            GV_RELEASE_SHA
+          command: deploy
+        env:
+          GV_RELEASE_SHA: ${{ github.sha }}
+
+      - name: Verify production release SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            response="$(curl -fsS "$PRODUCTION_URL/gv-health" || true)"
+            echo "$response"
+            if [ -n "$response" ]; then
+              deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
+              if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then
+                echo "Production deployment verified: $deployed_sha"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Production Worker did not report expected release SHA $EXPECTED_SHA"
+          exit 1

@@ -34,6 +34,7 @@ function healthResponse(env) {
   return jsonResponse({
     service: "gotavita-manager",
     status: "ok",
+    releaseSha: String(env.GV_RELEASE_SHA || "unknown").trim() || "unknown",
     supabaseConfigured: Boolean(String(env.SUPABASE_URL || "").trim()),
     publishableKeyConfigured: Boolean(String(env.SUPABASE_PUBLISHABLE_KEY || "").trim()),
     serverTime: new Date().toISOString()
