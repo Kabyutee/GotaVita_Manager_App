@@ -104,5 +104,9 @@
     if (event?.detail?.authenticated === true) startPolling();
   });
 
-  if (window.GVAuth?.isAuthorized?.()) startPolling();
+  // Start the timer unconditionally. poll() itself remains authorization-gated,
+  // so signed-out sessions do not access cloud data. This removes a lifecycle
+  // race where authentication can complete without emitting the expected
+  // event after the sync manager has initialized.
+  startPolling();
 })();
