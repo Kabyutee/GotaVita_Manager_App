@@ -1,6 +1,6 @@
 /* GotaVita Manager — Phase 5 Sprint 6 Step 5
  * Production deployment guard and diagnostics. Never exposes secrets.
- * Sprint 12 — conflict detection helper. Detection only; no automatic resolver.
+ * Sprint 12 — conflict detection + side-effect-free resolution policy.
  */
 (function () {
   "use strict";
@@ -46,6 +46,16 @@
   function rowUpdatedAt(row) {
     if (!row || typeof row !== "object") return null;
     return parseTime(row.updatedAt ?? row.updated_at ?? row.createdAt ?? row.created_at);
+  }
+
+  function rowDeletedAt(row) {
+    if (!row || typeof row !== "object") return null;
+    return parseTime(row.deletedAt ?? row.deleted_at ?? row.archivedAt ?? row.archived_at) ?? null;
+  }
+
+  function isDeleted(row) {
+    if (!row || typeof row !== "object") return false;
+    return row.deleted === true || row.isDeleted === true || row.is_deleted === true || row.deletedAt != null || row.deleted_at != null || row.archivedAt != null || row.archived_at != null;
   }
 
   function detect(localRows, remoteRows, baselineAt) {
@@ -104,6 +114,60 @@
     };
   }
 
+  /*
+   * Pure conflict policy. It returns a recommended action only; it does not
+   * mutate rows, local state, the sync queue, or the cloud. Ambiguous cases
+   * intentionally require manual review instead of implicit last-write-wins.
+   */
+  function resolveConflictPolicy(localRow, remoteRow, baselineAt) {
+    const baseline = parseTime(baselineAt);
+    const localUpdated = rowUpdatedAt(localRow);
+    const remoteUpdated = rowUpdatedAt(remoteRow);
+    const localDeleted = isDeleted(localRow);
+    const remoteDeleted = isDeleted(remoteRow);
+    const localDeletedAt = rowDeletedAt(localRow);
+    const remoteDeletedAt = rowDeletedAt(remoteRow);
+
+    if (baseline == null || localUpdated == null || remoteUpdated == null) {
+      return { action: "manual-review", reason: "indeterminate", mutation: false };
+    }
+
+    if (localDeleted !== remoteDeleted) {
+      if (localDeletedAt != null && remoteUpdated != null && localDeletedAt > remoteUpdated) {
+        return { action: "keep-local", reason: "local-deletion-newer", mutation: false };
+      }
+      if (remoteDeletedAt != null && localUpdated != null && remoteDeletedAt > localUpdated) {
+        return { action: "keep-remote", reason: "remote-deletion-newer", mutation: false };
+      }
+      return { action: "manual-review", reason: "deletion-vs-update-ambiguous", mutation: false };
+    }
+
+    const localChanged = localUpdated > baseline;
+    const remoteChanged = remoteUpdated > baseline;
+
+    if (!localChanged && !remoteChanged) {
+      return { action: "no-conflict", reason: "unchanged-since-baseline", mutation: false };
+    }
+
+    if (localChanged && !remoteChanged) {
+      return { action: "keep-local", reason: "local-only-change", mutation: false };
+    }
+
+    if (remoteChanged && !localChanged) {
+      return { action: "keep-remote", reason: "remote-only-change", mutation: false };
+    }
+
+    if (localUpdated > remoteUpdated) {
+      return { action: "keep-local", reason: "local-newer", mutation: false };
+    }
+
+    if (remoteUpdated > localUpdated) {
+      return { action: "keep-remote", reason: "remote-newer", mutation: false };
+    }
+
+    return { action: "manual-review", reason: "same-timestamp", mutation: false };
+  }
+
   function run() {
     const result = diagnostics();
     try { localStorage.setItem("gotavita_production_guard_last", JSON.stringify({ at: new Date().toISOString(), ok: result.ok, checks: result.checks })); } catch (_) {}
@@ -112,8 +176,11 @@
 
   window.GVConflictDetector = Object.freeze({
     detect,
+    resolveConflictPolicy,
     rowKey,
     rowUpdatedAt,
+    rowDeletedAt,
+    isDeleted,
     parseTime
   });
 
