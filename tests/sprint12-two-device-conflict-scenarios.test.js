@@ -6,6 +6,17 @@ const source = fs.readFileSync(
   "utf8"
 );
 
+const RealDate = Date;
+const FIXED_NOW = "2026-08-20T00:00:00.000Z";
+class TestDate extends RealDate {
+  constructor(...args) {
+    super(args.length ? args[0] : FIXED_NOW);
+  }
+  static now() {
+    return RealDate.parse(FIXED_NOW);
+  }
+}
+
 function policy(local, remote, baselineAt) {
   const baseline = Date.parse(baselineAt);
   const lu = local?.updatedAt ? Date.parse(local.updatedAt) : null;
@@ -32,7 +43,7 @@ function makeDevice(shared) {
 
   const context = {
     console,
-    Date,
+    Date: TestDate,
     navigator: { onLine: true },
     location: { protocol: "https:" },
     localStorage: {
