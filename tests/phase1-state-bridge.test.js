@@ -99,8 +99,13 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /new Proxy\(original,/,
-  "Hydration must wrap the existing GVData boundary"
+  /const wrappedGateway = Object\.freeze\(\{/,
+  "Hydration must preserve the frozen gateway contract with a wrapped facade"
+);
+assert.match(
+  uiBridge,
+  /health: wrappedHealth/,
+  "Hydration must wrap the gateway health method"
 );
 assert.match(
   uiBridge,
@@ -109,8 +114,8 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /typeof window\.replaceState === \"function\"/,
-  "Hydration must use the authoritative replaceState bridge"
+  /typeof window\.replaceState !== \"function\"/,
+  "Hydration must guard against a missing authoritative replaceState bridge"
 );
 assert.match(
   uiBridge,
