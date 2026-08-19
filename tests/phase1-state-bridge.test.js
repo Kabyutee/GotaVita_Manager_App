@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const script = fs.readFileSync("script.js", "utf8");
 const stateFactory = fs.readFileSync("js/core/state.js", "utf8");
+const config = fs.readFileSync("js/core/config.js", "utf8");
 const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
 function count(pattern, source) {
@@ -39,11 +40,10 @@ assert.equal(
   "getStateSnapshot() must have exactly one implementation"
 );
 
-// Whole-state replacement must be observable through the bridge functions.
 assert.match(
   script,
   /function replaceState[\s\S]*?state\s*=\s*nextState[\s\S]*?normalizeState\(\)/,
-  "replaceState() must own the state replacement and normalization path"
+  "replaceState() must own state replacement and normalization"
 );
 assert.match(
   script,
@@ -51,7 +51,8 @@ assert.match(
   "getStateSnapshot() must return a cloned authoritative state"
 );
 
-// Reject accidental alternate top-level replacement implementations.
+// The only whole-state assignments allowed in the main file are the bridge's
+// replacement assignment and its invalid-state recovery assignment.
 const assignmentLines = script
   .split(/\r?\n/)
   .map((line, index) => ({ line: index + 1, text: line }))
@@ -62,7 +63,7 @@ assert.ok(
   `Unexpected number of top-level state assignments: ${assignmentLines.length}`
 );
 
-// The state factory must expose every state collection introduced through Sprint 10.
+// Sprint 10 state factory contract.
 for (const name of requiredCollections) {
   assert.match(
     stateFactory,
@@ -71,27 +72,27 @@ for (const name of requiredCollections) {
   );
 }
 
-// NormalizeState must protect every state-factory collection so hydration/replacement
-// cannot silently drop a collection by converting it into undefined/non-array data.
-const normalizeMatch = script.match(
-  /function normalizeState\(\)[\s\S]*?\n}\n\nfunction audit\(/m
-);
-assert.ok(normalizeMatch, "Could not locate normalizeState() body");
-const normalizeBody = normalizeMatch[0];
-
+// The sync bridge must observe every authoritative state collection. This is
+// the Phase 1 hardening fix that prevents newer resources from being skipped
+// when persistState() builds its changed-resource queue.
 for (const name of requiredCollections) {
   assert.match(
-    normalizeBody,
-    new RegExp(`['\"]${name}['\"]`),
-    `normalizeState() does not protect collection: ${name}`
+    config,
+    new RegExp(`\\b${name}\\b`),
+    `SYNC_RESOURCES/config missing state resource: ${name}`
   );
 }
 
-// The gateway must remain the cloud boundary rather than introducing a second
-// application-state authority.
+assert.match(
+  config,
+  /SYNC_RESOURCES:Object\.freeze\(\[[^\]]*services[^\]]*payments[^\]]*payrollRecords[^\]]*deliveryRoutes[^\]]*orderGroupItems[^\]]*deliveryRouteItems[^\]]*auditLog/s,
+  "SYNC_RESOURCES must include the complete Sprint 10 state surface"
+);
+
+// The gateway remains the cloud boundary rather than a second application-state authority.
 assert.match(
   gateway,
-  /window\.GVData\s*=|window\.GVData\s*=/,
+  /window\.GVData\s*=/,
   "GVData gateway export was not found"
 );
 assert.match(
@@ -101,5 +102,5 @@ assert.match(
 );
 
 console.log("Phase 1 State Bridge verification: PASS");
-console.log(`Protected collections verified: ${requiredCollections.length}`);
+console.log(`Authoritative collections verified: ${requiredCollections.length}`);
 console.log(`Top-level state assignment sites: ${assignmentLines.map((x) => x.line).join(", ")}`);
