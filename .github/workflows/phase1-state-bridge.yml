@@ -16,6 +16,7 @@ on:
       - sprint12-production-drift-gate
       - sprint12-conflict-policy
       - sprint12-record-versioning
+      - sprint12-conflict-detection
   pull_request:
     branches:
       - main
@@ -32,6 +33,7 @@ on:
       - sprint12-production-drift-gate
       - sprint12-conflict-policy
       - sprint12-record-versioning
+      - sprint12-conflict-detection
 
 jobs:
   verify-gotavita:
@@ -67,3 +69,4 @@ jobs:
           node tests/sprint12-production-drift-gate-contract.test.js
           node tests/sprint12-conflict-policy-contract.test.js
           node tests/sprint12-record-versioning-contract.test.js
+          node tests/sprint12-conflict-detection-contract.test.js
