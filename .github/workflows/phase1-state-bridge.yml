@@ -6,6 +6,7 @@ on:
       - phase1-state-bridge
   pull_request:
     branches:
+      - main
       - phase1-state-bridge
 
 jobs:
@@ -20,6 +21,7 @@ jobs:
           node --check script.js
           node --check js/core/state.js
           node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
 
-      - name: Run Phase 1 state bridge contract tests
+      - name: Run State Bridge and Supabase Hydration contract tests
         run: node tests/phase1-state-bridge.test.js
