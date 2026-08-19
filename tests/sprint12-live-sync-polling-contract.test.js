@@ -43,18 +43,22 @@ context.window.window = context.window;
 vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 
 (async () => {
+  // Authorized startup performs one immediate pull even with an empty queue.
+  await Promise.resolve();
+  assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
+
   const result = await context.window.GVSync.flush();
 
   assert.equal(result.ok, true);
   assert.equal(result.status, "synced");
-  assert.equal(syncCalls, 1, "Empty queue must still perform a remote pull/sync");
+  assert.equal(syncCalls, 2, "Empty queue must still perform a remote pull/sync");
   assert.equal(queue.length, 0, "Polling layer must not mutate an empty queue");
 
   assert.ok(scheduled, "Authorized startup must install polling");
   assert.equal(scheduled.ms, 5000, "Polling interval must remain bounded at 5 seconds");
 
   await scheduled.handler();
-  assert.equal(syncCalls, 2, "Polling must invoke the shared sync gateway");
+  assert.equal(syncCalls, 3, "Polling must invoke the shared sync gateway");
 
   console.log("Sprint 12 live sync polling contract: PASS");
 })();
