@@ -209,24 +209,21 @@ window.GVUI = Object.freeze({
 
     if (typeof originalHealth !== "function") return;
 
-    const proxy = new Proxy(original, {
-      get(target, property, receiver) {
-        if (property === "health") {
-          return async function hydratedHealth(...args) {
-            const health = await originalHealth.apply(target, args);
-            if (health?.ok === true && health?.mode === "supabase") {
-              await hydrateFromSupabase();
-            }
-            return health;
-          };
-        }
-
-        return Reflect.get(target, property, receiver);
+    const wrappedHealth = async function hydratedHealth(...args) {
+      const health = await originalHealth.apply(original, args);
+      if (health?.ok === true && health?.mode === "supabase") {
+        await hydrateFromSupabase();
       }
+      return health;
+    };
+
+    const wrappedGateway = Object.freeze({
+      ...original,
+      health: wrappedHealth
     });
 
     gatewayWrapped = true;
-    window.GVData = proxy;
+    window.GVData = wrappedGateway;
   }
 
   window.addEventListener(
