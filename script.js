@@ -3767,7 +3767,6 @@ window.addEventListener(
 
     if (authenticated) {
   try {
-    installProductionHardening();
     installDuplicateOperationGuards();
     installUIEventDelegation();
     installProfessionalPolish();
