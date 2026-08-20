@@ -5,11 +5,16 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches:
+      - fix/sprint18-incoming-sync-startup-race
       - anti-big-bang/order-log-ui-fix
 
 permissions:
   contents: read
   deployments: write
+
+env:
+  PREVIEW_PR: ${{ github.event.pull_request.number || 40 }}
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   preview:
@@ -147,11 +152,11 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
             deploy
-            --name gotavita-manager-pr-${{ github.event.pull_request.number }}
-            --var GV_RELEASE_SHA:${{ github.event.pull_request.head.sha }}
+            --name gotavita-manager-pr-${{ env.PREVIEW_PR }}
+            --var GV_RELEASE_SHA:${{ env.CANDIDATE_SHA }}
 
       - name: Publish preview gate details
         run: |
-          echo "Candidate commit: ${{ github.event.pull_request.head.sha }}"
-          echo "Preview Worker: gotavita-manager-pr-${{ github.event.pull_request.number }}"
+          echo "Candidate commit: ${{ env.CANDIDATE_SHA }}"
+          echo "Preview Worker: gotavita-manager-pr-${{ env.PREVIEW_PR }}"
           echo "Production was not targeted by this workflow."
