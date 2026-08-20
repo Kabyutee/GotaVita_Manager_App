@@ -70,7 +70,7 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
 
   const result = await context.window.GVData.sync(true);
   assert.equal(result.ok, true);
-  assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull");
+  assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull on a first sync without a baseline");
   assert.ok(replaced, "Sync must converge state after the push/pull cycle");
   assert.equal(queue.length, 0, "Successfully pushed queue must drain");
   assert.equal(result.remoteChanged, false, "A converged local push must not request an unnecessary background render");
@@ -96,6 +96,31 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(upserts.some(([, rows]) => rows.some((row) => row.id === "second-local-order")), "The newly created local order must not be discarded by a background pull");
   assert.ok(replaced.orders.some((row) => row.id === "second-local-order"), "New local order must survive the pull/convergence cycle");
   assert.equal(dirtyResult.remoteChanged, false, "A local dirty-resource push that converges to cloud state must not request an unnecessary render");
+
+  // ANTI BIG BANG 3.1 regression: a receiver can retain stale queue entries
+  // even though its current local state matches the last successful baseline.
+  // Those stale entries must never push the receiver's old snapshot over a
+  // newer remote change before the pull phase.
+  queue = ["orders", "clients", "products"];
+  state.orders = [
+    { id: "new-local-order", total: 30 },
+    { id: "second-local-order", total: 90 }
+  ];
+  cloud.orders = [
+    { id: "new-local-order", total: 30 },
+    { id: "second-local-order", total: 90 },
+    { id: "incoming-remote-order", total: 75 }
+  ];
+  replaced = null;
+  upserts = [];
+
+  const staleQueueResult = await context.window.GVData.sync(true);
+  assert.equal(staleQueueResult.ok, true, "Stale receiver queue synchronization must succeed");
+  assert.equal(upserts.length, 0, "Stale queue entries must not push an unchanged receiver snapshot over newer remote state");
+  assert.equal(staleQueueResult.remoteChanged, true, "Newer remote state must be detected despite stale queue entries");
+  assert.equal(staleQueueResult.renderRequired, true, "Newer remote state must request a UI render");
+  assert.ok(replaced.orders.some((row) => row.id === "incoming-remote-order"), "Receiver must converge the newer remote order");
+  assert.equal(queue.length, 0, "Stale queue entries must be cleared after successful convergence");
 
   queue = [];
   state.orders = [{ id: "existing-local-order", total: 30 }];
