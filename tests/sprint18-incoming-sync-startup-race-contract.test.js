@@ -76,10 +76,6 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.equal(result.remoteChanged, false, "A converged local push must not request an unnecessary background render");
   assert.equal(result.renderRequired, false, "A converged sync must not force an unnecessary render");
 
-  // Regression: a local mutation must survive a background health/hydration
-  // pass even if the normal resource queue is accidentally empty. The last
-  // successful sync baseline identifies the unsynced local resource and blocks
-  // destructive hydration until GVData.sync() pushes the dirty resource first.
   state.orders = [
     { id: "new-local-order", total: 30 },
     { id: "second-local-order", total: 90 }
@@ -101,9 +97,6 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(replaced.orders.some((row) => row.id === "second-local-order"), "New local order must survive the pull/convergence cycle");
   assert.equal(dirtyResult.remoteChanged, false, "A local dirty-resource push that converges to cloud state must not request an unnecessary render");
 
-  // Model the other device: a remote order/edit arrives while the local
-  // snapshot is otherwise unchanged. GVData.sync() must explicitly signal the
-  // UI bridge so the background sync manager can render it automatically.
   queue = [];
   state.orders = [{ id: "existing-local-order", total: 30 }];
   cloud.orders = [
@@ -123,9 +116,6 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   );
   assert.ok(replaced.orders.some((row) => row.id === "incoming-remote-order"), "Incoming remote order must converge into local state");
 
-  // Legacy health hydration remains available for an idle device without a
-  // known local baseline, while the sync result remains authoritative for
-  // ongoing background convergence.
   queue = [];
   localStorageData.clear();
   state.orders = [{ id: "existing-local-order", total: 30 }];
