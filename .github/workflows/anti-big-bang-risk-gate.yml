@@ -89,6 +89,7 @@ jobs:
           node tests/sprint12-live-sync-polling-contract.test.js
           node tests/sprint14-order-edit-group-contract.test.js
           node tests/sprint16-production-drift-gate-contract.test.js
+          node tests/sprint18-transaction-sync-readiness-contract.test.js
 
       - name: Publish gate summary
         run: |
