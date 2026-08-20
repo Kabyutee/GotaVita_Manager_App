@@ -3,6 +3,9 @@ name: ANTI BIG BANG — isolated browser preview
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - anti-big-bang/order-log-ui-fix
 
 permissions:
   contents: read
