@@ -202,9 +202,6 @@ window.GVUI = Object.freeze({
       );
       return { hydrated: false, reason: "cloud-read-failed" };
     }).then((result) => {
-      // A transient cloud failure must not permanently poison the one-shot
-      // hydration promise. Keep successful hydration single-install, but allow
-      // the next authorized health check to retry a failed cloud read.
       if (result?.reason === "cloud-read-failed") hydrationPromise = null;
       return result;
     });
@@ -261,13 +258,17 @@ window.GVUI = Object.freeze({
       }
 
       const pushed = [];
+      const remainingQueued = [];
 
       for (const resource of queued) {
         const cloudName = cloudResourceName(resource);
         const stateName = stateResourceName(resource);
         const rows = Array.isArray(snapshot[stateName]) ? snapshot[stateName] : [];
 
-        if (!rows.length) continue;
+        if (!rows.length) {
+          remainingQueued.push(resource);
+          continue;
+        }
 
         await original.upsertResource(cloudName, rows);
         pushed.push(resource);
@@ -308,8 +309,8 @@ window.GVUI = Object.freeze({
         window.writeLocalStateSnapshot(nextState);
       }
 
-      if (pushed.length && typeof window.setSyncQueue === "function") {
-        window.setSyncQueue([]);
+      if (typeof window.setSyncQueue === "function") {
+        window.setSyncQueue(remainingQueued);
       }
 
       if (typeof window.setSyncMeta === "function") {
@@ -377,9 +378,6 @@ window.GVUI = Object.freeze({
     window.GVData = Object.freeze(facade);
   }
 
-  // Install immediately when the gateway is already available. This is the
-  // normal deferred-script path and prevents startup calls from missing the
-  // hydration facade before DOMContentLoaded.
   try {
     installGatewayFacade();
   } catch (error) {
@@ -389,7 +387,6 @@ window.GVUI = Object.freeze({
     );
   }
 
-  // Keep DOMContentLoaded as a compatibility fallback for late gateway setup.
   window.addEventListener(
     "DOMContentLoaded",
     () => {
