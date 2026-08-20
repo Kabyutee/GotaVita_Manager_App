@@ -6,7 +6,7 @@ const bridge = fs.readFileSync("js/core/ui-bridge.js", "utf8");
 
 // Hydration may read from Supabase, but it must not invoke a write path.
 const hydrationBlock = bridge.match(
-  /async function hydrateFromSupabase\([\s\S]*?\n  }\n\n  function stateResourceName/,
+  /async function hydrateFromSupabase\([\s\S]*?\n  }\n\n  (?:async )?function stateResourceName/,
 );
 assert.ok(hydrationBlock, "Hydration boundary must remain identifiable");
 assert.doesNotMatch(
