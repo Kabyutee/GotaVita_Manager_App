@@ -69,6 +69,16 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
   }
 
+  // The auth bridge runs after script.js so Supabase session validation has a
+  // chance to complete before GVSync's first polling cycle. This prevents the
+  // Incognito startup race where GVSync observes a stale authorized=false flag
+  // and exits before ever reaching GVData.sync().
+  const authBridgeMarker = '<script src="/js/core/sync-authority.js" defer></script>';
+  const authBridgeInjected = '<script src="/js/core/sync-auth-startup-bridge.js" defer></script>';
+  if (html.includes(authBridgeMarker) && !html.includes(authBridgeInjected)) {
+    html = html.replace(authBridgeMarker, `${authBridgeMarker}\n${authBridgeInjected}`);
+  }
+
   return new Response(html, response);
 }
 
