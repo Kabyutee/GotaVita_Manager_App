@@ -61,8 +61,6 @@ jobs:
     interactionReleaseTimer = setTimeout(() => {
       interactionReleaseTimer = null;
 
-      // A native select/checkbox can remain focused after pointerup/change.
-      // Keep the render deferred until focus has actually left the control.
       if (activeFormControl()) return;
 
       activeInteraction = false;
@@ -75,8 +73,6 @@ jobs:
   }
 
   function installInteractionGuard() {
-    // Browser-only interaction protection. The sync manager is also loaded by
-    // Node/VM contract tests, where document is intentionally unavailable.
     if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
       return;
     }
@@ -125,21 +121,20 @@ jobs:
 
           text = text.replace(old_guard, new_guard, 1)
           text = text.replace("  // ANTI BIG BANG 2.1 — live cross-device gate:", "  // ANTI BIG BANG 2.2 — live cross-device gate:", 1)
-
           path.write_text(text, encoding="utf-8")
 
-      - name: Syntax check
+      - name: Syntax check patched candidate
         run: |
           node --check js/core/sync-manager.js
           node --check worker.js
 
-      - name: Commit patch when changed
+      - name: Commit ANTI BIG BANG 2.2 patch
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git diff --quiet -- js/core/sync-manager.js; then
-            echo "No interaction patch needed."
+            echo "ANTI BIG BANG 2.2 already present."
             exit 0
           fi
           git add js/core/sync-manager.js
