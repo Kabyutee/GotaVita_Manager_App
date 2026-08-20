@@ -2,16 +2,6 @@
 (function () {
   "use strict";
 
-  // Sprint 5.5 hardening: use the application's authoritative sync queue.
-  // The older standalone queue used a different localStorage key and could
-  // report "Synced" while the real application queue still had resources.
-  //
-  // ANTI BIG BANG 2.0 — live cross-device gate:
-  // - queued local changes are pushed through GVData.sync().
-  // - when the queue is empty, GVData.sync() is still called so an already
-  //   open second device can pull remote changes.
-  // - polling never clears or mutates the queue itself; GVData remains the
-  //   single synchronization authority.
   const LEGACY_KEY = "gotavita_sync_queue_v1";
   const LEGACY_META = "gotavita_sync_meta_v1";
   const POLL_MS = 5000;
@@ -32,7 +22,6 @@
       window.queueSyncResources(resources.filter(Boolean));
       return resources[0] || "";
     }
-    // Compatibility fallback only; the main app should always expose its queue.
     try {
       const q = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]");
       q.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
@@ -89,57 +78,39 @@
     if (!container) return;
 
     const controls = [...container.querySelectorAll("input, select, textarea")];
-    const byKey = new Map(
-      controls.map((control, index) => [getControlKey(control, index), control])
-    );
+    const byKey = new Map(controls.map((control, index) => [getControlKey(control, index), control]));
 
     for (const item of snapshot.values) {
       const control = byKey.get(item.key);
       if (!control) continue;
-
       try {
         if (control.tagName === "SELECT" && control.multiple && Array.isArray(item.selectedValues)) {
           const selected = new Set(item.selectedValues.map(String));
-          for (const option of control.options) {
-            option.selected = selected.has(String(option.value));
-          }
+          for (const option of control.options) option.selected = selected.has(String(option.value));
         } else if (item.type === "checkbox" || item.type === "radio") {
           control.checked = Boolean(item.checked);
         } else {
           control.value = item.value;
         }
-
-        control.dispatchEvent(new Event("input", { bubbles: false }));
-        control.dispatchEvent(new Event("change", { bubbles: false }));
       } catch (_) {}
     }
 
     let active = null;
     if (snapshot.activeId) active = document.getElementById(snapshot.activeId);
     if (!active && snapshot.activeName) {
-      active = container.querySelector(`[name="${CSS.escape(snapshot.activeName)}"]`);
+      try { active = container.querySelector(`[name="${CSS.escape(snapshot.activeName)}"]`); } catch (_) {}
     }
     try { active?.focus?.(); } catch (_) {}
   }
 
   function renderSyncedState() {
     const formState = captureActiveFormState();
-
     try {
-      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
-        window.GVUI.renderAll();
-      }
+      if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll();
     } catch (renderError) {
-      console.warn(
-        "GotaVita background sync render skipped:",
-        renderError?.message || renderError
-      );
+      console.warn("GotaVita background sync render skipped:", renderError?.message || renderError);
       return;
     }
-
-    // The sync and render both continue normally. Only the user's active
-    // controls are restored so remote changes remain visible without destroying
-    // an in-progress order selection or unsaved input.
     restoreActiveFormState(formState);
   }
 
@@ -148,13 +119,10 @@
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
     if (!window.GVData || typeof window.GVData.sync !== "function") return { ok: false, status: "unavailable", queued: queue.length };
 
-    // Do not short-circuit when the queue is empty. A second device normally
-    // has no local queue but still needs to pull a change created elsewhere.
     try {
       const result = await window.GVData.sync(true);
       if (result !== false) {
         renderSyncedState();
-
         try {
           const meta = JSON.parse(localStorage.getItem(LEGACY_META) || "{}");
           meta.lastSyncAt = new Date().toISOString();
@@ -173,18 +141,12 @@
     if (!navigator.onLine) return;
     if (!window.GVAuth?.isAuthorized?.()) return;
     pollInFlight = true;
-    try {
-      await flush();
-    } finally {
-      pollInFlight = false;
-    }
+    try { await flush(); } finally { pollInFlight = false; }
   }
 
   function startPolling() {
     if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      poll().catch(() => {});
-    }, POLL_MS);
+    pollTimer = setInterval(() => { poll().catch(() => {}); }, POLL_MS);
     poll().catch(() => {});
   }
 
@@ -207,10 +169,5 @@
   window.addEventListener("gv-auth-state-changed", (event) => {
     if (event?.detail?.authenticated === true) startPolling();
   });
-
-  // Start the timer unconditionally. poll() itself remains authorization-gated,
-  // so signed-out sessions do not access cloud data. This removes a lifecycle
-  // race where authentication can complete without emitting the expected
-  // event after the sync manager has initialized.
   startPolling();
 })();
