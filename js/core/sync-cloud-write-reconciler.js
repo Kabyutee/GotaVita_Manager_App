@@ -84,19 +84,32 @@
     }
 
     for (const row of candidates) {
-      const number = String(row?.orderNumber || "").trim();
+      const id = String(row?.id ?? "");
+      let number = String(row?.orderNumber || "").trim();
       if (!number) continue;
+
       const owner = ownerByOrderNumber.get(number);
-      const sameRecord = owner && owner === String(row.id);
-      if (!owner || sameRecord) continue;
+      const sameRecord = owner && owner === id;
+
+      // A number is safe only when it belongs to this same record and has not
+      // already been claimed by another row in the current write batch.
+      if (!used.has(number) && !owner) {
+        used.add(number);
+        ownerByOrderNumber.set(number, id);
+        next = Math.max(next, numericOrderNumber(number));
+        continue;
+      }
+
+      if (sameRecord) continue;
 
       do {
         next += 1;
-        row.orderNumber = formatOrderNumber(next);
-      } while (used.has(row.orderNumber));
+        number = formatOrderNumber(next);
+      } while (used.has(number));
 
-      used.add(row.orderNumber);
-      ownerByOrderNumber.set(row.orderNumber, String(row.id));
+      row.orderNumber = number;
+      used.add(number);
+      ownerByOrderNumber.set(number, id);
     }
 
     return candidates;
@@ -120,12 +133,18 @@
     const changedRows = await changedOrderRows(original, rows);
     if (!changedRows.length) return [];
 
+    const reconciledRows = await reconcileOrderNumbers(original, changedRows);
+
     try {
-      return await original.upsertResource(resource, changedRows);
+      return await original.upsertResource(resource, reconciledRows);
     } catch (error) {
       if (!isUniqueConflict(error)) throw error;
-      const reconciled = await reconcileOrderNumbers(original, changedRows);
-      return original.upsertResource(resource, reconciled);
+
+      // A second device can allocate the same human-readable order number
+      // between our read and write. Refresh the remote set, reconcile again,
+      // then retry once using the complete, collision-free changed batch.
+      const retryRows = await reconcileOrderNumbers(original, reconciledRows);
+      return original.upsertResource(resource, retryRows);
     }
   }
 
