@@ -45,9 +45,14 @@ assert.match(
   "Dirty-resource detection must compare current state against the last successful sync baseline"
 );
 assert.match(
+  bridge,
+  /sync: async function wrappedSync\(\.\.\.args\) \{ return syncCrossDevice\(original, \.\.\.args\); \}/,
+  "UI bridge must expose the authoritative GVData.sync synchronization boundary"
+);
+assert.match(
   gateway,
-  /GVData\.sync/,
-  "Gateway remains the authoritative synchronization boundary"
+  /upsertResource|selectResource|supportedResources/,
+  "Supabase gateway must remain the underlying data boundary used by synchronization"
 );
 assert.doesNotMatch(
   gateway,
