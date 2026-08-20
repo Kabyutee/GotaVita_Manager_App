@@ -51,6 +51,22 @@
     try {
       const result = await window.GVData.sync(true);
       if (result !== false) {
+        // GVData.sync() is the authoritative state synchronization boundary.
+        // Its background polling path can replace the in-memory state without
+        // causing tab navigation. Render the current tab immediately after the
+        // successful pull so cross-device changes become visible without a
+        // refresh or tab switch. No queue/state ownership is changed here.
+        try {
+          if (window.GVUI && typeof window.GVUI.renderAll === "function") {
+            window.GVUI.renderAll();
+          }
+        } catch (renderError) {
+          console.warn(
+            "GotaVita background sync render skipped:",
+            renderError?.message || renderError
+          );
+        }
+
         try {
           const meta = JSON.parse(localStorage.getItem(LEGACY_META) || "{}");
           meta.lastSyncAt = new Date().toISOString();
