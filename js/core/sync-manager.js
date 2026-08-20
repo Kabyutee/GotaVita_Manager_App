@@ -108,9 +108,6 @@
         } else {
           control.value = item.value;
         }
-
-        control.dispatchEvent(new Event("input", { bubbles: false }));
-        control.dispatchEvent(new Event("change", { bubbles: false }));
       } catch (_) {}
     }
 
