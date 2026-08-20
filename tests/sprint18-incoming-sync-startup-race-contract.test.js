@@ -73,6 +73,8 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull");
   assert.ok(replaced, "Sync must converge state after the push/pull cycle");
   assert.equal(queue.length, 0, "Successfully pushed queue must drain");
+  assert.equal(result.remoteChanged, false, "A converged local push must not request an unnecessary background render");
+  assert.equal(result.renderRequired, false, "A converged sync must not force an unnecessary render");
 
   // Regression: a local mutation must survive a background health/hydration
   // pass even if the normal resource queue is accidentally empty. The last
@@ -97,16 +99,42 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(upserts.some(([resource]) => resource === "orders"), "Locally changed orders must be pushed before the background pull");
   assert.ok(upserts.some(([, rows]) => rows.some((row) => row.id === "second-local-order")), "The newly created local order must not be discarded by a background pull");
   assert.ok(replaced.orders.some((row) => row.id === "second-local-order"), "New local order must survive the pull/convergence cycle");
+  assert.equal(dirtyResult.remoteChanged, false, "A local dirty-resource push that converges to cloud state must not request an unnecessary render");
 
-  // Model the other device: no local queue, then a remote order exists.
+  // Model the other device: a remote order/edit arrives while the local
+  // snapshot is otherwise unchanged. GVData.sync() must explicitly signal the
+  // UI bridge so the background sync manager can render it automatically.
   queue = [];
+  state.orders = [{ id: "existing-local-order", total: 30 }];
+  cloud.orders = [
+    { id: "existing-local-order", total: 30 },
+    { id: "incoming-remote-order", total: 75 }
+  ];
+  replaced = null;
+  const incomingResult = await context.window.GVData.sync(true);
+
+  assert.equal(incomingResult.ok, true, "Incoming remote synchronization must succeed");
+  assert.equal(incomingResult.remoteChanged, true, "Incoming cloud changes must be reported as remote changes");
+  assert.equal(incomingResult.stateChanged, true, "Incoming cloud changes must report stateChanged");
+  assert.equal(incomingResult.renderRequired, true, "Incoming cloud changes must request a UI render");
+  assert.ok(
+    Array.isArray(incomingResult.remoteChangedResources) && incomingResult.remoteChangedResources.includes("orders"),
+    "Incoming order changes must identify the orders resource"
+  );
+  assert.ok(replaced.orders.some((row) => row.id === "incoming-remote-order"), "Incoming remote order must converge into local state");
+
+  // Legacy health hydration remains available for an idle device without a
+  // known local baseline, while the sync result remains authoritative for
+  // ongoing background convergence.
+  queue = [];
+  localStorageData.clear();
   state.orders = [{ id: "existing-local-order", total: 30 }];
   cloud.orders = [{ id: "remote-order", total: 60 }];
   replaced = null;
-  const readsBeforeIncomingPull = hydrateReads;
+  const readsBeforeIncomingHydrate = hydrateReads;
 
   await context.window.GVData.health();
-  assert.ok(hydrateReads > readsBeforeIncomingPull, "An idle device must still hydrate incoming cloud changes");
+  assert.ok(hydrateReads > readsBeforeIncomingHydrate, "An idle device must still hydrate incoming cloud changes when no local baseline exists");
   assert.ok(replaced, "Incoming hydration must replace the stale local snapshot");
   assert.equal(replaced.orders[0].id, "remote-order", "Incoming remote order must survive refresh");
 
