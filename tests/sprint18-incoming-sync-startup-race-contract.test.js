@@ -74,9 +74,10 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(replaced, "Sync must converge state after the push/pull cycle");
   assert.equal(queue.length, 0, "Successfully pushed queue must drain");
 
-  // Regression: a local mutation must survive a background poll even if the
-  // normal resource queue was accidentally empty. The last successful sync
-  // baseline identifies the unsynced local resource before the remote pull.
+  // Regression: a local mutation must survive a background health/hydration
+  // pass even if the normal resource queue is accidentally empty. The last
+  // successful sync baseline identifies the unsynced local resource and blocks
+  // destructive hydration until GVData.sync() pushes the dirty resource first.
   state.orders = [
     { id: "new-local-order", total: 30 },
     { id: "second-local-order", total: 90 }
@@ -85,6 +86,11 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   cloud.orders = [{ id: "remote-order", total: 60 }];
   replaced = null;
   upserts = [];
+
+  const readsBeforeDirtyHealth = hydrateReads;
+  await context.window.GVData.health();
+  assert.equal(hydrateReads, readsBeforeDirtyHealth, "Background health must not hydrate while a local resource is dirty");
+  assert.equal(replaced, null, "Background health must not replace dirty local state");
 
   const dirtyResult = await context.window.GVData.sync(true);
   assert.equal(dirtyResult.ok, true, "Dirty local state must synchronize successfully even when the queue is empty");
