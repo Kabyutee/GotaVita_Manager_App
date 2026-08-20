@@ -148,6 +148,12 @@
   }
 
   function installInteractionGuard() {
+    // Browser-only interaction protection. The sync manager is also loaded by
+    // Node/VM contract tests, where document is intentionally unavailable.
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
+      return;
+    }
+
     document.addEventListener("pointerdown", (event) => {
       const control = event.target?.closest?.("input, select, textarea, button");
       if (control) beginUserInteraction();
