@@ -1,7 +1,32 @@
 /* GotaVita UI boundary — Supabase hydration + cross-device sync. */
+function rebindDynamicOrderForms() {
+  try {
+    const guard = window.guardedSubmitHandler;
+    const forms = [
+      ["orderForm", "order-form-submit", "handleOrderSubmit"],
+      ["orderEditForm", "order-edit-submit", "handleOrderEditSubmit"]
+    ];
+
+    if (typeof guard !== "function") return;
+
+    for (const [formId, key, handlerName] of forms) {
+      const form = document.getElementById(formId);
+      const handler = window[handlerName];
+      if (!form || typeof handler !== "function" || form.__gvSubmitBound) continue;
+      form.addEventListener("submit", guard(form, key, handler));
+      form.__gvSubmitBound = true;
+    }
+  } catch (error) {
+    console.warn("GotaVita dynamic order form binding skipped:", error?.message || error);
+  }
+}
+
 window.GVUI = Object.freeze({
   renderAll() {
-    if (typeof window.renderAll === "function") return window.renderAll();
+    let result;
+    if (typeof window.renderAll === "function") result = window.renderAll();
+    rebindDynamicOrderForms();
+    return result;
   },
   render(view) {
     if (typeof window.renderPartial === "function") return window.renderPartial(view);
@@ -236,8 +261,7 @@ window.GVUI = Object.freeze({
       const now = Date.now();
       nextState._meta = Object.assign({}, nextState._meta, {
         lastUpdated: now, lastSynchronizedAt: now, synchronizationVersion: 1,
-        lastSynchronizedResources: pushed,
-        lastRemoteChangedResources: remoteChangedResources
+        lastSynchronizedResources: pushed, lastRemoteChangedResources: remoteChangedResources
       });
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
