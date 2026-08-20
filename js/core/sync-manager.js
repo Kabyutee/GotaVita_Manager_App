@@ -18,8 +18,6 @@
 
   let pollTimer = null;
   let pollInFlight = false;
-  let pendingRender = false;
-  let renderHooksInstalled = false;
 
   function appQueue() {
     try {
@@ -43,55 +41,90 @@
     return entity;
   }
 
-  function activeFormInteraction() {
+  function activeFormContainer() {
     try {
       const active = document.activeElement;
-      if (active && active.matches && active.matches("input, select, textarea, button, [contenteditable='true']")) {
-        return true;
-      }
-      return !!document.querySelector(
-        "form:focus-within, [role='dialog']:focus-within, .modal:focus-within"
-      );
+      if (!active) return null;
+      return active.closest?.("form, [role='dialog'], .modal") || null;
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
-  function renderAfterInteraction() {
-    if (!pendingRender || activeFormInteraction()) return;
-    pendingRender = false;
-    try {
-      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
-        window.GVUI.renderAll();
-      }
-    } catch (renderError) {
-      console.warn(
-        "GotaVita deferred background sync render skipped:",
-        renderError?.message || renderError
-      );
-    }
+  function getControlKey(control, index) {
+    if (control.id) return `id:${control.id}`;
+    if (control.name) return `name:${control.name}:${index}`;
+    return `index:${index}`;
   }
 
-  function installRenderProtection() {
-    if (renderHooksInstalled || typeof document === "undefined") return;
-    renderHooksInstalled = true;
+  function captureActiveFormState() {
+    const container = activeFormContainer();
+    if (!container) return null;
 
-    // A remote sync may complete while the user is changing a select/input.
-    // Defer only the destructive full render; the synchronized state remains
-    // authoritative in memory and can be rendered immediately after editing.
-    document.addEventListener("focusout", () => {
-      setTimeout(renderAfterInteraction, 0);
-    }, true);
+    const controls = [...container.querySelectorAll("input, select, textarea")];
+    const values = controls.map((control, index) => ({
+      key: getControlKey(control, index),
+      type: control.type || control.tagName.toLowerCase(),
+      value: control.value,
+      checked: control.type === "checkbox" || control.type === "radio" ? control.checked : undefined,
+      selectedValues:
+        control.tagName === "SELECT" && control.multiple
+          ? [...control.selectedOptions].map((option) => option.value)
+          : undefined
+    }));
+
+    return {
+      containerId: container.id || null,
+      values,
+      activeId: document.activeElement?.id || null,
+      activeName: document.activeElement?.name || null
+    };
+  }
+
+  function restoreActiveFormState(snapshot) {
+    if (!snapshot) return;
+
+    let container = snapshot.containerId ? document.getElementById(snapshot.containerId) : null;
+    if (!container) container = document.querySelector("form, [role='dialog'], .modal");
+    if (!container) return;
+
+    const controls = [...container.querySelectorAll("input, select, textarea")];
+    const byKey = new Map(
+      controls.map((control, index) => [getControlKey(control, index), control])
+    );
+
+    for (const item of snapshot.values) {
+      const control = byKey.get(item.key);
+      if (!control) continue;
+
+      try {
+        if (control.tagName === "SELECT" && control.multiple && Array.isArray(item.selectedValues)) {
+          const selected = new Set(item.selectedValues.map(String));
+          for (const option of control.options) {
+            option.selected = selected.has(String(option.value));
+          }
+        } else if (item.type === "checkbox" || item.type === "radio") {
+          control.checked = Boolean(item.checked);
+        } else {
+          control.value = item.value;
+        }
+
+        control.dispatchEvent(new Event("input", { bubbles: false }));
+        control.dispatchEvent(new Event("change", { bubbles: false }));
+      } catch (_) {}
+    }
+
+    let active = null;
+    if (snapshot.activeId) active = document.getElementById(snapshot.activeId);
+    if (!active && snapshot.activeName) {
+      active = container.querySelector(`[name="${CSS.escape(snapshot.activeName)}"]`);
+    }
+    try { active?.focus?.(); } catch (_) {}
   }
 
   function renderSyncedState() {
-    installRenderProtection();
-    if (activeFormInteraction()) {
-      pendingRender = true;
-      return;
-    }
+    const formState = captureActiveFormState();
 
-    pendingRender = false;
     try {
       if (window.GVUI && typeof window.GVUI.renderAll === "function") {
         window.GVUI.renderAll();
@@ -101,7 +134,13 @@
         "GotaVita background sync render skipped:",
         renderError?.message || renderError
       );
+      return;
     }
+
+    // The sync and render both continue normally. Only the user's active
+    // controls are restored so remote changes remain visible without destroying
+    // an in-progress order selection or unsaved input.
+    restoreActiveFormState(formState);
   }
 
   async function flush() {
@@ -114,10 +153,6 @@
     try {
       const result = await window.GVData.sync(true);
       if (result !== false) {
-        // GVData.sync() is the authoritative state synchronization boundary.
-        // Never destroy an active form/select interaction with a full render.
-        // The state is already synchronized; rendering is deferred until the
-        // user leaves the active form controls.
         renderSyncedState();
 
         try {
@@ -147,7 +182,6 @@
 
   function startPolling() {
     if (pollTimer) return;
-    installRenderProtection();
     pollTimer = setInterval(() => {
       poll().catch(() => {});
     }, POLL_MS);
