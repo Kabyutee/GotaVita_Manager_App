@@ -1,0 +1,147 @@
+name: ANTI BIG BANG — focus-anchored interaction fix
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v4
+
+      - name: Apply ANTI BIG BANG 2.2 interaction boundary
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("js/core/sync-manager.js")
+          text = path.read_text(encoding="utf-8")
+
+          if "ANTI BIG BANG 2.2" in text:
+              print("ANTI BIG BANG 2.2 already applied.")
+              raise SystemExit(0)
+
+          start = text.find("  function beginUserInteraction() {")
+          end = text.find("  function renderSyncedState() {", start)
+          if start < 0 or end < 0:
+              raise SystemExit("Expected ANTI BIG BANG 2.1 interaction boundary not found")
+
+          replacement = '''  // ANTI BIG BANG 2.2 — the focused control is the authoritative
+  // interaction boundary. Native select/checkbox popups can release pointer
+  // events while the control is still focused; pointerup timing alone is not
+  // sufficient to decide that a destructive full render is safe.
+  function activeFormControl() {
+    try {
+      const active = document.activeElement;
+      return active?.closest?.("input, select, textarea, button") || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function interactionIsProtected() {
+    return Boolean(activeInteraction || activeFormControl());
+  }
+
+  function beginUserInteraction() {
+    activeInteraction = true;
+    if (interactionReleaseTimer) {
+      clearTimeout(interactionReleaseTimer);
+      interactionReleaseTimer = null;
+    }
+  }
+
+  function endUserInteractionSoon() {
+    if (interactionReleaseTimer) clearTimeout(interactionReleaseTimer);
+    interactionReleaseTimer = setTimeout(() => {
+      interactionReleaseTimer = null;
+
+      // A native select/checkbox can remain focused after pointerup/change.
+      // Keep the render deferred until focus has actually left the control.
+      if (activeFormControl()) return;
+
+      activeInteraction = false;
+
+      if (deferredRender) {
+        deferredRender = false;
+        renderSyncedState();
+      }
+    }, INTERACTION_RELEASE_MS);
+  }
+
+  function installInteractionGuard() {
+    // Browser-only interaction protection. The sync manager is also loaded by
+    // Node/VM contract tests, where document is intentionally unavailable.
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
+      return;
+    }
+
+    document.addEventListener("pointerdown", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("focusin", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("focusout", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) endUserInteractionSoon();
+    }, true);
+  }
+
+'''
+
+          text = text[:start] + replacement + text[end:]
+
+          old_guard = '''  function renderSyncedState() {
+    if (activeInteraction) {
+      deferredRender = true;
+      return;
+    }
+'''
+
+          new_guard = '''  function renderSyncedState() {
+    if (interactionIsProtected()) {
+      deferredRender = true;
+      return;
+    }
+'''
+
+          if old_guard not in text:
+              raise SystemExit("Expected render protection guard not found")
+
+          text = text.replace(old_guard, new_guard, 1)
+          text = text.replace("  // ANTI BIG BANG 2.1 — live cross-device gate:", "  // ANTI BIG BANG 2.2 — live cross-device gate:", 1)
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Syntax check
+        run: |
+          node --check js/core/sync-manager.js
+          node --check worker.js
+
+      - name: Commit patch when changed
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- js/core/sync-manager.js; then
+            echo "No interaction patch needed."
+            exit 0
+          fi
+          git add js/core/sync-manager.js
+          git commit -m "ANTI BIG BANG 2.2: anchor render protection to focused controls"
+          git push
