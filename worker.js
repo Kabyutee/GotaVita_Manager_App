@@ -41,6 +41,31 @@ function healthResponse(env) {
   });
 }
 
+async function serveApplicationAsset(request, env) {
+  const response = await env.ASSETS.fetch(request);
+  const contentType = response.headers.get("content-type") || "";
+
+  if (
+    request.method !== "GET" ||
+    !contentType.toLowerCase().includes("text/html")
+  ) {
+    return response;
+  }
+
+  const html = await response.text();
+  const marker = '<script src="script.js" defer></script>';
+  const injected = '<script src="/js/core/sync-authority.js" defer></script>';
+
+  if (!html.includes(marker) || html.includes(injected)) {
+    return new Response(html, response);
+  }
+
+  return new Response(
+    html.replace(marker, `${marker}\n${injected}`),
+    response
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -69,6 +94,6 @@ export default {
       }, 410);
     }
 
-    return env.ASSETS.fetch(request);
+    return serveApplicationAsset(request, env);
   }
 };
