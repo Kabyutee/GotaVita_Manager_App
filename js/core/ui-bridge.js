@@ -202,6 +202,9 @@ window.GVUI = Object.freeze({
       );
       return { hydrated: false, reason: "cloud-read-failed" };
     }).then((result) => {
+      // A transient cloud failure must not permanently poison the one-shot
+      // hydration promise. Keep successful hydration single-install, but allow
+      // the next authorized health check to retry a failed cloud read.
       if (result?.reason === "cloud-read-failed") hydrationPromise = null;
       return result;
     });
@@ -378,6 +381,9 @@ window.GVUI = Object.freeze({
     window.GVData = Object.freeze(facade);
   }
 
+  // Install immediately when the gateway is already available. This is the
+  // normal deferred-script path and prevents startup calls from missing the
+  // hydration facade before DOMContentLoaded.
   try {
     installGatewayFacade();
   } catch (error) {
@@ -387,6 +393,7 @@ window.GVUI = Object.freeze({
     );
   }
 
+  // Keep DOMContentLoaded as a compatibility fallback for late gateway setup.
   window.addEventListener(
     "DOMContentLoaded",
     () => {
