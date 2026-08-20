@@ -95,7 +95,7 @@ window.GVUI = Object.freeze({
     try {
       const baseline = {};
       for (const resource of resources) {
-        const stateName = stateResourceNames[resource];
+        const stateName = resourceStateNames[resource];
         if (stateName) baseline[stateName] = Array.isArray(snapshot?.[stateName]) ? snapshot[stateName] : [];
       }
       window.localStorage?.setItem(BASELINE_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), state: baseline }));
@@ -248,16 +248,21 @@ window.GVUI = Object.freeze({
         const health = await originalHealth.apply(original, args);
         if (health?.ok === true && health?.mode === "supabase") {
           const queued = getQueuedResources();
+          const supported = typeof original.supportedResources === "function" ? original.supportedResources() : [];
+          const snapshot = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
+          const locallyChanged = snapshot && supported.length ? getLocallyChangedResources(snapshot, supported) : [];
+
           /*
-           * CRITICAL STARTUP ORDERING:
-           * A local queued write is newer than the cloud snapshot. Hydrating
-           * before that queue is flushed can replace a newly-created order
-           * with stale cloud state; the subsequent sync would then upload the
-           * stale state and permanently erase the new order. Skip hydration
-           * whenever local writes are queued; GVData.sync() pushes first and
-           * pulls second, preserving both outgoing and incoming changes.
+           * CRITICAL STARTUP/BACKGROUND ORDERING:
+           * A local queued write is newer than the cloud snapshot. More
+           * importantly, a locally changed resource can be newer even when
+           * the normal queue is unexpectedly empty. Never allow health's
+           * background hydration to replace that dirty local state; GVData.sync()
+           * is the ordering authority and will push the dirty resource first.
            */
-          if (!queued.length) await hydrateFromSupabase(original);
+          if (!queued.length && locallyChanged.length === 0) {
+            await hydrateFromSupabase(original);
+          }
         }
         return health;
       },
