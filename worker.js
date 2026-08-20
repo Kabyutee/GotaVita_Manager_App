@@ -41,6 +41,29 @@ function healthResponse(env) {
   });
 }
 
+function withNoStore(response, content) {
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.set("pragma", "no-cache");
+  return new Response(content, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function bustLocalScriptUrls(html, releaseSha) {
+  const version = encodeURIComponent(String(releaseSha || "unknown").trim() || "unknown");
+  return html.replace(
+    /(<script\s+src=["'])(\/?(?:js\/|script\.js)[^"']*)(["'][^>]*>)/gi,
+    (match, prefix, src, suffix) => {
+      const clean = src.replace(/[?&]gv_release=[^&#]*/g, "");
+      const separator = clean.includes("?") ? "&" : "?";
+      return `${prefix}${clean}${separator}gv_release=${version}${suffix}`;
+    }
+  );
+}
+
 async function serveApplicationAsset(request, env) {
   const response = await env.ASSETS.fetch(request);
   const contentType = response.headers.get("content-type") || "";
@@ -49,27 +72,35 @@ async function serveApplicationAsset(request, env) {
     request.method !== "GET" ||
     !contentType.toLowerCase().includes("text/html")
   ) {
+    if (/\.(?:js|css)$/i.test(new URL(request.url).pathname)) {
+      return withNoStore(response, response.body);
+    }
     return response;
   }
 
   let html = await response.text();
+  const releaseSha = String(env.GV_RELEASE_SHA || "unknown").trim() || "unknown";
+
+  // Version all application-owned scripts so a new Worker release cannot be
+  // paired with an older browser-cached synchronization stack.
+  html = bustLocalScriptUrls(html, releaseSha);
 
   // The reconciler must be loaded before ui-bridge captures GVData as its
   // immutable original gateway. This makes every subsequent cross-device
   // upsert pass through order-level write reconciliation.
-  const bridgeMarker = '<script src="js/core/ui-bridge.js" defer></script>';
-  const reconcilerInjected = '<script src="js/core/sync-cloud-write-reconciler.js" defer></script>';
+  const bridgeMarker = `<script src="js/core/ui-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const reconcilerInjected = `<script src="js/core/sync-cloud-write-reconciler.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(bridgeMarker) && !html.includes(reconcilerInjected)) {
     html = html.replace(bridgeMarker, `${reconcilerInjected}\n${bridgeMarker}`);
   }
 
-  const queueAuthorityInjected = '<script src="/js/core/sync-queue-authority.js" defer></script>';
+  const queueAuthorityInjected = `<script src="/js/core/sync-queue-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(bridgeMarker) && !html.includes(queueAuthorityInjected)) {
     html = html.replace(bridgeMarker, `${bridgeMarker}\n${queueAuthorityInjected}`);
   }
 
-  const authorityMarker = '<script src="script.js" defer></script>';
-  const authorityInjected = '<script src="/js/core/sync-authority.js" defer></script>';
+  const authorityMarker = `<script src="script.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const authorityInjected = `<script src="/js/core/sync-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(authorityMarker) && !html.includes(authorityInjected)) {
     html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
   }
@@ -78,13 +109,13 @@ async function serveApplicationAsset(request, env) {
   // chance to complete before GVSync's first polling cycle. This prevents the
   // Incognito startup race where GVSync observes a stale authorized=false flag
   // and exits before ever reaching GVData.sync().
-  const authBridgeMarker = '<script src="/js/core/sync-authority.js" defer></script>';
-  const authBridgeInjected = '<script src="/js/core/sync-auth-startup-bridge.js" defer></script>';
+  const authBridgeMarker = `<script src="/js/core/sync-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const authBridgeInjected = `<script src="/js/core/sync-auth-startup-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(authBridgeMarker) && !html.includes(authBridgeInjected)) {
     html = html.replace(authBridgeMarker, `${authBridgeMarker}\n${authBridgeInjected}`);
   }
 
-  return new Response(html, response);
+  return withNoStore(response, html);
 }
 
 export default {
