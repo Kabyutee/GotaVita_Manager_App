@@ -52,18 +52,21 @@ async function serveApplicationAsset(request, env) {
     return response;
   }
 
-  const html = await response.text();
-  const marker = '<script src="script.js" defer></script>';
-  const injected = '<script src="/js/core/sync-authority.js" defer></script>';
+  let html = await response.text();
 
-  if (!html.includes(marker) || html.includes(injected)) {
-    return new Response(html, response);
+  const syncMarker = '<script src="js/core/sync-manager.js" defer></script>';
+  const syncInjected = '<script src="js/core/sync-cloud-write-reconciler.js" defer></script>';
+  if (html.includes(syncMarker) && !html.includes(syncInjected)) {
+    html = html.replace(syncMarker, `${syncInjected}\n${syncMarker}`);
   }
 
-  return new Response(
-    html.replace(marker, `${marker}\n${injected}`),
-    response
-  );
+  const authorityMarker = '<script src="script.js" defer></script>';
+  const authorityInjected = '<script src="/js/core/sync-authority.js" defer></script>';
+  if (html.includes(authorityMarker) && !html.includes(authorityInjected)) {
+    html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
+  }
+
+  return new Response(html, response);
 }
 
 export default {
