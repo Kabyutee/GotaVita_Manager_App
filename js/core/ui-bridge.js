@@ -181,19 +181,34 @@ window.GVUI = Object.freeze({
       if (!snapshot || typeof snapshot !== "object") return { ok: false, status: "state-bridge-unavailable" };
 
       const supported = original.supportedResources();
+      const baseline = readBaseline();
       const locallyChanged = getLocallyChangedResources(snapshot, supported);
-      const resourcesToPush = [...new Set([...queued, ...locallyChanged])];
+
+      // ANTI BIG BANG 3.1 — queue entries are advisory, not authoritative.
+      // After a successful sync, the baseline identifies the actual local
+      // mutations. A stale receiver queue must never push an older snapshot
+      // over a newer remote change before the receiver gets its pull.
+      const resourcesToPush = baseline?.state
+        ? locallyChanged
+        : [...new Set([...queued, ...locallyChanged])];
+
       const pushed = [];
       const remainingQueued = [];
 
       for (const resource of resourcesToPush) {
         const rows = Array.isArray(snapshot[stateResourceName(resource)]) ? snapshot[stateResourceName(resource)] : [];
         if (!rows.length) {
-          if (queued.includes(resource)) remainingQueued.push(resource);
+          if (!baseline?.state && queued.includes(resource)) remainingQueued.push(resource);
           continue;
         }
         await original.upsertResource(cloudResourceName(resource), rows);
         pushed.push(resource);
+      }
+
+      // Once we have a successful baseline, queue entries that are not backed
+      // by an actual local mutation are stale and can be safely acknowledged.
+      if (baseline?.state && typeof window.setSyncQueue === "function") {
+        window.setSyncQueue([]);
       }
 
       const entries = await Promise.all(supported.map(async (resource) => {
