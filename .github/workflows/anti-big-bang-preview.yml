@@ -161,3 +161,5 @@ jobs:
           echo "Candidate commit: ${{ env.CANDIDATE_SHA }}"
           echo "Preview Worker: gotavita-manager-pr-${{ env.PREVIEW_PR }}"
           echo "Production was not targeted by this workflow."
+
+# ANTI BIG BANG retrigger: deployment-only workflow comment; no runtime behavior change.
