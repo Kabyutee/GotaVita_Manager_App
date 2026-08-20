@@ -56,6 +56,19 @@
     return Boolean(await window.GVSync.flush());
   }
 
+  function refreshVisibleSyncStatus() {
+    try {
+      const element = document.getElementById("syncStatus");
+      const status = window.GVSyncStatus;
+      if (!element || !status?.label) return;
+      const label = status.label();
+      element.textContent = `● ${label}`;
+      element.dataset.status = status.get();
+      const detail = status.detail?.();
+      element.title = detail || "Storage and synchronization status";
+    } catch (_) {}
+  }
+
   // Replace the legacy local-mirror persistence/sync entry points after script.js
   // has defined them, so all business modules converge on the same authority.
   window.persistState = persistStateAuthoritatively;
@@ -67,4 +80,8 @@
     persist: persistStateAuthoritatively,
     flush: flushAuthoritatively
   });
+
+  // Keep the status indicator sourced from the authoritative sync metadata.
+  refreshVisibleSyncStatus();
+  setInterval(refreshVisibleSyncStatus, 1000);
 })();
