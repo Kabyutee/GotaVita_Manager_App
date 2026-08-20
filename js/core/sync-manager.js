@@ -6,18 +6,26 @@
   // The older standalone queue used a different localStorage key and could
   // report "Synced" while the real application queue still had resources.
   //
-  // ANTI BIG BANG 2.0 — live cross-device gate:
+  // ANTI BIG BANG 2.2 — live cross-device gate:
   // - queued local changes are pushed through GVData.sync().
   // - when the queue is empty, GVData.sync() is still called so an already
   //   open second device can pull remote changes.
   // - polling never clears or mutates the queue itself; GVData remains the
   //   single synchronization authority.
+  // - background sync must never rebuild the UI while a user is actively
+  //   interacting with a form/select control.
+  // - sync continues during protected interaction; only the destructive UI
+  //   render is deferred until the interaction is safely finished.
   const LEGACY_KEY = "gotavita_sync_queue_v1";
   const LEGACY_META = "gotavita_sync_meta_v1";
   const POLL_MS = 5000;
+  const INTERACTION_RELEASE_MS = 250;
 
   let pollTimer = null;
   let pollInFlight = false;
+  let interactionReleaseTimer = null;
+  let activeInteraction = false;
+  let deferredRender = false;
 
   function appQueue() {
     try {
@@ -32,7 +40,6 @@
       window.queueSyncResources(resources.filter(Boolean));
       return resources[0] || "";
     }
-    // Compatibility fallback only; the main app should always expose its queue.
     try {
       const q = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]");
       q.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
@@ -108,9 +115,6 @@
         } else {
           control.value = item.value;
         }
-
-        control.dispatchEvent(new Event("input", { bubbles: false }));
-        control.dispatchEvent(new Event("change", { bubbles: false }));
       } catch (_) {}
     }
 
@@ -122,7 +126,82 @@
     try { active?.focus?.(); } catch (_) {}
   }
 
+  // ANTI BIG BANG 2.2 — the focused control is the authoritative interaction
+  // boundary. Native select/checkbox popups can release pointer events while
+  // the control remains focused, so pointerup timing alone is insufficient.
+  function activeFormControl() {
+    try {
+      const active = document.activeElement;
+      return active?.closest?.("input, select, textarea, button") || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function interactionIsProtected() {
+    return Boolean(activeInteraction || activeFormControl());
+  }
+
+  function beginUserInteraction() {
+    activeInteraction = true;
+    if (interactionReleaseTimer) {
+      clearTimeout(interactionReleaseTimer);
+      interactionReleaseTimer = null;
+    }
+  }
+
+  function endUserInteractionSoon() {
+    if (interactionReleaseTimer) clearTimeout(interactionReleaseTimer);
+    interactionReleaseTimer = setTimeout(() => {
+      interactionReleaseTimer = null;
+
+      // A native select/checkbox can remain focused after pointerup/change.
+      // Keep the render deferred until focus has actually left the control.
+      if (activeFormControl()) return;
+
+      activeInteraction = false;
+
+      if (deferredRender) {
+        deferredRender = false;
+        renderSyncedState();
+      }
+    }, INTERACTION_RELEASE_MS);
+  }
+
+  function installInteractionGuard() {
+    // Browser-only interaction protection. The sync manager is also loaded by
+    // Node/VM contract tests, where document is intentionally unavailable.
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
+      return;
+    }
+
+    document.addEventListener("pointerdown", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("focusin", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) beginUserInteraction();
+    }, true);
+
+    document.addEventListener("focusout", (event) => {
+      const control = event.target?.closest?.("input, select, textarea, button");
+      if (control) endUserInteractionSoon();
+    }, true);
+  }
+
   function renderSyncedState() {
+    if (interactionIsProtected()) {
+      deferredRender = true;
+      return;
+    }
+
     const formState = captureActiveFormState();
 
     try {
@@ -137,9 +216,6 @@
       return;
     }
 
-    // The sync and render both continue normally. Only the user's active
-    // controls are restored so remote changes remain visible without destroying
-    // an in-progress order selection or unsaved input.
     restoreActiveFormState(formState);
   }
 
@@ -148,8 +224,6 @@
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
     if (!window.GVData || typeof window.GVData.sync !== "function") return { ok: false, status: "unavailable", queued: queue.length };
 
-    // Do not short-circuit when the queue is empty. A second device normally
-    // has no local queue but still needs to pull a change created elsewhere.
     try {
       const result = await window.GVData.sync(true);
       if (result !== false) {
@@ -207,6 +281,8 @@
   window.addEventListener("gv-auth-state-changed", (event) => {
     if (event?.detail?.authenticated === true) startPolling();
   });
+
+  installInteractionGuard();
 
   // Start the timer unconditionally. poll() itself remains authorization-gated,
   // so signed-out sessions do not access cloud data. This removes a lifecycle

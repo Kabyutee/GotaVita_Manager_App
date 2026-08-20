@@ -1,1 +1,2 @@
 Controlled queue adapter patch trigger.
+ANTI BIG BANG 2.2 preview gate refresh.
