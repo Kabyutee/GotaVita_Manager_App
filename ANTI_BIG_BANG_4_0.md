@@ -137,3 +137,5 @@ Merge only when:
 ## Important operating principle
 
 When a browser symptom repeats after multiple patches, stop patching and return to Gate 1. Repeated symptoms are evidence that the architecture, not the UI, is the failure surface.
+
+<!-- ANTI BIG BANG 4.0 CI retrigger checkpoint: no runtime behavior change. -->
