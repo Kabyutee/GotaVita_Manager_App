@@ -3,28 +3,27 @@
   "use strict";
 
   function snapshot() {
-    if (typeof window.getStateSnapshot === "function") {
-      return window.getStateSnapshot();
-    }
-    return null;
+    return typeof getStateSnapshot === "function"
+      ? getStateSnapshot()
+      : null;
   }
 
   function persistStateAuthoritatively() {
     try {
-      if (typeof window.normalizeState === "function") window.normalizeState();
-      if (typeof window.validateDataIntegrity === "function") window.validateDataIntegrity();
+      if (typeof normalizeState === "function") normalizeState();
+      if (typeof validateDataIntegrity === "function") validateDataIntegrity();
 
       const current = snapshot();
-      if (typeof window.writeLocalStateSnapshot === "function" && current) {
-        if (!window.writeLocalStateSnapshot(current)) {
+      if (typeof writeLocalStateSnapshot === "function" && current) {
+        if (!writeLocalStateSnapshot(current)) {
           throw new Error("Local state could not be verified after save.");
         }
       }
 
       // Queue ownership is centralized here. GVData.sync() owns dirty detection,
       // cloud writes, reads, baseline updates, and queue draining.
-      if (typeof window.queueSyncResources === "function" && Array.isArray(window.GV_CONFIG?.SYNC_RESOURCES)) {
-        window.queueSyncResources(window.GV_CONFIG.SYNC_RESOURCES);
+      if (typeof queueSyncResources === "function" && Array.isArray(window.GV_CONFIG?.SYNC_RESOURCES)) {
+        queueSyncResources(window.GV_CONFIG.SYNC_RESOURCES);
       }
 
       if (window.GVSync?.flush) {
@@ -38,8 +37,8 @@
 
       return true;
     } catch (error) {
-      if (typeof window.handleAppError === "function") {
-        window.handleAppError("persist-state", error, {
+      if (typeof handleAppError === "function") {
+        handleAppError("persist-state", error, {
           userMessage: "The change could not be safely saved.",
           fallback: false
         });
