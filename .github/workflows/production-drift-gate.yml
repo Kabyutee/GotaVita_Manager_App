@@ -1,9 +1,6 @@
 name: GotaVita Production Drift Gate
 
 on:
-  push:
-    branches:
-      - main
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
