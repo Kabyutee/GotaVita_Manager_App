@@ -28,6 +28,10 @@ jobs:
           node --check js/core/state.js
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
+          node --check js/core/sync-manager.js
+          node --check js/core/conflict-resolution-integration.js
+          node --check js/modules/groups-routes.js
+          node --check worker.js
 
       - name: Run full regression contracts
         run: |
@@ -43,6 +47,13 @@ jobs:
           node tests/sprint12-write-safety-contract.test.js
           node tests/sprint12-controlled-write-activation-contract.test.js
           node tests/sprint12-write-roundtrip-contract.test.js
+          node tests/sprint12-conflict-detection-contract.test.js
+          node tests/sprint12-conflict-policy-contract.test.js
+          node tests/sprint12-conflict-resolution-policy-contract.test.js
+          node tests/sprint12-controlled-conflict-integration-contract.test.js
+          node tests/sprint12-two-device-conflict-scenarios.test.js
+          node tests/sprint12-live-sync-polling-contract.test.js
+          node tests/sprint14-order-edit-group-contract.test.js
 
       - name: Deploy exact main commit to Cloudflare
         id: deploy
