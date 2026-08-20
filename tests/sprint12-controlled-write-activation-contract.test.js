@@ -32,8 +32,8 @@ assert.match(
 );
 assert.match(
   syncBlock[0],
-  /window\.setSyncQueue\(\[\]\)/,
-  "Queue must only clear after successful push/pull completion"
+  /window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
+  "Queue must update only after successful push/pull completion while preserving skipped resources"
 );
 
 // The gateway exposes sync separately from hydration/read APIs.
