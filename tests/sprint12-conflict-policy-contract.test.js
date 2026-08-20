@@ -6,18 +6,23 @@ const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
 assert.match(
   bridge,
-  /for \(const resource of queued\)/,
-  "Conflict policy must process queued local resources first"
+  /const resourcesToPush = \[\.\.\.new Set\(\[\.\.\.queued, \.\.\.locallyChanged\]\)\]/,
+  "Conflict policy must prioritize queued local resources before inferred dirty resources"
+);
+assert.match(
+  bridge,
+  /for \(const resource of resourcesToPush\)/,
+  "Conflict policy must process the complete local-write set before cloud pull"
 );
 assert.match(
   bridge,
   /await original\.upsertResource\(cloudResourceName\(resource\), rows\)/,
-  "Queued local resources must be pushed before cloud hydration"
+  "Local resources must be pushed before cloud hydration"
 );
 assert.match(
   bridge,
   /const entries = await Promise\.all\(\s*supported\.map\(async \(resource\)/,
-  "Synchronization must perform a cloud read-back after queued pushes"
+  "Synchronization must perform a cloud read-back after local pushes"
 );
 assert.match(
   bridge,
@@ -28,6 +33,16 @@ assert.match(
   bridge,
   /if \(typeof window\.setSyncQueue === \"function\"\) window\.setSyncQueue\(remainingQueued\)/,
   "Sync queue must update only after the push/read-back sequence succeeds"
+);
+assert.match(
+  bridge,
+  /function getLocallyChangedResources\(snapshot, supported\)/,
+  "Background sync must detect locally dirty resources even when the queue is empty"
+);
+assert.match(
+  bridge,
+  /stableRows\(snapshot\?\.\[stateName\]\) !== stableRows\(baseline\.state\[stateName\]\)/,
+  "Dirty-resource detection must compare current state against the last successful sync baseline"
 );
 assert.doesNotMatch(
   gateway,
