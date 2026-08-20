@@ -20,6 +20,7 @@ on:
       - sprint12-conflict-resolution
       - sprint12-controlled-conflict-integration
       - anti-big-bang/live-sync-polling-gate
+      - sprint13/state-replace-render-contract
   pull_request:
     branches:
       - main
@@ -82,3 +83,4 @@ jobs:
           node tests/sprint12-controlled-conflict-integration-contract.test.js
           node tests/sprint12-two-device-conflict-scenarios.test.js
           node tests/sprint12-live-sync-polling-contract.test.js
+          node tests/sprint13-state-replace-render-contract.test.js
