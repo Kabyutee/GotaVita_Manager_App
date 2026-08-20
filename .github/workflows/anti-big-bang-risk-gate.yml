@@ -1,4 +1,4 @@
-name: ANTI BIG BANG 3.0 Risk Gate
+name: ANTI BIG BANG 4.0 Risk Gate
 
 on:
   pull_request:
@@ -16,6 +16,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: ANTI BIG BANG 4.0 system audit
+        run: node tests/anti-big-bang-4-system-audit.test.js
 
       - name: Classify risk from changed paths
         id: risk
@@ -37,13 +40,13 @@ jobs:
               .github/workflows/*|wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|tests/*sync*|tests/*conflict*)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
                 data=true
                 ;;
-              *.html|*.css|script.js|js/modules/*|js/core/ui-bridge.js)
+              *.html|*.css|js/modules/*|js/core/ui-bridge.js)
                 ui=true
                 ;;
             esac
@@ -63,7 +66,7 @@ jobs:
             echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
 
-          echo "ANTI BIG BANG 3.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment"
+          echo "ANTI BIG BANG 4.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment"
 
       - name: Run low-risk fast contract
         if: steps.risk.outputs.risk == 'low'
@@ -91,12 +94,14 @@ jobs:
           node tests/sprint16-production-drift-gate-contract.test.js
           node tests/sprint18-transaction-sync-readiness-contract.test.js
           node tests/sprint18-sync-queue-preservation-contract.test.js
+          node tests/anti-big-bang-4-system-audit.test.js
 
       - name: Publish gate summary
         run: |
-          echo "ANTI BIG BANG 3.0 classification: ${{ steps.risk.outputs.risk }}"
+          echo "ANTI BIG BANG 4.0 classification: ${{ steps.risk.outputs.risk }}"
           echo "UI: ${{ steps.risk.outputs.ui }}"
           echo "Sync: ${{ steps.risk.outputs.sync }}"
           echo "Data: ${{ steps.risk.outputs.data }}"
           echo "Deployment: ${{ steps.risk.outputs.deployment }}"
+          echo "System audit: required and passed"
           echo "Production deployment: NOT performed by this workflow"
