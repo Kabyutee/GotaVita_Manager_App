@@ -54,6 +54,7 @@ jobs:
           node tests/sprint12-two-device-conflict-scenarios.test.js
           node tests/sprint12-live-sync-polling-contract.test.js
           node tests/sprint14-order-edit-group-contract.test.js
+          node tests/sprint15-production-regression-gate-contract.test.js
 
       - name: Deploy exact main commit to Cloudflare
         id: deploy
