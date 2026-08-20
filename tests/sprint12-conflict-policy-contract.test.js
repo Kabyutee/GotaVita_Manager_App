@@ -11,7 +11,7 @@ assert.match(
 );
 assert.match(
   bridge,
-  /await original\.upsertResource\(cloudName, rows\)/,
+  /await original\.upsertResource\(cloudResourceName\(resource\), rows\)/,
   "Queued local resources must be pushed before cloud hydration"
 );
 assert.match(
@@ -26,7 +26,7 @@ assert.match(
 );
 assert.match(
   bridge,
-  /if \(typeof window\.setSyncQueue === \"function\"\) \{\s*window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
+  /if \(typeof window\.setSyncQueue === \"function\"\) window\.setSyncQueue\(remainingQueued\)/,
   "Sync queue must update only after the push/read-back sequence succeeds"
 );
 assert.doesNotMatch(
