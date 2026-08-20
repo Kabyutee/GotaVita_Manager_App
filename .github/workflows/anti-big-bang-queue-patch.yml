@@ -1,9 +1,8 @@
 name: ANTI BIG BANG — apply controlled queue adapter patch
 
 on:
-  push:
-    branches:
-      - sprint12-queue-drain-activation
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -19,36 +18,27 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-
           path = Path("script.js")
           text = path.read_text(encoding="utf-8")
 
           old = '''function cloudSyncAdapterReady() {
   return false;
 }'''
-
           new = '''function cloudSyncAdapterReady() {
   // The modular GVData facade is now the authoritative Supabase adapter.
-  // Legacy script.js must delegate to it rather than hold the transaction queue.
+  // Legacy script.js delegates to it instead of holding the transaction queue.
   return (
     typeof window.GVData?.sync === "function" &&
     typeof window.GVData?.health === "function"
   );
 }'''
 
-          if old not in text:
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif "typeof window.GVData?.sync === \"function\"" in text:
+              pass
+          else:
               raise SystemExit("Expected cloudSyncAdapterReady boundary not found")
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-      - name: Replace legacy transaction branch with authoritative GVData sync
-        shell: python
-        run: |
-          from pathlib import Path
-
-          path = Path("script.js")
-          text = path.read_text(encoding="utf-8")
 
           marker = '''    /*
      * Do not write transaction records until the schema
@@ -60,19 +50,16 @@ jobs:
       !cloudSyncAdapterReady()
     ) {'''
 
-          start = text.find(marker)
-          if start < 0:
-              raise SystemExit("Expected legacy sync guard not found")
-
-          body_start = start + len(marker)
-          end_marker = '''    /*
+          if marker in text:
+              body_start = text.find(marker) + len(marker)
+              end_marker = '''    /*
      * Reserved for the schema-adapter phase.
      */'''
-          end = text.find(end_marker, body_start)
-          if end < 0:
-              raise SystemExit("Expected reserved adapter boundary not found")
+              end = text.find(end_marker, body_start)
+              if end < 0:
+                  raise SystemExit("Expected reserved adapter boundary not found")
 
-          replacement = '''
+              replacement = '''
       const result =
         typeof window.GVData?.sync === "function"
           ? await window.GVData.sync(true)
@@ -101,19 +88,22 @@ jobs:
     }
 
 '''
+              text = text[:body_start] + replacement + text[end:]
 
-          text = text[:body_start] + replacement + text[end:]
           path.write_text(text, encoding="utf-8")
 
       - name: Syntax check
         run: node --check script.js
 
-      - name: Commit patch and remove one-shot workflow
+      - name: Commit patch when changed
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add script.js .github/workflows/anti-big-bang-queue-patch.yml
-          git rm .github/workflows/anti-big-bang-queue-patch.yml
+          if git diff --quiet -- script.js; then
+            echo "Queue adapter patch already applied."
+            exit 0
+          fi
+          git add script.js
           git commit -m "Sprint 12 — delegate legacy sync to authoritative GVData adapter"
           git push
