@@ -154,7 +154,7 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
+  /window\.setSyncQueue\((?:\[\]|remainingQueued|\[\.\.\.remainingQueued\])\)/,
   "Successful synchronization must drain fully-pushed queues while preserving skipped resources"
 );
 
