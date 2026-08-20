@@ -18,6 +18,8 @@
 
   let pollTimer = null;
   let pollInFlight = false;
+  let pendingRender = false;
+  let renderHooksInstalled = false;
 
   function appQueue() {
     try {
@@ -41,6 +43,67 @@
     return entity;
   }
 
+  function activeFormInteraction() {
+    try {
+      const active = document.activeElement;
+      if (active && active.matches && active.matches("input, select, textarea, button, [contenteditable='true']")) {
+        return true;
+      }
+      return !!document.querySelector(
+        "form:focus-within, [role='dialog']:focus-within, .modal:focus-within"
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function renderAfterInteraction() {
+    if (!pendingRender || activeFormInteraction()) return;
+    pendingRender = false;
+    try {
+      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
+        window.GVUI.renderAll();
+      }
+    } catch (renderError) {
+      console.warn(
+        "GotaVita deferred background sync render skipped:",
+        renderError?.message || renderError
+      );
+    }
+  }
+
+  function installRenderProtection() {
+    if (renderHooksInstalled || typeof document === "undefined") return;
+    renderHooksInstalled = true;
+
+    // A remote sync may complete while the user is changing a select/input.
+    // Defer only the destructive full render; the synchronized state remains
+    // authoritative in memory and can be rendered immediately after editing.
+    document.addEventListener("focusout", () => {
+      setTimeout(renderAfterInteraction, 0);
+    }, true);
+  }
+
+  function renderSyncedState() {
+    installRenderProtection();
+    if (activeFormInteraction()) {
+      pendingRender = true;
+      return;
+    }
+
+    pendingRender = false;
+    try {
+      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
+        window.GVUI.renderAll();
+      }
+    } catch (renderError) {
+      console.warn(
+        "GotaVita background sync render skipped:",
+        renderError?.message || renderError
+      );
+    }
+  }
+
   async function flush() {
     const queue = appQueue();
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
@@ -52,20 +115,10 @@
       const result = await window.GVData.sync(true);
       if (result !== false) {
         // GVData.sync() is the authoritative state synchronization boundary.
-        // Its background polling path can replace the in-memory state without
-        // causing tab navigation. Render the current tab immediately after the
-        // successful pull so cross-device changes become visible without a
-        // refresh or tab switch. No queue/state ownership is changed here.
-        try {
-          if (window.GVUI && typeof window.GVUI.renderAll === "function") {
-            window.GVUI.renderAll();
-          }
-        } catch (renderError) {
-          console.warn(
-            "GotaVita background sync render skipped:",
-            renderError?.message || renderError
-          );
-        }
+        // Never destroy an active form/select interaction with a full render.
+        // The state is already synchronized; rendering is deferred until the
+        // user leaves the active form controls.
+        renderSyncedState();
 
         try {
           const meta = JSON.parse(localStorage.getItem(LEGACY_META) || "{}");
@@ -94,6 +147,7 @@
 
   function startPolling() {
     if (pollTimer) return;
+    installRenderProtection();
     pollTimer = setInterval(() => {
       poll().catch(() => {});
     }, POLL_MS);
