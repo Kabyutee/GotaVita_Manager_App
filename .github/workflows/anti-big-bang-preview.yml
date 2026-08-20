@@ -1,0 +1,40 @@
+name: ANTI BIG BANG — isolated browser preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v4
+
+      - name: Verify Worker and sync-manager syntax
+        run: |
+          node --check worker.js
+          node --check js/core/sync-manager.js
+
+      - name: Deploy isolated candidate preview
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.124.0"
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            deploy
+            --preview-alias pr-${{ github.event.pull_request.number }}
+            --var GV_RELEASE_SHA:${{ github.event.pull_request.head.sha }}
+
+      - name: Publish preview gate details
+        run: |
+          echo "Candidate commit: ${{ github.event.pull_request.head.sha }}"
+          echo "Preview alias: pr-${{ github.event.pull_request.number }}"
+          echo "Production was not targeted by this workflow."
