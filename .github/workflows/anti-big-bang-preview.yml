@@ -21,7 +21,7 @@ jobs:
           node --check worker.js
           node --check js/core/sync-manager.js
 
-      - name: Deploy isolated candidate preview
+      - name: Deploy isolated candidate Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -30,11 +30,11 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
             deploy
-            --preview-alias pr-${{ github.event.pull_request.number }}
+            --name gotavita-manager-pr-${{ github.event.pull_request.number }}
             --var GV_RELEASE_SHA:${{ github.event.pull_request.head.sha }}
 
       - name: Publish preview gate details
         run: |
           echo "Candidate commit: ${{ github.event.pull_request.head.sha }}"
-          echo "Preview alias: pr-${{ github.event.pull_request.number }}"
+          echo "Preview Worker: gotavita-manager-pr-${{ github.event.pull_request.number }}"
           echo "Production was not targeted by this workflow."
