@@ -10,7 +10,7 @@ assert.match(gateway, /auth\.profile\.company_id/, "Write round-trip must remain
 assert.match(gateway, /\.upsert\(\s*cloudRows/, "Write round-trip must reach the Supabase upsert boundary");
 assert.match(gateway, /return fromSupabaseResource\(\s*name,\s*data\s*\);/, "Successful writes must return normalized read-back payload");
 assert.match(uiBridge, /await original\.upsertResource\(cloudName, rows\);/, "Cross-device sync must push queued rows through the gateway");
-assert.match(uiBridge, /window\.setSyncQueue\(\[\]\);/, "Successful synchronization must clear the queue");
+assert.match(uiBridge, /window\.setSyncQueue\((?:\[\]|remainingQueued)\);/, "Successful synchronization must update the queue while preserving skipped resources");
 assert.match(uiBridge, /status: \"sync-error\"/, "Failed synchronization must remain observable");
 
 console.log("Sprint 12 write round-trip contract: PASS");

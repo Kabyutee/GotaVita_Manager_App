@@ -261,13 +261,17 @@ window.GVUI = Object.freeze({
       }
 
       const pushed = [];
+      const remainingQueued = [];
 
       for (const resource of queued) {
         const cloudName = cloudResourceName(resource);
         const stateName = stateResourceName(resource);
         const rows = Array.isArray(snapshot[stateName]) ? snapshot[stateName] : [];
 
-        if (!rows.length) continue;
+        if (!rows.length) {
+          remainingQueued.push(resource);
+          continue;
+        }
 
         await original.upsertResource(cloudName, rows);
         pushed.push(resource);
@@ -308,8 +312,8 @@ window.GVUI = Object.freeze({
         window.writeLocalStateSnapshot(nextState);
       }
 
-      if (pushed.length && typeof window.setSyncQueue === "function") {
-        window.setSyncQueue([]);
+      if (typeof window.setSyncQueue === "function") {
+        window.setSyncQueue(remainingQueued);
       }
 
       if (typeof window.setSyncMeta === "function") {

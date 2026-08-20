@@ -154,8 +154,8 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /window\.setSyncQueue\(\[\]\)/,
-  "Successful synchronization must clear the local sync queue"
+  /window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
+  "Successful synchronization must drain fully-pushed queues while preserving skipped resources"
 );
 
 console.log("Sprint 10 State Bridge + Hydration verification: PASS");

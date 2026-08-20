@@ -26,8 +26,8 @@ assert.match(
 );
 assert.match(
   bridge,
-  /if \(pushed\.length && typeof window\.setSyncQueue === \"function\"\) \{\s*window\.setSyncQueue\(\[\]\)/,
-  "Sync queue must clear only after the push/read-back sequence succeeds"
+  /if \(typeof window\.setSyncQueue === \"function\"\) \{\s*window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
+  "Sync queue must update only after the push/read-back sequence succeeds"
 );
 assert.doesNotMatch(
   gateway,
