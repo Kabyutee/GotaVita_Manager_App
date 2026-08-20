@@ -192,7 +192,7 @@ window.GVUI = Object.freeze({
       return { hydrated: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
     })().catch((error) => {
       console.warn("GotaVita Supabase hydration skipped; local state preserved:", error?.message || error);
-      return { hydrated: false, reason: "cloud-read-failed", error: String(error?.message || error) };
+      return { hydrated: false, reason: "cloud-read-failed" };
     }).then((result) => {
       if (result?.reason === "cloud-read-failed") hydrationPromise = null;
       return result;
