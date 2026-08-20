@@ -3,7 +3,6 @@
 
 function idsEqual(a, b) { return String(a) === String(b); }
 
-
 function groupOf(orderId) {
   const g = state.orderGroups.find((g) => (g.orderIds || []).some((x) => idsEqual(x, orderId)));
   return g ? g.name : "";
@@ -19,7 +18,6 @@ function createGroup() {
   persistState(); renderAll(); showToast(`Group "${name}" created.`);
 }
 
-
 function editGroup(index) {
   const g = state.orderGroups[index];
   if (!g) return;
@@ -33,7 +31,6 @@ function editGroup(index) {
     persistState(); renderPartial("groups"); showToast("Group updated.");
   }
 }
-
 
 function renderOrderGroups() {
   const el = $("groupList"); if (!el) return;
@@ -59,12 +56,10 @@ function renderOrderGroups() {
   </div>`).join('');
 }
 
-
 function openGroupManager(index) {
   const g = state.orderGroups[index]; if (!g) return;
   $("groupManageIndex").value = index; $("groupManageTitle").textContent = `📦 Manage Orders · ${g.name}`; $("groupManageSearch").value=''; renderGroupManager(); openModal('groupManageModal');
 }
-
 
 function renderGroupManager() {
   const index = Number($("groupManageIndex")?.value); const g = state.orderGroups[index]; const body = $("groupManageBody"); if (!g || !body) return;
@@ -76,7 +71,6 @@ function renderGroupManager() {
   renderLazyList("groupManageBody", orders, (o) => `<label class="group-manage-row"><input type="checkbox" class="group-manage-check" value="${esc(o.id)}" ${current.has(String(o.id))?'checked':''}><span><b>${esc(o.clientName)}</b><small>${esc(o.address || "No address")}</small><small>#${esc(o.orderNumber)} · ${o.gallons} containers · ${peso(o.total)} · ${o.status}</small></span><span class="badge ${String(o.status).toLowerCase()}">${o.status}</span></label>`, '<p class="empty">No matching orders.</p>', { initial: 50, chunk: 50 });
 }
 
-
 function saveGroupManager() {
   const index = Number($("groupManageIndex").value); const g = state.orderGroups[index]; if (!g) return;
   saveStateForUndo();
@@ -84,7 +78,6 @@ function saveGroupManager() {
   g.orderIds = Array.from(document.querySelectorAll('.group-manage-check:checked')).map(c => String(c.value)).filter(id => validOrderIds.has(id));
   persistState(); renderPartial("groups"); closeModal('groupManageModal'); showToast(`Group "${g.name}" updated.`);
 }
-
 
 function removeOrderFromGroup(orderId) {
   saveStateForUndo();
@@ -97,7 +90,6 @@ function removeOrderFromGroup(orderId) {
   persistState(); renderPartial("groups");
   showToast(removed ? "Order removed from group." : "Order was not assigned to a group.", removed ? "success" : "error");
 }
-
 
 function assignOrdersToGroup(orderIds, groupName) {
   saveStateForUndo();
@@ -113,14 +105,12 @@ function assignOrdersToGroup(orderIds, groupName) {
   showToast(eligibleIds.length ? `Assigned ${eligibleIds.length} order(s) to "${groupName}".` : "No eligible orders were assigned.", eligibleIds.length ? "success" : "error");
 }
 
-
 function openGroupPicker(orderIds) {
   groupPickerOrderIds = orderIds;
   const currentGroup = orderIds.length === 1 ? groupOf(orderIds[0]) : "";
   $("groupPickerTitle").textContent = orderIds.length === 1
     ? `Assign Order #${(state.orders.find((o) => o.id === orderIds[0]) || {}).orderNumber || ""} to Group`
     : `Assign ${orderIds.length} Orders to Group`;
-  
   const body = $("groupPickerBody");
   let html = "";
   if (state.orderGroups.length) {
@@ -134,18 +124,15 @@ function openGroupPicker(orderIds) {
   } else {
     html += `<div class="emp-meta" style="padding:10px;">No groups exist yet. Create a new group below.</div>`;
   }
-
   if (currentGroup) {
     html += `<button class="gp-item-btn" type="button" style="border-color:var(--danger); color:var(--danger); margin-top:10px;" data-action="removeSelectedFromGroup">
       <span>🚫 Remove from Group</span>
     </button>`;
   }
-
   body.innerHTML = html;
   $("groupPickerNew").value = "";
   openModal("groupPickerModal");
 }
-
 
 function removeSelectedFromGroup() {
   saveStateForUndo();
@@ -154,13 +141,11 @@ function removeSelectedFromGroup() {
   showToast("Removed from group.");
 }
 
-
 function groupPickerCreate() {
   const name = $("groupPickerNew").value.trim();
   if (!name) { showToast("Enter a group name.", "error"); return; }
   assignOrdersToGroup(groupPickerOrderIds, name);
 }
-
 
 function markGroupPaid(i) {
   const g = state.orderGroups[i]; if (!g) return;
@@ -175,10 +160,158 @@ function markGroupPaid(i) {
   persistState(); renderAll(); confetti(); showToast(`${updated} order(s) in "${g.name}" marked as paid.`);
 }
 
-
 function copyGroupList(i) {
   const g = state.orderGroups[i]; if (!g) return;
   const orders = (g.orderIds||[]).map(id=>state.orders.find(o=>idsEqual(o.id,id))).filter(Boolean);
   const text = [`${g.name}`, ...orders.map(o=>`${o.clientName} - ${o.gallons} - ${peso(o.total)}`)].join('\n');
   navigator.clipboard ? navigator.clipboard.writeText(text).then(()=>showToast('Group list copied.')) : prompt('Copy:', text);
 }
+
+/* Sprint 14 — existing-order group editor integration.
+ * Extends the existing Edit Order modal without touching the sync layer.
+ */
+(function installOrderEditGroupSelector() {
+  const originalOpenOrderEditor = window.openOrderEditor;
+
+  function ensureGroupSelect() {
+    const form = $("orderEditForm");
+    if (!form) return null;
+    let select = $("editOrderGroup");
+    if (select) return select;
+    const fields = form.querySelector(".field-grid");
+    if (!fields) return null;
+    const label = document.createElement("label");
+    label.className = "field wide";
+    label.innerHTML = `<span>Delivery Group</span><select id="editOrderGroup"><option value="">-- No Group --</option></select>`;
+    fields.appendChild(label);
+    return $("editOrderGroup");
+  }
+
+  function renderGroupOptions(selected = "") {
+    const select = ensureGroupSelect();
+    if (!select) return;
+    select.innerHTML = `<option value="">-- No Group --</option>` +
+      state.orderGroups
+        .slice()
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        .map((g) => `<option value="${esc(g.name)}">${esc(g.name)}</option>`)
+        .join("");
+    select.value = selected || "";
+  }
+
+  if (typeof originalOpenOrderEditor === "function") {
+    window.openOrderEditor = function wrappedOpenOrderEditor(id) {
+      originalOpenOrderEditor(id);
+      const order = state.orders.find((x) => idsEqual(x.id, id));
+      renderGroupOptions(order ? groupOf(order.id) : "");
+    };
+    openOrderEditor = window.openOrderEditor;
+  }
+
+  const originalHandleOrderEditSubmit = window.handleOrderEditSubmit;
+  if (typeof originalHandleOrderEditSubmit !== "function") return;
+
+  window.handleOrderEditSubmit = function wrappedHandleOrderEditSubmit(e) {
+    e.preventDefault();
+    const id = $("editOrderId").value;
+    const o = state.orders.find(x => idsEqual(x.id, id));
+    if (!o) return;
+    const clientName = $("editOrderClient").value;
+    const productName = $("editOrderProduct").value;
+    const editedClient = state.clients.find(c => c.name === clientName);
+    const editedProduct = state.products.find(p => p.name === productName);
+    const validation = validateOrderInput({
+      clientName,
+      clientId: editedClient?.id,
+      custType: productName,
+      productId: editedProduct?.id,
+      gallons: $("editOrderGallons").value,
+      price: $("editOrderPrice").value,
+      status: $("editOrderStatus").value,
+      emptyGallonsCollected: $("editOrderEmpty").value
+    });
+    if (!validation.ok) { validationError(validation.message); return; }
+
+    const before = clone(o);
+    const beforeGroup = groupOf(o.id);
+    const selectedGroup = $("editOrderGroup")?.value?.trim() || "";
+    if (selectedGroup && !state.orderGroups.some((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase())) {
+      validationError("Selected delivery group no longer exists.");
+      return;
+    }
+
+    saveStateForUndo();
+    o.clientName = validation.value.clientName;
+    o.custType = validation.value.custType;
+    o.clientId = editedClient.id;
+    o.productId = editedProduct.id;
+    o.gallons = validation.value.gallons;
+    o.price = validation.value.price;
+    o.emptyGallonsCollected = validation.value.emptyGallonsCollected;
+    recalculateOrderFinancials(o);
+    applyOrderStatus(o, $("editOrderStatus").value);
+    o.address = $("editOrderAddress").value.trim();
+    o.notes = $("editOrderNotes").value.trim();
+    o.updatedAt = new Date().toISOString();
+
+    state.orderGroups.forEach((g) => {
+      g.orderIds = (g.orderIds || []).filter((orderId) => !idsEqual(orderId, o.id));
+    });
+    if (selectedGroup) {
+      const group = state.orderGroups.find((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase());
+      if (group) {
+        group.orderIds = group.orderIds || [];
+        if (!group.orderIds.some((orderId) => idsEqual(orderId, o.id))) group.orderIds.push(o.id);
+      }
+    }
+
+    audit("update", "order", o.id, {
+      before,
+      after: clone(o),
+      groupBefore: beforeGroup,
+      groupAfter: selectedGroup || ""
+    });
+    persistState();
+    renderAll();
+    closeModal("orderEditModal");
+    showToast(`Order #${o.orderNumber} updated${selectedGroup ? ` and assigned to "${selectedGroup}"` : " and removed from its group"}.`);
+  };
+  handleOrderEditSubmit = window.handleOrderEditSubmit;
+})();
+
+/* Sprint 14 display hardening — keep group name visible in Completed and All Orders. */
+(function installGroupLabelAcrossOrderViews() {
+  function decorate(tableId, checkboxClass) {
+    const table = $(tableId);
+    if (!table) return;
+    table.querySelectorAll("tr").forEach((row) => {
+      const checkbox = row.querySelector(`input.${checkboxClass}`);
+      const cell = row.querySelector("td:nth-child(4)");
+      if (!checkbox || !cell) return;
+      const group = groupOf(checkbox.value);
+      cell.querySelector(".gv-order-group-label")?.remove();
+      if (!group) return;
+      const label = document.createElement("small");
+      label.className = "gv-order-group-label";
+      label.style.cssText = "display:block; margin-top:4px; font-weight:700;";
+      label.textContent = `📦 ${group}`;
+      cell.appendChild(label);
+    });
+  }
+
+  const originalCompleted = renderCompletedTransactions;
+  renderCompletedTransactions = function wrappedRenderCompletedTransactions() {
+    const result = originalCompleted.apply(this, arguments);
+    decorate("billingTableBody", "billing-checkbox");
+    return result;
+  };
+  window.renderCompletedTransactions = renderCompletedTransactions;
+
+  const originalAll = renderAllOrders;
+  renderAllOrders = function wrappedRenderAllOrders() {
+    const result = originalAll.apply(this, arguments);
+    decorate("allOrdersTableBody", "all-order-checkbox");
+    return result;
+  };
+  window.renderAllOrders = renderAllOrders;
+})();
