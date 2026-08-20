@@ -45,9 +45,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.124.0"
-          command: deploy --name ${{ env.PREVIEW_WORKER_NAME }}
-        env:
-          GV_RELEASE_SHA: ${{ github.sha }}
+          command: deploy --name ${{ env.PREVIEW_WORKER_NAME }} --var GV_RELEASE_SHA:${{ github.sha }}
 
       - name: Verify isolated preview release SHA and app shell
         env:
