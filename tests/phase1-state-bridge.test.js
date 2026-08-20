@@ -129,7 +129,7 @@ assert.match(
 );
 assert.match(
   uiBridge,
-  /if \(!cloudHasData\)/,
+  /Object\.values\(cloudRows\)\.some\(\(rows\) => rows\.length > 0\)/,
   "Empty Supabase must not erase local/seed state"
 );
 assert.match(
