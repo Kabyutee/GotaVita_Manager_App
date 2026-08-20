@@ -37,7 +37,7 @@ jobs:
               .github/workflows/*|wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|tests/*sync*|tests/*conflict*)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|tests/*sync*|tests/*conflict*)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
@@ -90,6 +90,7 @@ jobs:
           node tests/sprint14-order-edit-group-contract.test.js
           node tests/sprint16-production-drift-gate-contract.test.js
           node tests/sprint18-transaction-sync-readiness-contract.test.js
+          node tests/sprint18-sync-queue-preservation-contract.test.js
 
       - name: Publish gate summary
         run: |
