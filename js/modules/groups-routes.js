@@ -182,3 +182,116 @@ function copyGroupList(i) {
   const text = [`${g.name}`, ...orders.map(o=>`${o.clientName} - ${o.gallons} - ${peso(o.total)}`)].join('\n');
   navigator.clipboard ? navigator.clipboard.writeText(text).then(()=>showToast('Group list copied.')) : prompt('Copy:', text);
 }
+
+
+/* Sprint 14 — existing-order group editor integration.
+ * Extends the existing Edit Order modal without touching the sync layer.
+ */
+(function installOrderEditGroupSelector() {
+  const originalOpenOrderEditor = window.openOrderEditor;
+
+  function ensureGroupSelect() {
+    const form = $("orderEditForm");
+    if (!form) return null;
+    let select = $("editOrderGroup");
+    if (select) return select;
+    const fields = form.querySelector(".field-grid");
+    if (!fields) return null;
+    const label = document.createElement("label");
+    label.className = "field wide";
+    label.innerHTML = `<span>Delivery Group</span><select id="editOrderGroup"><option value="">-- No Group --</option></select>`;
+    fields.appendChild(label);
+    return $("editOrderGroup");
+  }
+
+  function renderGroupOptions(selected = "") {
+    const select = ensureGroupSelect();
+    if (!select) return;
+    select.innerHTML = `<option value="">-- No Group --</option>` +
+      state.orderGroups
+        .slice()
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        .map((g) => `<option value="${esc(g.name)}">${esc(g.name)}</option>`)
+        .join("");
+    select.value = selected || "";
+  }
+
+  if (typeof originalOpenOrderEditor === "function") {
+    window.openOrderEditor = function wrappedOpenOrderEditor(id) {
+      originalOpenOrderEditor(id);
+      const order = state.orders.find((x) => idsEqual(x.id, id));
+      renderGroupOptions(order ? groupOf(order.id) : "");
+    };
+    openOrderEditor = window.openOrderEditor;
+  }
+
+  const originalHandleOrderEditSubmit = window.handleOrderEditSubmit;
+  if (typeof originalHandleOrderEditSubmit !== "function") return;
+
+  window.handleOrderEditSubmit = function wrappedHandleOrderEditSubmit(e) {
+    e.preventDefault();
+    const id = $("editOrderId").value;
+    const o = state.orders.find(x => idsEqual(x.id, id));
+    if (!o) return;
+    const clientName = $("editOrderClient").value;
+    const productName = $("editOrderProduct").value;
+    const editedClient = state.clients.find(c => c.name === clientName);
+    const editedProduct = state.products.find(p => p.name === productName);
+    const validation = validateOrderInput({
+      clientName,
+      clientId: editedClient?.id,
+      custType: productName,
+      productId: editedProduct?.id,
+      gallons: $("editOrderGallons").value,
+      price: $("editOrderPrice").value,
+      status: $("editOrderStatus").value,
+      emptyGallonsCollected: $("editOrderEmpty").value
+    });
+    if (!validation.ok) { validationError(validation.message); return; }
+
+    const before = clone(o);
+    const beforeGroup = groupOf(o.id);
+    const selectedGroup = $("editOrderGroup")?.value?.trim() || "";
+    if (selectedGroup && !state.orderGroups.some((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase())) {
+      validationError("Selected delivery group no longer exists.");
+      return;
+    }
+
+    saveStateForUndo();
+    o.clientName = validation.value.clientName;
+    o.custType = validation.value.custType;
+    o.clientId = editedClient.id;
+    o.productId = editedProduct.id;
+    o.gallons = validation.value.gallons;
+    o.price = validation.value.price;
+    o.emptyGallonsCollected = validation.value.emptyGallonsCollected;
+    recalculateOrderFinancials(o);
+    applyOrderStatus(o, $("editOrderStatus").value);
+    o.address = $("editOrderAddress").value.trim();
+    o.notes = $("editOrderNotes").value.trim();
+    o.updatedAt = new Date().toISOString();
+
+    state.orderGroups.forEach((g) => {
+      g.orderIds = (g.orderIds || []).filter((orderId) => !idsEqual(orderId, o.id));
+    });
+    if (selectedGroup) {
+      const group = state.orderGroups.find((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase());
+      if (group) {
+        group.orderIds = group.orderIds || [];
+        if (!group.orderIds.some((orderId) => idsEqual(orderId, o.id))) group.orderIds.push(o.id);
+      }
+    }
+
+    audit("update", "order", o.id, {
+      before,
+      after: clone(o),
+      groupBefore: beforeGroup,
+      groupAfter: selectedGroup || ""
+    });
+    persistState();
+    renderAll();
+    closeModal("orderEditModal");
+    showToast(`Order #${o.orderNumber} updated${selectedGroup ? ` and assigned to "${selectedGroup}"` : " and removed from its group"}.`);
+  };
+  handleOrderEditSubmit = window.handleOrderEditSubmit;
+})();
