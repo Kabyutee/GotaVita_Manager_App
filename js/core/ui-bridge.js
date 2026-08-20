@@ -262,7 +262,6 @@ window.GVUI = Object.freeze({
         })
       );
 
-      const cloudRows = Object.fromEntries(entries.map(([resource, rows]) => [resource, rows]));
       const nextState = window.getStateSnapshot();
       const remoteChangedResources = [];
       let pulled = 0;
@@ -270,13 +269,12 @@ window.GVUI = Object.freeze({
 
       for (const [resource, rows, readError] of entries) {
         const stateName = stateResourceName(resource);
-        if (!stateName || readError) {
-          if (readError) preservedResources.add(resource);
+        if (!stateName || !rows.length) continue;
+        if (readError) {
+          preservedResources.add(resource);
           continue;
         }
-
         if (failedResources.includes(resource)) continue;
-        if (!rows.length) continue;
 
         const normalizedRows = normalizeResourceRows(resource, rows);
         const localRows = Array.isArray(nextState[stateName]) ? nextState[stateName] : [];
