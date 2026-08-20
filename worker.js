@@ -63,6 +63,11 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(bridgeMarker, `${reconcilerInjected}\n${bridgeMarker}`);
   }
 
+  const queueAuthorityInjected = '<script src="/js/core/sync-queue-authority.js" defer></script>';
+  if (html.includes(bridgeMarker) && !html.includes(queueAuthorityInjected)) {
+    html = html.replace(bridgeMarker, `${bridgeMarker}\n${queueAuthorityInjected}`);
+  }
+
   const authorityMarker = '<script src="script.js" defer></script>';
   const authorityInjected = '<script src="/js/core/sync-authority.js" defer></script>';
   if (html.includes(authorityMarker) && !html.includes(authorityInjected)) {
