@@ -3,7 +3,6 @@ const vm = require("node:vm");
 const assert = require("node:assert/strict");
 
 const source = fs.readFileSync("js/core/ui-bridge.js", "utf8");
-
 let queue = ["orders"];
 let hydrateReads = 0;
 let upserts = [];
@@ -39,16 +38,7 @@ const original = {
 };
 
 const context = {
-  console,
-  Date,
-  Map,
-  Object,
-  Array,
-  Number,
-  String,
-  Promise,
-  JSON,
-  Error,
+  console, Date, Map, Object, Array, Number, String, Promise, JSON, Error,
   navigator: { onLine: true },
   window: {
     GVAuth: { isAuthorized: () => true },
@@ -69,16 +59,26 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
 
 (async () => {
   const health = await context.window.GVData.health();
-
   assert.equal(health.ok, true);
   assert.equal(hydrateReads, 0, "Startup health must not hydrate while local writes are queued");
 
   const result = await context.window.GVData.sync(true);
-
   assert.equal(result.ok, true);
   assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull");
   assert.ok(replaced, "Sync must converge state after the push/pull cycle");
   assert.equal(queue.length, 0, "Successfully pushed queue must drain");
+
+  // Model the other device: no local queue, then a remote order exists.
+  queue = [];
+  state.orders = [{ id: "existing-local-order", total: 30 }];
+  cloud.orders = [{ id: "remote-order", total: 60 }];
+  replaced = null;
+  const readsBeforeIncomingPull = hydrateReads;
+
+  await context.window.GVData.health();
+  assert.ok(hydrateReads > readsBeforeIncomingPull, "An idle device must still hydrate incoming cloud changes");
+  assert.ok(replaced, "Incoming hydration must replace the stale local snapshot");
+  assert.equal(replaced.orders[0].id, "remote-order", "Incoming remote order must survive refresh");
 
   console.log("Sprint 18 incoming sync startup race contract: PASS");
 })();
