@@ -7,6 +7,7 @@ let queue = ["orders"];
 let hydrateReads = 0;
 let upserts = [];
 let replaced = null;
+const localStorageData = new Map();
 
 const state = {
   orders: [{ id: "new-local-order", total: 30 }],
@@ -50,6 +51,11 @@ const context = {
     setSyncQueue: (next) => { queue = [...next]; },
     getSyncMeta: () => ({}),
     setSyncMeta: () => {},
+    localStorage: {
+      getItem: (key) => localStorageData.has(key) ? localStorageData.get(key) : null,
+      setItem: (key, value) => { localStorageData.set(key, String(value)); },
+      removeItem: (key) => { localStorageData.delete(key); }
+    },
     addEventListener: () => {}
   }
 };
@@ -67,6 +73,24 @@ vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
   assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull");
   assert.ok(replaced, "Sync must converge state after the push/pull cycle");
   assert.equal(queue.length, 0, "Successfully pushed queue must drain");
+
+  // Regression: a local mutation must survive a background poll even if the
+  // normal resource queue was accidentally empty. The last successful sync
+  // baseline identifies the unsynced local resource before the remote pull.
+  state.orders = [
+    { id: "new-local-order", total: 30 },
+    { id: "second-local-order", total: 90 }
+  ];
+  queue = [];
+  cloud.orders = [{ id: "remote-order", total: 60 }];
+  replaced = null;
+  upserts = [];
+
+  const dirtyResult = await context.window.GVData.sync(true);
+  assert.equal(dirtyResult.ok, true, "Dirty local state must synchronize successfully even when the queue is empty");
+  assert.ok(upserts.some(([resource]) => resource === "orders"), "Locally changed orders must be pushed before the background pull");
+  assert.ok(upserts.some(([, rows]) => rows.some((row) => row.id === "second-local-order")), "The newly created local order must not be discarded by a background pull");
+  assert.ok(replaced.orders.some((row) => row.id === "second-local-order"), "New local order must survive the pull/convergence cycle");
 
   // Model the other device: no local queue, then a remote order exists.
   queue = [];
