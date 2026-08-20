@@ -1,0 +1,84 @@
+const fs = require("node:fs");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+
+const source = fs.readFileSync("js/core/ui-bridge.js", "utf8");
+
+let queue = ["orders"];
+let hydrateReads = 0;
+let upserts = [];
+let replaced = null;
+
+const state = {
+  orders: [{ id: "new-local-order", total: 30 }],
+  clients: [], products: [], services: [], employees: [], payments: [], expenses: [],
+  payrollRecords: [], orderGroups: [], deliveryRoutes: [], orderGroupItems: [],
+  deliveryRouteItems: [], dailyReports: [], deletedOrders: [], auditLog: [], _meta: {}
+};
+
+const cloud = {
+  clients: [], products: [], services: [], employees: [],
+  orders: [{ id: "remote-order", total: 30 }], payments: [], expenses: [],
+  payroll_records: [], order_groups: [], delivery_routes: [], order_group_items: [],
+  delivery_route_items: [], daily_reports: [], deleted_orders: [], audit_logs: []
+};
+
+const supported = Object.keys(cloud);
+const original = {
+  health: async () => ({ ok: true, mode: "supabase" }),
+  supportedResources: () => supported,
+  selectResource: async (resource) => {
+    hydrateReads += 1;
+    return cloud[resource];
+  },
+  upsertResource: async (resource, rows) => {
+    upserts.push([resource, rows]);
+    cloud[resource] = rows;
+    return rows;
+  }
+};
+
+const context = {
+  console,
+  Date,
+  Map,
+  Object,
+  Array,
+  Number,
+  String,
+  Promise,
+  JSON,
+  Error,
+  navigator: { onLine: true },
+  window: {
+    GVAuth: { isAuthorized: () => true },
+    GVData: original,
+    getStateSnapshot: () => JSON.parse(JSON.stringify(state)),
+    replaceState: (next) => { replaced = next; },
+    writeLocalStateSnapshot: () => {},
+    getSyncQueue: () => [...queue],
+    setSyncQueue: (next) => { queue = [...next]; },
+    getSyncMeta: () => ({}),
+    setSyncMeta: () => {},
+    addEventListener: () => {}
+  }
+};
+context.window.window = context.window;
+
+vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
+
+(async () => {
+  const health = await context.window.GVData.health();
+
+  assert.equal(health.ok, true);
+  assert.equal(hydrateReads, 0, "Startup health must not hydrate while local writes are queued");
+
+  const result = await context.window.GVData.sync(true);
+
+  assert.equal(result.ok, true);
+  assert.ok(upserts.some(([resource]) => resource === "orders"), "Queued local order must be pushed before remote pull");
+  assert.ok(replaced, "Sync must converge state after the push/pull cycle");
+  assert.equal(queue.length, 0, "Successfully pushed queue must drain");
+
+  console.log("Sprint 18 incoming sync startup race contract: PASS");
+})();
