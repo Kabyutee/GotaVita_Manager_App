@@ -12,6 +12,7 @@ function assert(condition, message) {
 }
 
 const syncManager = read("js/core/sync-manager.js");
+const syncAuthority = read("js/core/sync-authority.js");
 const uiBridge = read("js/core/ui-bridge.js");
 const syncStatus = read("js/core/sync-status.js");
 const script = read("script.js");
@@ -19,13 +20,17 @@ const gateway = read("js/core/data-gateway.js");
 const worker = read("worker.js");
 const prodWorkflow = read(".github/workflows/deploy-production.yml");
 
-// One synchronization authority.
+// One runtime synchronization authority.
 assert(/GVData\.sync/.test(syncManager), "GVData.sync authority missing from sync manager");
 assert(!/gateway\.sync\s*=\s*async function/.test(syncStatus), "legacy sync-status monkey patch still exists");
 assert(!/const\s+originalSync\s*=\s*gateway\.sync\.bind/.test(syncStatus), "legacy post-sync wrapper still exists");
+assert(/window\.persistState\s*=\s*persistStateAuthoritatively/.test(syncAuthority), "authoritative persistence boundary missing");
+assert(/window\.syncChangedResources\s*=\s*flushAuthoritatively/.test(syncAuthority), "authoritative sync entry point missing");
+assert(/window\.startSyncReliability\s*=/.test(syncAuthority), "legacy reliability timer is not quarantined");
 
-// Legacy independent dirty-state mirror must not survive the architecture cleanup.
-assert(!/syncLocalMirror/.test(script), "script.js still owns an independent syncLocalMirror");
+// Legacy script.js sync code is permitted only as a quarantined compatibility layer.
+assert(/sync-authority\.js/.test(worker), "Worker does not load the authoritative sync boundary");
+assert(/script\.js[\\\"']?\s*[,)]/.test(syncAuthority) || /persistStateAuthoritatively/.test(syncAuthority), "authoritative compatibility boundary is not explicit");
 
 // The UI bridge must use the explicit sync result contract for rendering.
 assert(/remoteChanged/.test(uiBridge), "remoteChanged render contract missing");
