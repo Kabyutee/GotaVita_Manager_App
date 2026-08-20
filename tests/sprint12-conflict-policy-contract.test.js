@@ -6,18 +6,18 @@ const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
 assert.match(
   bridge,
-  /const resourcesToPush = \[\.\.\.new Set\(\[\.\.\.queued, \.\.\.locallyChanged\]\)\]/,
-  "Conflict policy must prioritize queued local resources before inferred dirty resources"
+  /const resourcesToPush = baseline\?\.state\s*\n\s*\? locallyChanged\s*\n\s*: \[\.\.\.new Set\(\[\.\.\.queued, \.\.\.locallyChanged\]\)\]/,
+  "Conflict policy must ignore stale queue entries when a successful local baseline exists"
 );
 assert.match(
   bridge,
   /for \(const resource of resourcesToPush\)/,
-  "Conflict policy must process the complete local-write set before cloud pull"
+  "Conflict policy must process the complete actual local-write set before cloud pull"
 );
 assert.match(
   bridge,
   /await original\.upsertResource\(cloudResourceName\(resource\), rows\)/,
-  "Local resources must be pushed before cloud hydration"
+  "Actual local resources must be pushed before cloud reconciliation"
 );
 assert.match(
   bridge,
@@ -26,13 +26,13 @@ assert.match(
 );
 assert.match(
   bridge,
-  /nextState\[stateName\] = normalizeResourceRows\(resource, rows\)/,
+  /nextState\[stateName\] = normalizedRows/,
   "Cloud read-back must become the reconciled local state"
 );
 assert.match(
   bridge,
-  /if \(typeof window\.setSyncQueue === \"function\"\) window\.setSyncQueue\(remainingQueued\)/,
-  "Sync queue must update only after the push/read-back sequence succeeds"
+  /if \(baseline\?\.state && typeof window\.setSyncQueue === \"function\"\)\s*\{\s*window\.setSyncQueue\(\[\]\);/,
+  "Stale queue entries must be acknowledged once a successful local baseline exists"
 );
 assert.match(
   bridge,
@@ -43,6 +43,11 @@ assert.match(
   bridge,
   /stableRows\(snapshot\?\.\[stateName\]\) !== stableRows\(baseline\.state\[stateName\]\)/,
   "Dirty-resource detection must compare current state against the last successful sync baseline"
+);
+assert.match(
+  gateway,
+  /GVData\.sync/,
+  "Gateway remains the authoritative synchronization boundary"
 );
 assert.doesNotMatch(
   gateway,
