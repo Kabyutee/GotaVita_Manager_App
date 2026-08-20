@@ -7,7 +7,7 @@ const source = fs.readFileSync("js/modules/groups-routes.js", "utf8");
 // existing index.html/modal markup stays untouched.
 assert.match(source, /function ensureGroupSelect\(\)/);
 assert.match(source, /document\.createElement\("label"\)/);
-assert.match(source, /id=\\\"editOrderGroup\\\"/);
+assert.match(source, /id=["']editOrderGroup["']/);
 assert.match(source, /-- No Group --/);
 assert.match(source, /groupBefore/);
 assert.match(source, /groupAfter/);
