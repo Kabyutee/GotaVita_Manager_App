@@ -16,6 +16,13 @@
   //   interacting with a form/select control.
   // - sync continues during protected interaction; only the destructive UI
   //   render is deferred until the interaction is safely finished.
+  //
+  // ANTI BIG BANG 3.0 / Sprint 17:
+  // - a successful gateway/auth check is NOT itself a remote-state change.
+  // - renderAll() is therefore allowed only when GVData.sync() explicitly
+  //   reports that remote state changed (or legacy boolean true is returned).
+  // - this prevents a 15-second background health/sync check from rebuilding
+  //   Order Log while a user is selecting/filtering orders.
   const LEGACY_KEY = "gotavita_sync_queue_v1";
   const LEGACY_META = "gotavita_sync_meta_v1";
   const POLL_MS = 5000;
@@ -219,6 +226,16 @@
     restoreActiveFormState(formState);
   }
 
+  function syncResultRequiresRender(result) {
+    return result === true || Boolean(
+      result && (
+        result.remoteChanged === true ||
+        result.stateChanged === true ||
+        result.renderRequired === true
+      )
+    );
+  }
+
   async function flush() {
     const queue = appQueue();
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
@@ -227,7 +244,9 @@
     try {
       const result = await window.GVData.sync(true);
       if (result !== false) {
-        renderSyncedState();
+        if (syncResultRequiresRender(result)) {
+          renderSyncedState();
+        }
 
         try {
           const meta = JSON.parse(localStorage.getItem(LEGACY_META) || "{}");
