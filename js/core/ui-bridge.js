@@ -202,11 +202,18 @@ window.GVUI = Object.freeze({
       }));
       const cloudRows = Object.fromEntries(entries);
       const nextState = window.getStateSnapshot();
+      const remoteChangedResources = [];
       let pulled = 0;
+
       for (const [resource, rows] of Object.entries(cloudRows)) {
         const stateName = stateResourceName(resource);
         if (!stateName || !rows.length) continue;
-        nextState[stateName] = normalizeResourceRows(resource, rows);
+
+        const normalizedRows = normalizeResourceRows(resource, rows);
+        const localRows = Array.isArray(nextState[stateName]) ? nextState[stateName] : [];
+        if (stableRows(normalizedRows) !== stableRows(localRows)) remoteChangedResources.push(resource);
+
+        nextState[stateName] = normalizedRows;
         pulled += rows.length;
       }
       rebuildChildLinks(nextState);
@@ -214,7 +221,8 @@ window.GVUI = Object.freeze({
       const now = Date.now();
       nextState._meta = Object.assign({}, nextState._meta, {
         lastUpdated: now, lastSynchronizedAt: now, synchronizationVersion: 1,
-        lastSynchronizedResources: pushed
+        lastSynchronizedResources: pushed,
+        lastRemoteChangedResources: remoteChangedResources
       });
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
@@ -225,11 +233,21 @@ window.GVUI = Object.freeze({
           const meta = typeof window.getSyncMeta === "function" ? window.getSyncMeta() : {};
           window.setSyncMeta(Object.assign({}, meta, {
             lastSync: now, lastSyncAt: new Date(now).toISOString(), lastSyncStatus: "synced",
-            pushedResources: pushed, pulledRows: pulled
+            pushedResources: pushed, pulledRows: pulled, remoteChangedResources
           }));
         } catch (_) {}
       }
-      return { ok: true, mode: "supabase", status: "synced", pushedResources: pushed, pulledRows: pulled };
+      return {
+        ok: true,
+        mode: "supabase",
+        status: "synced",
+        pushedResources: pushed,
+        pulledRows: pulled,
+        remoteChangedResources,
+        remoteChanged: remoteChangedResources.length > 0,
+        stateChanged: remoteChangedResources.length > 0,
+        renderRequired: remoteChangedResources.length > 0
+      };
     })().catch((error) => {
       console.warn("GotaVita cross-device sync failed; local queue preserved:", error?.message || error);
       return { ok: false, status: "sync-error", error: String(error?.message || error) };
@@ -252,14 +270,6 @@ window.GVUI = Object.freeze({
           const snapshot = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
           const locallyChanged = snapshot && supported.length ? getLocallyChangedResources(snapshot, supported) : [];
 
-          /*
-           * CRITICAL STARTUP/BACKGROUND ORDERING:
-           * A local queued write is newer than the cloud snapshot. More
-           * importantly, a locally changed resource can be newer even when
-           * the normal queue is unexpectedly empty. Never allow health's
-           * background hydration to replace that dirty local state; GVData.sync()
-           * is the ordering authority and will push the dirty resource first.
-           */
           if (!queued.length && locallyChanged.length === 0) {
             await hydrateFromSupabase(original);
           }
