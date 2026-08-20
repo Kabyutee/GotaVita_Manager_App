@@ -31,8 +31,8 @@ assert.match(
 );
 assert.match(
   bridge,
-  /if \(baseline\?\.state && typeof window\.setSyncQueue === \"function\"\)\s*\{\s*window\.setSyncQueue\(\[\]\);/,
-  "Stale queue entries must be acknowledged once a successful local baseline exists"
+  /window\.setSyncQueue\(\[\.\.\.remainingQueued\]\)/,
+  "Queue reconciliation must preserve only resources still requiring retry"
 );
 assert.match(
   bridge,
