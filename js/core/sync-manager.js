@@ -6,7 +6,7 @@
   // The older standalone queue used a different localStorage key and could
   // report "Synced" while the real application queue still had resources.
   //
-  // ANTI BIG BANG 2.1 — live cross-device gate:
+  // ANTI BIG BANG 2.2 — live cross-device gate:
   // - queued local changes are pushed through GVData.sync().
   // - when the queue is empty, GVData.sync() is still called so an already
   //   open second device can pull remote changes.
@@ -126,6 +126,22 @@
     try { active?.focus?.(); } catch (_) {}
   }
 
+  // ANTI BIG BANG 2.2 — the focused control is the authoritative interaction
+  // boundary. Native select/checkbox popups can release pointer events while
+  // the control remains focused, so pointerup timing alone is insufficient.
+  function activeFormControl() {
+    try {
+      const active = document.activeElement;
+      return active?.closest?.("input, select, textarea, button") || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function interactionIsProtected() {
+    return Boolean(activeInteraction || activeFormControl());
+  }
+
   function beginUserInteraction() {
     activeInteraction = true;
     if (interactionReleaseTimer) {
@@ -138,6 +154,11 @@
     if (interactionReleaseTimer) clearTimeout(interactionReleaseTimer);
     interactionReleaseTimer = setTimeout(() => {
       interactionReleaseTimer = null;
+
+      // A native select/checkbox can remain focused after pointerup/change.
+      // Keep the render deferred until focus has actually left the control.
+      if (activeFormControl()) return;
+
       activeInteraction = false;
 
       if (deferredRender) {
@@ -159,34 +180,24 @@
       if (control) beginUserInteraction();
     }, true);
 
-    document.addEventListener("pointerup", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) endUserInteractionSoon();
-    }, true);
-
     document.addEventListener("keydown", (event) => {
       const control = event.target?.closest?.("input, select, textarea, button");
       if (control) beginUserInteraction();
     }, true);
 
-    document.addEventListener("keyup", (event) => {
+    document.addEventListener("focusin", (event) => {
       const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) endUserInteractionSoon();
+      if (control) beginUserInteraction();
     }, true);
 
-    document.addEventListener("change", (event) => {
-      const control = event.target?.closest?.("input, select, textarea");
-      if (control) endUserInteractionSoon();
-    }, true);
-
-    document.addEventListener("blur", (event) => {
+    document.addEventListener("focusout", (event) => {
       const control = event.target?.closest?.("input, select, textarea, button");
       if (control) endUserInteractionSoon();
     }, true);
   }
 
   function renderSyncedState() {
-    if (activeInteraction) {
+    if (interactionIsProtected()) {
       deferredRender = true;
       return;
     }
