@@ -6,10 +6,10 @@ const workflow = fs.readFileSync(
   "utf8"
 );
 
-assert.match(
+assert.doesNotMatch(
   workflow,
   /push:\s*[\s\S]*branches:\s*[\s\S]*- main/,
-  "Production drift gate must run on pushes to main"
+  "Production drift gate must not race the GitHub production deployment on pushes to main"
 );
 assert.match(
   workflow,
