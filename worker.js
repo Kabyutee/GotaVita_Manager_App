@@ -54,10 +54,13 @@ async function serveApplicationAsset(request, env) {
 
   let html = await response.text();
 
-  const syncMarker = '<script src="js/core/sync-manager.js" defer></script>';
-  const syncInjected = '<script src="js/core/sync-cloud-write-reconciler.js" defer></script>';
-  if (html.includes(syncMarker) && !html.includes(syncInjected)) {
-    html = html.replace(syncMarker, `${syncInjected}\n${syncMarker}`);
+  // The reconciler must be loaded before ui-bridge captures GVData as its
+  // immutable original gateway. This makes every subsequent cross-device
+  // upsert pass through order-level write reconciliation.
+  const bridgeMarker = '<script src="js/core/ui-bridge.js" defer></script>';
+  const reconcilerInjected = '<script src="js/core/sync-cloud-write-reconciler.js" defer></script>';
+  if (html.includes(bridgeMarker) && !html.includes(reconcilerInjected)) {
+    html = html.replace(bridgeMarker, `${reconcilerInjected}\n${bridgeMarker}`);
   }
 
   const authorityMarker = '<script src="script.js" defer></script>';
