@@ -33,6 +33,7 @@ window.GVUI = Object.freeze({
     deletedOrders: "deleted_orders", auditLog: "audit_logs"
   });
 
+  const BASELINE_KEY = "gotavita_sync_baseline_v1";
   let hydrationPromise = null;
   let gatewayWrapped = false;
   let syncPromise = null;
@@ -81,6 +82,41 @@ window.GVUI = Object.freeze({
     } catch (_) { return []; }
   }
 
+  function readBaseline() {
+    try {
+      const raw = window.localStorage?.getItem(BASELINE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (_) { return null; }
+  }
+
+  function writeBaseline(snapshot, resources) {
+    try {
+      const baseline = {};
+      for (const resource of resources) {
+        const stateName = stateResourceNames[resource];
+        if (stateName) baseline[stateName] = Array.isArray(snapshot?.[stateName]) ? snapshot[stateName] : [];
+      }
+      window.localStorage?.setItem(BASELINE_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), state: baseline }));
+    } catch (_) {}
+  }
+
+  function stableRows(value) {
+    return JSON.stringify(Array.isArray(value) ? value : []);
+  }
+
+  function getLocallyChangedResources(snapshot, supported) {
+    const baseline = readBaseline();
+    if (!baseline?.state) return [];
+
+    return supported.filter((resource) => {
+      const stateName = resourceStateNames[resource];
+      if (!stateName) return false;
+      return stableRows(snapshot?.[stateName]) !== stableRows(baseline.state[stateName]);
+    });
+  }
+
   async function hydrateFromSupabase(original) {
     if (hydrationPromise) return hydrationPromise;
 
@@ -114,6 +150,7 @@ window.GVUI = Object.freeze({
       });
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
+      writeBaseline(nextState, supported);
 
       return { hydrated: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
     })().catch((error) => {
@@ -143,16 +180,22 @@ window.GVUI = Object.freeze({
       const snapshot = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       if (!snapshot || typeof snapshot !== "object") return { ok: false, status: "state-bridge-unavailable" };
 
+      const supported = original.supportedResources();
+      const locallyChanged = getLocallyChangedResources(snapshot, supported);
+      const resourcesToPush = [...new Set([...queued, ...locallyChanged])];
       const pushed = [];
       const remainingQueued = [];
-      for (const resource of queued) {
+
+      for (const resource of resourcesToPush) {
         const rows = Array.isArray(snapshot[stateResourceName(resource)]) ? snapshot[stateResourceName(resource)] : [];
-        if (!rows.length) { remainingQueued.push(resource); continue; }
+        if (!rows.length) {
+          if (queued.includes(resource)) remainingQueued.push(resource);
+          continue;
+        }
         await original.upsertResource(cloudResourceName(resource), rows);
         pushed.push(resource);
       }
 
-      const supported = original.supportedResources();
       const entries = await Promise.all(supported.map(async (resource) => {
         const rows = await original.selectResource(resource);
         return [resource, Array.isArray(rows) ? rows : []];
@@ -176,6 +219,7 @@ window.GVUI = Object.freeze({
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
       if (typeof window.setSyncQueue === "function") window.setSyncQueue(remainingQueued);
+      writeBaseline(nextState, supported);
       if (typeof window.setSyncMeta === "function") {
         try {
           const meta = typeof window.getSyncMeta === "function" ? window.getSyncMeta() : {};
