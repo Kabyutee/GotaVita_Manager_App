@@ -93,6 +93,7 @@ window.GVUI = Object.freeze({
       const orderId = item.orderLegacyId ?? item.orderId;
       if (group && orderId != null && !group.orderIds.some((id) => String(id) === String(orderId))) group.orderIds.push(orderId);
     }
+
     for (const item of nextState.deliveryRouteItems || []) {
       const route = routeById.get(String(item.routeLegacyId ?? item.routeId ?? ""));
       const orderId = item.orderLegacyId ?? item.orderId;
@@ -116,14 +117,24 @@ window.GVUI = Object.freeze({
     } catch (_) { return null; }
   }
 
-  function writeBaseline(snapshot, resources) {
+  function writeBaseline(snapshot, resources, preservedResources = new Set(), previousBaseline = null) {
     try {
       const baseline = {};
       for (const resource of resources) {
         const stateName = resourceStateNames[resource];
-        if (stateName) baseline[stateName] = Array.isArray(snapshot?.[stateName]) ? snapshot[stateName] : [];
+        if (!stateName) continue;
+
+        if (preservedResources.has(resource) && previousBaseline?.state && Object.prototype.hasOwnProperty.call(previousBaseline.state, stateName)) {
+          baseline[stateName] = previousBaseline.state[stateName];
+        } else if (!preservedResources.has(resource)) {
+          baseline[stateName] = Array.isArray(snapshot?.[stateName]) ? snapshot[stateName] : [];
+        }
       }
-      window.localStorage?.setItem(BASELINE_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), state: baseline }));
+
+      window.localStorage?.setItem(
+        BASELINE_KEY,
+        JSON.stringify({ version: 1, savedAt: Date.now(), state: baseline })
+      );
     } catch (_) {}
   }
 
@@ -173,6 +184,7 @@ window.GVUI = Object.freeze({
         lastUpdated: now, cloudHydratedAt: now, cloudHydrationVersion: 1,
         cloudHydrationCounts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length]))
       });
+
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
       writeBaseline(nextState, supported);
@@ -180,7 +192,7 @@ window.GVUI = Object.freeze({
       return { hydrated: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
     })().catch((error) => {
       console.warn("GotaVita Supabase hydration skipped; local state preserved:", error?.message || error);
-      return { hydrated: false, reason: "cloud-read-failed" };
+      return { hydrated: false, reason: "cloud-read-failed", error: String(error?.message || error) };
     }).then((result) => {
       if (result?.reason === "cloud-read-failed") hydrationPromise = null;
       return result;
@@ -194,6 +206,7 @@ window.GVUI = Object.freeze({
 
   async function syncCrossDevice(original) {
     if (syncPromise) return syncPromise;
+
     syncPromise = (async () => {
       if (!window.GVAuth?.isAuthorized?.()) return { ok: false, status: "authentication-required" };
       if (typeof navigator !== "undefined" && navigator.onLine === false) return { ok: false, status: "offline" };
@@ -208,46 +221,62 @@ window.GVUI = Object.freeze({
       const supported = original.supportedResources();
       const baseline = readBaseline();
       const locallyChanged = getLocallyChangedResources(snapshot, supported);
-
-      // ANTI BIG BANG 3.1 — queue entries are advisory, not authoritative.
-      // After a successful sync, the baseline identifies the actual local
-      // mutations. A stale receiver queue must never push an older snapshot
-      // over a newer remote change before the receiver gets its pull.
       const resourcesToPush = baseline?.state
         ? locallyChanged
         : [...new Set([...queued, ...locallyChanged])];
 
       const pushed = [];
-      const remainingQueued = [];
+      const failedResources = [];
+      const failedErrors = {};
+      const remainingQueued = new Set();
 
       for (const resource of resourcesToPush) {
         const rows = Array.isArray(snapshot[stateResourceName(resource)]) ? snapshot[stateResourceName(resource)] : [];
+
         if (!rows.length) {
-          if (!baseline?.state && queued.includes(resource)) remainingQueued.push(resource);
+          if (queued.includes(resource)) remainingQueued.add(resource);
           continue;
         }
-        await original.upsertResource(cloudResourceName(resource), rows);
-        pushed.push(resource);
+
+        try {
+          await original.upsertResource(cloudResourceName(resource), rows);
+          pushed.push(resource);
+        } catch (error) {
+          failedResources.push(resource);
+          failedErrors[resource] = String(error?.message || error);
+          remainingQueued.add(resource);
+          console.warn(`GotaVita sync resource failed [${resource}]:`, error?.message || error);
+        }
       }
 
-      // Once we have a successful baseline, queue entries that are not backed
-      // by an actual local mutation are stale and can be safely acknowledged.
-      if (baseline?.state && typeof window.setSyncQueue === "function") {
-        window.setSyncQueue([]);
-      }
+      const entries = await Promise.all(
+        supported.map(async (resource) => {
+          try {
+            const rows = await original.selectResource(resource);
+            return [resource, Array.isArray(rows) ? rows : [], null];
+          } catch (error) {
+            const message = String(error?.message || error);
+            failedErrors[resource] = failedErrors[resource] || message;
+            return [resource, [], message];
+          }
+        })
+      );
 
-      const entries = await Promise.all(supported.map(async (resource) => {
-        const rows = await original.selectResource(resource);
-        return [resource, Array.isArray(rows) ? rows : []];
-      }));
-      const cloudRows = Object.fromEntries(entries);
+      const cloudRows = Object.fromEntries(entries.map(([resource, rows]) => [resource, rows]));
       const nextState = window.getStateSnapshot();
       const remoteChangedResources = [];
       let pulled = 0;
+      const preservedResources = new Set(failedResources);
 
-      for (const [resource, rows] of Object.entries(cloudRows)) {
+      for (const [resource, rows, readError] of entries) {
         const stateName = stateResourceName(resource);
-        if (!stateName || !rows.length) continue;
+        if (!stateName || readError) {
+          if (readError) preservedResources.add(resource);
+          continue;
+        }
+
+        if (failedResources.includes(resource)) continue;
+        if (!rows.length) continue;
 
         const normalizedRows = normalizeResourceRows(resource, rows);
         const localRows = Array.isArray(nextState[stateName]) ? nextState[stateName] : [];
@@ -256,32 +285,55 @@ window.GVUI = Object.freeze({
         nextState[stateName] = normalizedRows;
         pulled += rows.length;
       }
+
       rebuildChildLinks(nextState);
 
       const now = Date.now();
+      const partial = failedResources.length > 0 || Object.keys(failedErrors).length > 0;
       nextState._meta = Object.assign({}, nextState._meta, {
-        lastUpdated: now, lastSynchronizedAt: now, synchronizationVersion: 1,
-        lastSynchronizedResources: pushed, lastRemoteChangedResources: remoteChangedResources
+        lastUpdated: now,
+        lastSynchronizedAt: now,
+        synchronizationVersion: 1,
+        lastSynchronizedResources: pushed,
+        lastRemoteChangedResources: remoteChangedResources,
+        lastSyncFailedResources: [...new Set(Object.keys(failedErrors))],
+        lastSyncError: Object.keys(failedErrors).length ? failedErrors : null
       });
+
       window.replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
-      if (typeof window.setSyncQueue === "function") window.setSyncQueue(remainingQueued);
-      writeBaseline(nextState, supported);
+
+      for (const resource of failedResources) remainingQueued.add(resource);
+      if (typeof window.setSyncQueue === "function") window.setSyncQueue([...remainingQueued]);
+
+      writeBaseline(nextState, supported, preservedResources, baseline);
+
       if (typeof window.setSyncMeta === "function") {
         try {
           const meta = typeof window.getSyncMeta === "function" ? window.getSyncMeta() : {};
           window.setSyncMeta(Object.assign({}, meta, {
-            lastSync: now, lastSyncAt: new Date(now).toISOString(), lastSyncStatus: "synced",
-            pushedResources: pushed, pulledRows: pulled, remoteChangedResources
+            lastSync: now,
+            lastSyncAt: new Date(now).toISOString(),
+            lastSyncStatus: partial ? "partial-sync" : "synced",
+            pushedResources: pushed,
+            pulledRows: pulled,
+            remoteChangedResources,
+            failedResources: [...new Set(Object.keys(failedErrors))],
+            failedErrors
           }));
         } catch (_) {}
       }
+
       return {
         ok: true,
         mode: "supabase",
-        status: "synced",
+        status: partial ? "partial-sync" : "synced",
+        partial,
         pushedResources: pushed,
         pulledRows: pulled,
+        failedResources: [...new Set(Object.keys(failedErrors))],
+        failedErrors,
+        remainingQueued: [...remainingQueued],
         remoteChangedResources,
         remoteChanged: remoteChangedResources.length > 0,
         stateChanged: remoteChangedResources.length > 0,
@@ -291,6 +343,7 @@ window.GVUI = Object.freeze({
       console.warn("GotaVita cross-device sync failed; local queue preserved:", error?.message || error);
       return { ok: false, status: "sync-error", error: String(error?.message || error) };
     });
+
     try { return await syncPromise; } finally { syncPromise = null; }
   }
 
