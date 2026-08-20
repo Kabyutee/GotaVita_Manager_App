@@ -32,7 +32,7 @@ assert.match(
 );
 assert.match(
   syncBlock[0],
-  /window\.setSyncQueue\(remainingQueued\)/,
+  /window\.setSyncQueue\(\[\.\.\.remainingQueued\]\)/,
   "Queue must update only after successful push/pull completion while preserving skipped resources"
 );
 
