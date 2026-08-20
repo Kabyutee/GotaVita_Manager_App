@@ -1,0 +1,1 @@
+Continuation gate for the controlled queue adapter integration.
