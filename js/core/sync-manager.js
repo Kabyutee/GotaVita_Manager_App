@@ -236,12 +236,43 @@
     );
   }
 
+  async function ensureOrderNumberReconciler() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (window.__GV_ORDER_NUMBER_RECONCILER_READY === true) return;
+
+    if (!window.__GV_ORDER_NUMBER_RECONCILER_PROMISE) {
+      window.__GV_ORDER_NUMBER_RECONCILER_PROMISE = new Promise((resolve, reject) => {
+        const existing = document.querySelector("script[data-gv-order-number-reconciler]");
+        if (existing) {
+          existing.addEventListener("load", () => resolve(), { once: true });
+          existing.addEventListener("error", reject, { once: true });
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "/js/core/sync-cloud-write-reconciler.js";
+        script.defer = false;
+        script.async = false;
+        script.dataset.gvOrderNumberReconciler = "true";
+        script.onload = () => {
+          window.__GV_ORDER_NUMBER_RECONCILER_READY = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Order-number reconciler failed to load."));
+        (document.head || document.documentElement).appendChild(script);
+      });
+    }
+
+    await window.__GV_ORDER_NUMBER_RECONCILER_PROMISE;
+  }
+
   async function flush() {
     const queue = appQueue();
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
     if (!window.GVData || typeof window.GVData.sync !== "function") return { ok: false, status: "unavailable", queued: queue.length };
 
     try {
+      await ensureOrderNumberReconciler();
       const result = await window.GVData.sync(true);
       if (result !== false) {
         if (syncResultRequiresRender(result)) {

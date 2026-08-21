@@ -8,13 +8,14 @@ on:
     branches:
       - fix/sprint18-incoming-sync-startup-race
       - anti-big-bang/order-log-ui-fix
+      - fix/sprint18-order-number-reconciler-activation
 
 permissions:
   contents: read
   deployments: write
 
 env:
-  PREVIEW_PR: ${{ github.event.pull_request.number || 40 }}
+  PREVIEW_PR: ${{ github.event.pull_request.number || '43' }}
   CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
@@ -156,10 +157,25 @@ jobs:
             --name gotavita-manager-pr-${{ env.PREVIEW_PR }}
             --var GV_RELEASE_SHA:${{ env.CANDIDATE_SHA }}
 
+      - name: Verify exact preview health
+        env:
+          EXPECTED_SHA: ${{ env.CANDIDATE_SHA }}
+        run: |
+          set -euo pipefail
+          url="https://gotavita-manager-pr-${PREVIEW_PR}.carleugenetolentino22.workers.dev/gv-health"
+          for attempt in $(seq 1 12); do
+            health="$(curl -fsS "$url" || true)"
+            echo "Health: $health"
+            deployed_sha="$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
+            if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then exit 0; fi
+            sleep 5
+          done
+          exit 1
+
       - name: Publish preview gate details
         run: |
           echo "Candidate commit: ${{ env.CANDIDATE_SHA }}"
           echo "Preview Worker: gotavita-manager-pr-${{ env.PREVIEW_PR }}"
           echo "Production was not targeted by this workflow."
 
-# ANTI BIG BANG retrigger: deployment-only workflow comment; no runtime behavior change.
+      # ANTI BIG BANG retrigger marker: preview-only workflow change.
