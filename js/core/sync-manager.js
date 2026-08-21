@@ -171,7 +171,6 @@
     const state = window.getStateSnapshot();
     let changed = false;
     const supported = window.GVData.supportedResources();
-
     for (const resource of supported) {
       if (resource === "audit_logs") continue;
       const stateName = integration.resourceStateName ? integration.resourceStateName(resource) : resource;
@@ -255,6 +254,7 @@
   function startPolling() {
     if (timer) return;
     timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS);
+    flush().catch(() => {});
   }
 
   function stopPolling() {
@@ -296,17 +296,7 @@
     });
   }
 
-  window.GVSync = Object.freeze({
-    enqueue,
-    flush,
-    poll,
-    startPolling,
-    stopPolling,
-    queue,
-    meta: getMeta,
-    clear: clearQueue,
-    render: renderRemoteState
-  });
+  window.GVSync = Object.freeze({ enqueue, flush, poll, startPolling, stopPolling, queue, meta: getMeta, clear: clearQueue, render: renderRemoteState });
 
   window.addEventListener("DOMContentLoaded", () => {
     if (typeof window.stopSyncReliability === "function") window.stopSyncReliability();
