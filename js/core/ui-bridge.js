@@ -189,7 +189,7 @@ window.GVUI = Object.freeze({
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
       writeBaseline(nextState, supported);
 
-      return { hydrated: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
+      return { hydrated: true, renderRequired: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
     })().catch((error) => {
       console.warn("GotaVita Supabase hydration skipped; local state preserved:", error?.message || error);
       return { hydrated: false, reason: "cloud-read-failed" };
@@ -361,7 +361,10 @@ window.GVUI = Object.freeze({
           const locallyChanged = snapshot && supported.length ? getLocallyChangedResources(snapshot, supported) : [];
 
           if (!queued.length && locallyChanged.length === 0) {
-            await hydrateFromSupabase(original);
+            const hydration = await hydrateFromSupabase(original);
+            if (hydration?.renderRequired && window.GVUI?.renderAll) {
+              window.GVUI.renderAll();
+            }
           }
         }
         return health;
