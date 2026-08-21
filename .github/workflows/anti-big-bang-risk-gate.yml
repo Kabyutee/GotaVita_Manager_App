@@ -104,6 +104,7 @@ jobs:
           node tests/sprint18-sync-queue-preservation-contract.test.js
           node tests/sprint18-order-number-reconciliation-contract.test.js
           node tests/anti-big-bang-4-system-audit.test.js
+          node tests/sprint20-empty-resource-convergence-contract.test.js
           node --check js/core/sync-cloud-write-reconciler.js
 
       - name: Focused sync polling gate
