@@ -5,7 +5,7 @@ const assert = require("assert");
 const file = path.join(__dirname, "..", "js", "core", "state.js");
 const text = fs.readFileSync(file, "utf8");
 
-assert(text.includes('id === "orderForm"'), "state runtime guard must target the New Order form");
+assert(text.includes('target?.id === "orderForm"'), "state runtime guard must target the New Order form");
 assert(text.includes('capture: true'), "order-number allocator guard must run in capture phase");
 assert(text.includes("orderCounter"), "state runtime guard must reconcile orderCounter");
 assert(text.includes("deletedOrders"), "allocator must consider archived/deleted orders");
