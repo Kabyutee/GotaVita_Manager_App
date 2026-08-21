@@ -16,7 +16,7 @@
     catch (_) { return null; }
   }
 
-  function replaceState(snapshot) {
+  function applyStateSnapshot(snapshot) {
     try { if (typeof window.replaceState === "function") window.replaceState(snapshot); }
     catch (error) { console.warn("GotaVita group membership state replace:", error?.message || error); }
   }
@@ -107,7 +107,7 @@
     const initial = stateSnapshot();
     if (initial) {
       reconcile(initial);
-      replaceState(initial);
+      applyStateSnapshot(initial);
     }
 
     const originalPersistState = window.persistState;
@@ -115,7 +115,7 @@
       const snapshot = stateSnapshot();
       if (snapshot) {
         reconcile(snapshot);
-        replaceState(snapshot);
+        applyStateSnapshot(snapshot);
       }
       return originalPersistState.apply(this, args);
     };
