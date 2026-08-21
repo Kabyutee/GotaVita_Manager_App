@@ -11,7 +11,7 @@ const drift = fs.readFileSync(path.join(workflows, "production-drift-gate.yml"),
 
 assert.match(riskGate, /ANTI BIG BANG 5\.0/);
 assert.match(riskGate, /Production deployment: NOT performed by this workflow/);
-assert.match(preview, /CANDIDATE_SHA|candidate_sha/);
+assert.match(preview, /candidate_sha/);
 assert.match(preview, /gv-health/);
 assert.match(production, /branches:\s*\n\s*- main/);
 assert.match(production, /EXPECTED_SHA/);
