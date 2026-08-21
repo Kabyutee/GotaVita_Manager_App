@@ -44,12 +44,25 @@
     }
   }
 
+  async function selectRemoteDeletedOrders(original) {
+    try {
+      const rows = await original.selectResource("deleted_orders");
+      return Array.isArray(rows) ? rows : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   async function changedOrderRows(original, rows) {
     const localRows = Array.isArray(rows) ? rows : [];
     if (!localRows.length) return [];
 
     const remoteRows = await selectRemoteOrders(original);
+    const remoteDeletedRows = await selectRemoteDeletedOrders(original);
     const remoteById = new Map(remoteRows.map((row) => [String(row.id), row]));
+    const deletedById = new Map(
+      remoteDeletedRows.map((row) => [String(row.id ?? row.legacy_id), row])
+    );
     const baseline = readBaselineState();
     const baselineRows = Array.isArray(baseline?.orders) ? baseline.orders : [];
     const baselineById = new Map(baselineRows.map((row) => [String(row.id), row]));
@@ -59,7 +72,18 @@
       const remote = remoteById.get(id);
       const baselineRow = baselineById.get(id);
 
-      if (!remote) return true;
+      if (!remote) {
+        // A known tombstone means the row was intentionally deleted remotely.
+        if (deletedById.has(id)) return false;
+
+        // A row that existed in the shared baseline but is now absent remotely
+        // is not safe to treat as a new insert without deletion evidence.
+        // Leave it to the deletion/conflict reconciliation layer.
+        if (baselineRow) return false;
+
+        return true;
+      }
+
       if (rowIsNewer(row, remote)) return true;
       if (baselineRow && rowIsNewer(row, baselineRow)) return true;
       return false;
