@@ -1,9 +1,7 @@
-name: ANTI BIG BANG 5.0 Risk Gate
+name: ANTI BIG BANG 6.0 Risk Gate
 
 on:
   pull_request:
-    # Do not rerun the required gate just because a draft PR becomes ready.
-    # The latest synchronize/opened run already validated the exact head SHA.
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -19,6 +17,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: ANTI BIG BANG 6.0 whole-application connection audit
+        run: node tests/anti-big-bang-6-application-connection-audit.test.js
 
       - name: ANTI BIG BANG 5.0 system audit
         run: node tests/anti-big-bang-4-system-audit.test.js
@@ -40,6 +41,7 @@ jobs:
           deployment=false
           workflow=false
           architecture=false
+          full_audit=false
 
           for file in "${files[@]}"; do
             case "$file" in
@@ -50,7 +52,7 @@ jobs:
               wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/anti-big-bang-6-application-connection-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
@@ -62,10 +64,9 @@ jobs:
             esac
           done
 
-          # A synchronization change is architecture-risk by default. It must
-          # prove one coordinator, one queue owner, one baseline owner, and no
-          # decorated GVData.sync transaction before any merge is eligible.
-          if $sync || $data; then
+          # Any change that can alter the connection graph is high-risk.
+          # The whole-application audit still runs for every PR regardless.
+          if $sync || $data || $full_audit; then
             risk="high"
           elif $deployment || $ui; then
             risk="medium"
@@ -83,9 +84,10 @@ jobs:
             echo "deployment=$deployment"
             echo "workflow=$workflow"
             echo "architecture=$architecture"
+            echo "full_audit=true"
           } >> "$GITHUB_OUTPUT"
 
-          echo "ANTI BIG BANG 5.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture"
+          echo "ANTI BIG BANG 6.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture full_audit=true"
 
       - name: Low-risk fast gate
         if: steps.risk.outputs.risk == 'low'
@@ -114,6 +116,7 @@ jobs:
           node tests/sprint18-order-number-reconciliation-contract.test.js
           node tests/anti-big-bang-4-system-audit.test.js
           node tests/anti-big-bang-5-sync-architecture-contract.test.js
+          node tests/anti-big-bang-6-application-connection-audit.test.js
           node tests/sprint20-empty-resource-convergence-contract.test.js
           node --check js/core/sync-manager.js
           node --check js/core/sync-cloud-write-reconciler.js
@@ -126,6 +129,7 @@ jobs:
         if: steps.risk.outputs.architecture == 'true'
         run: |
           node tests/anti-big-bang-5-sync-architecture-contract.test.js
+          node tests/anti-big-bang-6-application-connection-audit.test.js
           node tests/sprint18-transaction-sync-readiness-contract.test.js
           node tests/sprint18-sync-queue-preservation-contract.test.js
           node tests/sprint20-empty-resource-convergence-contract.test.js
@@ -134,15 +138,17 @@ jobs:
         if: steps.risk.outputs.workflow == 'true'
         run: |
           node tests/anti-big-bang-4-system-audit.test.js
+          node tests/anti-big-bang-6-application-connection-audit.test.js
           node --check worker.js
 
       - name: Publish gate summary
         run: |
-          echo "ANTI BIG BANG 5.0 classification: ${{ steps.risk.outputs.risk }}"
+          echo "ANTI BIG BANG 6.0 classification: ${{ steps.risk.outputs.risk }}"
           echo "UI: ${{ steps.risk.outputs.ui }}"
           echo "Sync: ${{ steps.risk.outputs.sync }}"
           echo "Data: ${{ steps.risk.outputs.data }}"
           echo "Deployment: ${{ steps.risk.outputs.deployment }}"
           echo "Workflow: ${{ steps.risk.outputs.workflow }}"
           echo "Architecture gate: ${{ steps.risk.outputs.architecture }}"
+          echo "Whole-application connection audit: REQUIRED"
           echo "Production deployment: NOT performed by this workflow"
