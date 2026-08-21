@@ -54,6 +54,24 @@
     return row.deleted === true || row.isDeleted === true || row.is_deleted === true || row.deletedAt != null || row.deleted_at != null || row.archivedAt != null || row.archived_at != null;
   }
 
+  function comparableRow(row) {
+    if (!row || typeof row !== "object") return row;
+    const output = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (/^(updatedAt|updated_at|createdAt|created_at)$/.test(key)) continue;
+      output[key] = value;
+    }
+    return output;
+  }
+
+  function rowsEquivalent(localRow, remoteRow) {
+    try {
+      return JSON.stringify(comparableRow(localRow)) === JSON.stringify(comparableRow(remoteRow));
+    } catch (_) {
+      return false;
+    }
+  }
+
   function detect(localRows, remoteRows, baselineAt) {
     const baseline = parseTime(baselineAt);
     const local = Array.isArray(localRows) ? localRows : [];
@@ -71,6 +89,7 @@
       if (key == null) continue;
       const remoteRow = remoteByKey.get(key);
       if (!remoteRow) continue;
+      if (rowsEquivalent(localRow, remoteRow)) continue;
       const localUpdated = rowUpdatedAt(localRow);
       const remoteUpdated = rowUpdatedAt(remoteRow);
       if (baseline == null || localUpdated == null || remoteUpdated == null) {
@@ -96,6 +115,9 @@
     const localDeletedAt = rowDeletedAt(localRow);
     const remoteDeletedAt = rowDeletedAt(remoteRow);
 
+    if (rowsEquivalent(localRow, remoteRow)) {
+      return { action: "no-conflict", reason: "equivalent-records", mutation: false };
+    }
     if (baseline == null || localUpdated == null || remoteUpdated == null) {
       return { action: "manual-review", reason: "indeterminate", mutation: false };
     }
