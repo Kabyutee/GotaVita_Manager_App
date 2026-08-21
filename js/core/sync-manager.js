@@ -18,18 +18,14 @@
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : fallback;
-    } catch (_) {
-      return fallback;
-    }
+    } catch (_) { return fallback; }
   }
 
   function writeJson(key, value) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
       return true;
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { return false; }
   }
 
   function queue() {
@@ -42,9 +38,7 @@
 
   function clearQueue() {
     try {
-      if (typeof window.setSyncQueue === "function") {
-        window.setSyncQueue([]);
-      }
+      if (typeof window.setSyncQueue === "function") window.setSyncQueue([]);
     } catch (_) {}
     try { localStorage.removeItem(QUEUE_KEY); } catch (_) {}
   }
@@ -71,34 +65,22 @@
     return entity;
   }
 
-  function getMeta() {
-    return readJson(META_KEY, {});
-  }
-
-  function setMeta(next) {
-    writeJson(META_KEY, next || {});
-  }
+  function getMeta() { return readJson(META_KEY, {}); }
+  function setMeta(next) { writeJson(META_KEY, next || {}); }
 
   function authorized() {
-    try {
-      return window.GVAuth?.isAuthorized?.() === true;
-    } catch (_) {
-      return false;
-    }
+    try { return window.GVAuth?.isAuthorized?.() === true; }
+    catch (_) { return false; }
   }
 
   function activeEditableControl() {
     try {
       const active = document.activeElement;
       return active?.closest?.("input:not([type='checkbox']), select, textarea, button") || null;
-    } catch (_) {
-      return null;
-    }
+    } catch (_) { return null; }
   }
 
-  function interactionProtected() {
-    return Boolean(activeInteraction || activeEditableControl());
-  }
+  function interactionProtected() { return Boolean(activeInteraction || activeEditableControl()); }
 
   function beginInteraction() {
     activeInteraction = true;
@@ -134,30 +116,22 @@
     if (typeof document === "undefined") return [];
     return [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
       .filter((control) => control.type === "checkbox" && control.checked)
-      .map((control, index) => ({
-        className: control.className,
-        key: checkboxKey(control, index)
-      }));
+      .map((control, index) => ({ className: control.className, key: checkboxKey(control, index) }));
   }
 
   function restoreBulkSelections(snapshot) {
     if (!snapshot?.length || typeof document === "undefined") return;
     const wanted = new Set(snapshot.map((item) => `${item.className}::${item.key}`));
-    const controls = [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
-      .filter((control) => control.type === "checkbox");
-    controls.forEach((control, index) => {
-      const key = `${control.className}::${checkboxKey(control, index)}`;
-      if (wanted.has(key)) control.checked = true;
-    });
+    [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
+      .filter((control) => control.type === "checkbox")
+      .forEach((control, index) => {
+        if (wanted.has(`${control.className}::${checkboxKey(control, index)}`)) control.checked = true;
+      });
   }
 
   function stateDigest(snapshot) {
     if (!snapshot || typeof snapshot !== "object") return "";
-    try {
-      return JSON.stringify(snapshot);
-    } catch (_) {
-      return "";
-    }
+    try { return JSON.stringify(snapshot); } catch (_) { return ""; }
   }
 
   function renderRemoteState() {
@@ -166,64 +140,15 @@
       return;
     }
 
-    const form = (() => {
-      try {
-        const active = document.activeElement;
-        const container = active?.closest?.("form, [role='dialog'], .modal");
-        if (!container) return null;
-        return {
-          containerId: container.id || null,
-          activeId: active?.id || null,
-          activeName: active?.name || null,
-          values: [...container.querySelectorAll("input, select, textarea")].map((control, index) => ({
-            key: control.id || control.name || `index:${index}`,
-            value: control.value,
-            checked: control.type === "checkbox" || control.type === "radio" ? control.checked : undefined,
-            selected: control.tagName === "SELECT" && control.multiple ? [...control.selectedOptions].map((x) => x.value) : undefined
-          }))
-        };
-      } catch (_) {
-        return null;
-      }
-    })();
-
     const selections = captureBulkSelections();
-
     try {
-      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
-        window.GVUI.renderAll();
-      } else if (typeof window.renderAll === "function") {
-        window.renderAll();
-      }
+      if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll();
+      else if (typeof window.renderAll === "function") window.renderAll();
     } catch (error) {
       console.warn("GotaVita sync render:", error?.message || error);
       return;
     }
-
     restoreBulkSelections(selections);
-
-    if (form) {
-      try {
-        const container = form.containerId ? document.getElementById(form.containerId) : document.querySelector("form, [role='dialog'], .modal");
-        if (container) {
-          const controls = [...container.querySelectorAll("input, select, textarea")];
-          const byKey = new Map(controls.map((control, index) => [control.id || control.name || `index:${index}`, control]));
-          for (const item of form.values) {
-            const control = byKey.get(item.key);
-            if (!control) continue;
-            if (control.type === "checkbox" || control.type === "radio") control.checked = Boolean(item.checked);
-            else if (control.tagName === "SELECT" && control.multiple && Array.isArray(item.selected)) {
-              const selected = new Set(item.selected.map(String));
-              [...control.options].forEach((option) => { option.selected = selected.has(String(option.value)); });
-            } else {
-              control.value = item.value;
-            }
-          }
-          const active = form.activeId ? document.getElementById(form.activeId) : (form.activeName ? container.querySelector(`[name="${CSS.escape(form.activeName)}"]`) : null);
-          active?.focus?.();
-        }
-      } catch (_) {}
-    }
   }
 
   async function ensureConflictIntegration() {
@@ -235,14 +160,12 @@
         reject(new Error("Conflict integration requires a browser document."));
         return;
       }
-
       const existing = document.querySelector('script[data-gv-conflict-integration="true"]');
       if (existing) {
         existing.addEventListener("load", () => resolve(window.GVConflictIntegration), { once: true });
         existing.addEventListener("error", reject, { once: true });
         return;
       }
-
       const script = document.createElement("script");
       script.src = "/js/core/conflict-resolution-integration.js";
       script.defer = true;
@@ -251,8 +174,63 @@
       script.onerror = () => reject(new Error("Conflict integration failed to load."));
       (document.head || document.documentElement).appendChild(script);
     });
-
     return conflictPromise;
+  }
+
+  async function hydrateFirstBaseline(integration) {
+    if (!window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return false;
+    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
+
+    const baseline = integration?.getBaseline?.() || {};
+    if (Object.keys(baseline).length) return false;
+
+    const state = window.getStateSnapshot();
+    let changed = false;
+    const supported = window.GVData.supportedResources();
+
+    for (const resource of supported) {
+      if (resource === "audit_logs") continue;
+      const stateName = integration.resourceStateName ? integration.resourceStateName(resource) : resource;
+      if (!stateName) continue;
+      const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
+      const remoteRows = await window.GVData.selectResource(resource);
+
+      // First-run safety rule: a non-empty cloud hydrates an empty local resource;
+      // an empty cloud never destroys seeded/local business data.
+      if (!localRows.length && remoteRows.length) {
+        state[stateName] = remoteRows;
+        changed = true;
+      }
+    }
+
+    if (!changed) return false;
+
+    const now = Date.now();
+    state._meta = Object.assign({}, state._meta, {
+      lastUpdated: now,
+      lastSynchronizedAt: now
+    });
+    window.replaceState(state);
+    if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+    return true;
+  }
+
+  function withLocalPersistDuringTransaction(run) {
+    const originalPersist = window.persistState;
+    if (typeof originalPersist !== "function") return run;
+
+    const originalSyncChanged = window.syncChangedResources;
+    const originalSyncNow = window.syncNow;
+
+    window.syncChangedResources = () => Promise.resolve(false);
+    window.syncNow = () => Promise.resolve(false);
+
+    try {
+      return run(originalPersist);
+    } finally {
+      window.syncChangedResources = originalSyncChanged;
+      window.syncNow = originalSyncNow;
+    }
   }
 
   async function flush() {
@@ -271,7 +249,25 @@
       if (!integration?.run) throw new Error("Canonical conflict/sync integration is unavailable.");
 
       window.__GV_SYNC_TRANSACTION_ACTIVE = true;
-      const result = await integration.run(true);
+      await hydrateFirstBaseline(integration);
+
+      const originalPersist = window.persistState;
+      let result;
+      if (typeof originalPersist === "function") {
+        const originalSyncChanged = window.syncChangedResources;
+        const originalSyncNow = window.syncNow;
+        window.syncChangedResources = () => Promise.resolve(false);
+        window.syncNow = () => Promise.resolve(false);
+        try {
+          result = await integration.run(true);
+        } finally {
+          window.syncChangedResources = originalSyncChanged;
+          window.syncNow = originalSyncNow;
+        }
+      } else {
+        result = await integration.run(true);
+      }
+
       const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       const changed = beforeDigest !== stateDigest(after);
 
@@ -286,15 +282,13 @@
           lastSyncStateChanged: changed,
           lastSyncResults: result.results || []
         });
-
         if (changed) renderRemoteState();
-
         return {
           ok: true,
           status: result.status || "synced",
           queued: 0,
           stateChanged: changed,
-          remoteChanged: result.status !== "baseline-ready",
+          remoteChanged: changed,
           renderRequired: changed,
           result
         };
@@ -305,16 +299,10 @@
         lastSyncAt: new Date().toISOString(),
         lastSyncStatus: result?.status || "sync-error"
       });
-
       return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
     } catch (error) {
       const message = String(error?.message || error);
-      setMeta({
-        ...getMeta(),
-        lastSyncAt: new Date().toISOString(),
-        lastSyncStatus: "sync-error",
-        lastSyncError: message
-      });
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: "sync-error", lastSyncError: message });
       return { ok: false, status: "sync-error", queued: queue().length, error: message };
     } finally {
       window.__GV_SYNC_TRANSACTION_ACTIVE = false;
@@ -322,9 +310,7 @@
     }
   }
 
-  async function poll() {
-    return flush();
-  }
+  async function poll() { return flush(); }
 
   function startPolling() {
     if (timer) return;
@@ -345,22 +331,18 @@
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) beginInteraction();
     }, true);
-
     document.addEventListener("keydown", (event) => {
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) beginInteraction();
     }, true);
-
     document.addEventListener("focusin", (event) => {
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) beginInteraction();
     }, true);
-
     document.addEventListener("focusout", (event) => {
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) endInteractionSoon();
     }, true);
-
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") flush().catch(() => {});
     });
@@ -392,7 +374,6 @@
   });
 
   window.addEventListener("DOMContentLoaded", () => {
-    // After script.js has created its legacy globals, point them at the one coordinator.
     window.syncChangedResources = () => window.GVSync.flush();
     window.syncNow = () => window.GVSync.flush();
     window.startSyncReliability = () => {};
