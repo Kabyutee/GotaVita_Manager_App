@@ -11,7 +11,7 @@ function assert(condition, message) {
 assert(/function reconcileCurrentState\(\)/.test(bridge), "Group bridge must expose an explicit current-state reconciliation hook");
 assert(/function reconcileRemoteState\(snapshot\)/.test(bridge), "Group bridge must expose a remote-hydration reconciliation hook");
 assert(/parentChanged && itemsChanged && !membershipEquivalent\(snapshot\)/.test(bridge), "Both-sides remote changes must converge through the parent membership invariant");
-assert(/!\/window\\.persistState\\s\*=\\s\*function\/.test(JSON.stringify(bridge)), "Group bridge must not wrap canonical persistState");
+assert(!/window\.persistState\s*=\s*function/.test(bridge), "Group bridge must not wrap canonical persistState");
 assert(/GVGroupMembershipBridge\?\.reconcileCurrentState/.test(syncManager), "Canonical sync coordinator must reconcile local Group membership before conflict resolution");
 assert(/GVGroupMembershipBridge\?\.reconcileRemoteState/.test(integration), "Canonical conflict integration must invoke Group remote reconciliation");
 assert(/replaceState\(nextState\)/.test(integration), "Reconciled Group state must be published through canonical state replacement");
