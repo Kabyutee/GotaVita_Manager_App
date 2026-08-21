@@ -33,7 +33,7 @@ const profiles = {
   payrollRecords: { files: ["js/modules/employees-payroll.js"], owner: "employees", runtimeManaged: false },
   orderGroups: { files: ["js/modules/groups-routes.js", "js/core/group-membership-sync-bridge.js"], state: "orderGroups", runtimeManaged: true },
   orderGroupItems: { files: ["js/modules/groups-routes.js", "js/core/group-membership-sync-bridge.js"], owner: "orderGroups", runtimeManaged: false },
-  deliveryRoutes: { files: ["js/modules/groups-routes.js"], state: "deliveryRoutes", runtimeManaged: true },
+  deliveryRoutes: { files: ["js/modules/groups-routes.js"], runtimeManaged: false, referenceOnly: true },
   deliveryRouteItems: { files: ["js/modules/groups-routes.js"], owner: "deliveryRoutes", runtimeManaged: false },
   dailyReports: { files: ["js/modules/reports.js"], state: "dailyReports", runtimeManaged: true },
   deletedOrders: { files: ["js/modules/orders.js"], owner: "orders", runtimeManaged: false },
