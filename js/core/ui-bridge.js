@@ -170,18 +170,17 @@ window.GVUI = Object.freeze({
         return [resource, Array.isArray(rows) ? rows : []];
       }));
       const cloudRows = Object.fromEntries(entries);
-      if (!Object.values(cloudRows).some((rows) => rows.length > 0)) return { hydrated: false, reason: "cloud-empty" };
 
       const nextState = window.getStateSnapshot();
       for (const [resource, rows] of Object.entries(cloudRows)) {
         const stateName = resourceStateNames[resource];
-        if (stateName && rows.length) nextState[stateName] = normalizeResourceRows(resource, rows);
+        if (stateName) nextState[stateName] = normalizeResourceRows(resource, rows);
       }
       rebuildChildLinks(nextState);
 
       const now = Date.now();
       nextState._meta = Object.assign({}, nextState._meta, {
-        lastUpdated: now, cloudHydratedAt: now, cloudHydrationVersion: 1,
+        lastUpdated: now, cloudHydratedAt: now, cloudHydrationVersion: 2,
         cloudHydrationCounts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length]))
       });
 
@@ -189,7 +188,10 @@ window.GVUI = Object.freeze({
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
       writeBaseline(nextState, supported);
 
-      return { hydrated: true, counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length])) };
+      return {
+        hydrated: true,
+        counts: Object.fromEntries(Object.entries(cloudRows).map(([r, rows]) => [r, rows.length]))
+      };
     })().catch((error) => {
       console.warn("GotaVita Supabase hydration skipped; local state preserved:", error?.message || error);
       return { hydrated: false, reason: "cloud-read-failed" };
@@ -269,7 +271,7 @@ window.GVUI = Object.freeze({
 
       for (const [resource, rows, readError] of entries) {
         const stateName = stateResourceName(resource);
-        if (!stateName || !rows.length) continue;
+        if (!stateName) continue;
         if (readError) {
           preservedResources.add(resource);
           continue;
@@ -291,7 +293,7 @@ window.GVUI = Object.freeze({
       nextState._meta = Object.assign({}, nextState._meta, {
         lastUpdated: now,
         lastSynchronizedAt: now,
-        synchronizationVersion: 1,
+        synchronizationVersion: 2,
         lastSynchronizedResources: pushed,
         lastRemoteChangedResources: remoteChangedResources,
         lastSyncFailedResources: [...new Set(Object.keys(failedErrors))],
