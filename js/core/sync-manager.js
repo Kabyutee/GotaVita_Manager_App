@@ -303,7 +303,7 @@
 
     try {
       await ensureOrderNumberReconciler();
-      await ensureQueueAuthority();
+      if (typeof document !== "undefined") await ensureQueueAuthority();
       const result = await window.GVData.sync(true);
       if (result !== false) {
         if (syncResultRequiresRender(result)) {
