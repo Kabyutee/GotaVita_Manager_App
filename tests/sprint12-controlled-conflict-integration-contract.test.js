@@ -115,7 +115,7 @@ assert(summary.manualReview >= 1, "Ambiguous cases must be preserved for manual 
 assert(summary.keepLocal >= 2 && summary.keepRemote >= 2, "Plan must contain both unambiguous winner directions");
 
 assert(
-  /if \(manual\.length\).*recordConflicts/.test(source),
+  /if \(manual\.length\)\s*\{[\s\S]*recordConflicts\(/.test(source),
   "Manual conflicts must be recorded without aborting the resource reconciliation"
 );
 assert(
