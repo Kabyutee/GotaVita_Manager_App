@@ -101,17 +101,23 @@ for (const required of [
   "js/core/conflict-resolution-integration.js", "js/core/sync-manager.js"
 ]) assert(exists(required), `application layer missing: ${required}`);
 
+const conflictManaged = new Set([
+  "orders", "payments", "expenses", "payrollRecords", "employees", "orderGroups", "deliveryRoutes",
+  "orderGroupItems", "deliveryRouteItems", "dailyReports", "deletedOrders", "auditLog"
+]);
+
 const rows = state.map((resource) => {
   const cloud = mapping[resource];
   const references = grepAll(all, resource);
+  const managed = conflictManaged.has(resource);
   const checks = {
     registry: registry.includes(resource),
     gateway: !cloud || gateway.has(cloud),
-    conflictState: !cloud || conflictState.has(resource),
-    conflictCloud: !cloud || conflictCloud.has(cloud),
+    conflictState: !managed || conflictState.has(resource),
+    conflictCloud: !managed || conflictCloud.has(cloud),
     applicationReferences: references.length > 0
   };
-  return { resource, cloud, impacted: impacted.includes(resource), refs: references.length, checks };
+  return { resource, cloud, conflictManaged: managed, impacted: impacted.includes(resource), refs: references.length, checks };
 });
 
 for (const row of rows) {
@@ -124,6 +130,7 @@ const summary = {
   filesScanned: all.length,
   changedFiles: changed.length,
   resourcesScanned: rows.length,
+  conflictManagedResources: [...conflictManaged],
   impactedResources: impacted,
   layers: ["UI", "state", "registry", "gateway", "conflict", "sync", "application references"],
   result: "PASS"
@@ -138,6 +145,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     `- Files scanned: **${summary.filesScanned}**`,
     `- Changed files: **${summary.changedFiles}**`,
     `- Resources scanned: **${summary.resourcesScanned}**`,
+    `- Conflict-managed resources: **${summary.conflictManagedResources.length}**`,
     `- Impacted resources: **${impacted.length ? impacted.join(", ") : "none detected"}**`,
     "- Result: **PASS**",
     "- Every PR is rescanned against the full application graph; impacted consumers must remain connected.",
