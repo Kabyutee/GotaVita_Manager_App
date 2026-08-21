@@ -49,7 +49,7 @@ jobs:
               wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
