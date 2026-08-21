@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: gotavita-production
+  cancel-in-progress: false
+
 env:
   PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
 
