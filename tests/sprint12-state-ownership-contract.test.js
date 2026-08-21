@@ -37,13 +37,14 @@ assert.match(
   "getStateSnapshot must remain the authoritative snapshot boundary"
 );
 
+// Assignment checks must not confuse strict equality (===) with assignment (=).
 const forbiddenModulePatterns = [
   /function\s+replaceState\s*\(/,
   /function\s+getStateSnapshot\s*\(/,
-  /window\.replaceState\s*=\s*/,
-  /window\.getStateSnapshot\s*=\s*/,
-  /window\.state\s*=/,
-  /window\.GV_STATE\s*=/
+  /window\.replaceState\s*=(?!=)\s*/,
+  /window\.getStateSnapshot\s*=(?!=)\s*/,
+  /window\.state\s*=(?!=)\s*/,
+  /window\.GV_STATE\s*=(?!=)\s*/
 ];
 
 const moduleFiles = walk(path.join("js", "modules"));
