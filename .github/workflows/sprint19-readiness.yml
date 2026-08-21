@@ -19,14 +19,21 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
-      - name: Verify transaction adapters
+      - name: Verify transaction resource contract
         shell: bash
         run: |
           set -euo pipefail
           test -f js/core/data-gateway.js
           test -f js/core/sync-manager.js
-          grep -q "transactions" js/core/data-gateway.js
-          grep -q "transactions" js/core/sync-manager.js
+          grep -q 'const TRANSACTION_RESOURCES' js/core/data-gateway.js
+          grep -q 'orders' js/core/data-gateway.js
+          grep -q 'payments' js/core/data-gateway.js
+          grep -q 'expenses' js/core/data-gateway.js
+          grep -q 'payroll_records' js/core/data-gateway.js
+          grep -q 'order_group_items' js/core/data-gateway.js
+          grep -q 'delivery_route_items' js/core/data-gateway.js
+          grep -q 'audit_logs' js/core/data-gateway.js
+          grep -q 'GVData.sync' js/core/sync-manager.js
 
       - name: Verify JavaScript syntax
         run: |
@@ -40,5 +47,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -RniE "transaction.?sync|sync.*transaction" js/core script.js | head -80
-          echo "Readiness gate does not activate transaction sync."
+          grep -RniE 'transaction.?sync|sync.*transaction' js/core script.js | head -80
+          echo 'Readiness gate does not activate transaction sync.'
