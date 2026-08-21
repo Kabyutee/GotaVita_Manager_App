@@ -56,6 +56,7 @@ vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 (async () => {
   // Authorized startup performs one immediate canonical pull even with an empty queue.
   await Promise.resolve();
+  await Promise.resolve();
   assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
 
   const result = await context.window.GVSync.flush();
