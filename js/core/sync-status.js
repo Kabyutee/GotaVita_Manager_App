@@ -1,68 +1,60 @@
-/* GotaVita Manager — Phase 5 Sprint 5.5 sync status UI boundary */
+/* GotaVita Manager — synchronization status UI boundary */
 (function(){
   "use strict";
-  function status(){
-    const q = typeof window.getSyncQueue === "function" ? window.getSyncQueue().length : (window.GVSync ? window.GVSync.queue().length : 0);
-    const online = navigator.onLine;
-    return online ? (q ? "sync-pending" : "online") : "offline";
+
+  function queue(){
+    try {
+      return typeof window.getSyncQueue === "function"
+        ? window.getSyncQueue()
+        : (window.GVSync ? window.GVSync.queue() : []);
+    } catch (_) {
+      return [];
+    }
   }
+
+  function meta(){
+    try {
+      return typeof window.getSyncMeta === "function"
+        ? window.getSyncMeta()
+        : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function status(){
+    const q = queue().length;
+    const online = navigator.onLine !== false;
+    const m = meta();
+
+    if (!online) return "offline";
+    if (m.lastSyncStatus === "partial-sync" || (q && m.failedResources?.length)) return "sync-error";
+    return q ? "sync-pending" : "online";
+  }
+
+  function failureDetail(){
+    const m = meta();
+    const failed = Array.isArray(m.failedResources) ? m.failedResources : [];
+    const errors = m.failedErrors && typeof m.failedErrors === "object" ? m.failedErrors : {};
+
+    if (!failed.length) return "";
+
+    const first = failed[0];
+    return `${first}: ${String(errors[first] || "cloud write/read failed")}`;
+  }
+
   window.GVSyncStatus = Object.freeze({
     get: status,
-    label(){ const s=status(); return s==='online'?'Synced ✓':s==='offline'?'Offline':'Sync pending'; }
-  });
-
-  /*
-   * Sprint 12 — live cross-device render gate.
-   *
-   * Background polling already pulls remote state through GVData.sync().
-   * The remaining UI gap was that a successful background pull could update
-   * application state without entering the existing render boundary. Tab
-   * navigation then appeared to "fix" synchronization because it rendered.
-   *
-   * Keep GVData as the synchronization authority and add only the missing
-   * presentation step: after sync completes, render the current state.
-   * No queue mutation, transport change, or data ownership change occurs here.
-   */
-  (function installPostSyncRenderGate(){
-    const gateway = window.GVData;
-
-    if (!gateway || typeof gateway.sync !== "function") {
-      return;
-    }
-
-    if (gateway.__gvPostSyncRenderGateInstalled) {
-      return;
-    }
-
-    const originalSync = gateway.sync.bind(gateway);
-
-    gateway.sync = async function(){
-      const result = await originalSync(...arguments);
-
-      try {
-        if (
-          result !== false &&
-          window.GVUI &&
-          typeof window.GVUI.renderAll === "function"
-        ) {
-          window.GVUI.renderAll();
-        }
-      } catch (error) {
-        console.warn(
-          "GotaVita background sync render skipped:",
-          error?.message || error
-        );
+    detail: failureDetail,
+    label(){
+      const s = status();
+      if (s === "online") return "Synced ✓";
+      if (s === "offline") return "Offline";
+      if (s === "sync-error") {
+        const detail = failureDetail();
+        return detail ? `Sync blocked · ${detail}` : "Sync blocked";
       }
-
-      return result;
-    };
-
-    try {
-      Object.defineProperty(
-        gateway,
-        "__gvPostSyncRenderGateInstalled",
-        { value: true, configurable: false, enumerable: false }
-      );
-    } catch (_) {}
-  })();
+      return "Sync pending";
+    }
+  });
 })();

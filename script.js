@@ -821,7 +821,6 @@ function initProductionHardening() {
   );
 }
 
-let syncLocalMirror = null;
 
 /* ---------------- Helpers ---------------- */
 
@@ -3652,8 +3651,6 @@ async function loadServerState() {
     serverSnapshot =
       serverSnapshot || {};
 
-    syncLocalMirror =
-      clone(state);
 
     /*
      * No /api/data call here.
@@ -3878,58 +3875,15 @@ function persistState() {
       return false;
     }
 
-    const resourcesChanged =
-      [];
-
-    if (
-      syncLocalMirror
-    ) {
-      for (
-        const resource of SYNC_RESOURCES
-      ) {
-        const stateName =
-          resourceStateName(
-            resource
-          );
-
-        const before =
-          JSON.stringify(
-            syncLocalMirror[
-              stateName
-            ] || []
-          );
-
-        const after =
-          JSON.stringify(
-            state[
-              stateName
-            ] || []
-          );
-
-        if (
-          before !==
-          after
-        ) {
-          resourcesChanged.push(
-            resource
-          );
-        }
-      }
-    } else if (
-      window.location.protocol !==
-      "file:"
-    ) {
-      resourcesChanged.push(
-        ...SYNC_RESOURCES
-      );
+    // The queue is now a synchronization wake-up signal only.
+    // GVData.sync() owns authoritative dirty detection against the cloud baseline.
+    // Queue all supported resources after a local save so first-run/cloud-empty
+    // sessions are still eligible for synchronization; the gateway narrows the
+    // actual write set when a baseline exists.
+    if (window.location.protocol !== "file:") {
+      queueSyncResources(SYNC_RESOURCES);
     }
 
-    queueSyncResources(
-      resourcesChanged
-    );
-
-    syncLocalMirror =
-      clone(state);
 
     clearTimeout(
       syncTimer

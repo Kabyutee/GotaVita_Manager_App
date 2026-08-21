@@ -6,28 +6,53 @@ const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
 assert.match(
   bridge,
-  /for \(const resource of queued\)/,
-  "Conflict policy must process queued local resources first"
+  /const resourcesToPush = baseline\?\.state\s*\n\s*\? locallyChanged\s*\n\s*: \[\.\.\.new Set\(\[\.\.\.queued, \.\.\.locallyChanged\]\)\]/,
+  "Conflict policy must ignore stale queue entries when a successful local baseline exists"
 );
 assert.match(
   bridge,
-  /await original\.upsertResource\(cloudName, rows\)/,
-  "Queued local resources must be pushed before cloud hydration"
+  /for \(const resource of resourcesToPush\)/,
+  "Conflict policy must process the complete actual local-write set before cloud pull"
+);
+assert.match(
+  bridge,
+  /await original\.upsertResource\(cloudResourceName\(resource\), rows\)/,
+  "Actual local resources must be pushed before cloud reconciliation"
 );
 assert.match(
   bridge,
   /const entries = await Promise\.all\(\s*supported\.map\(async \(resource\)/,
-  "Synchronization must perform a cloud read-back after queued pushes"
+  "Synchronization must perform a cloud read-back after local pushes"
 );
 assert.match(
   bridge,
-  /nextState\[stateName\] = normalizeResourceRows\(resource, rows\)/,
+  /nextState\[stateName\] = normalizedRows/,
   "Cloud read-back must become the reconciled local state"
 );
 assert.match(
   bridge,
-  /if \(typeof window\.setSyncQueue === \"function\"\) \{\s*window\.setSyncQueue\((?:\[\]|remainingQueued)\)/,
-  "Sync queue must update only after the push/read-back sequence succeeds"
+  /window\.setSyncQueue\(\[\.\.\.remainingQueued\]\)/,
+  "Queue reconciliation must preserve only resources still requiring retry"
+);
+assert.match(
+  bridge,
+  /function getLocallyChangedResources\(snapshot, supported\)/,
+  "Background sync must detect locally dirty resources even when the queue is empty"
+);
+assert.match(
+  bridge,
+  /stableRows\(snapshot\?\.\[stateName\]\) !== stableRows\(baseline\.state\[stateName\]\)/,
+  "Dirty-resource detection must compare current state against the last successful sync baseline"
+);
+assert.match(
+  bridge,
+  /sync: async function wrappedSync\(\.\.\.args\) \{ return syncCrossDevice\(original, \.\.\.args\); \}/,
+  "UI bridge must expose the authoritative GVData.sync synchronization boundary"
+);
+assert.match(
+  gateway,
+  /upsertResource|selectResource|supportedResources/,
+  "Supabase gateway must remain the underlying data boundary used by synchronization"
 );
 assert.doesNotMatch(
   gateway,

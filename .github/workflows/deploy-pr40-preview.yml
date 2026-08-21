@@ -1,0 +1,76 @@
+name: ANTI BIG BANG 4.0 PR #40 Exact Preview
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - fix/sprint18-incoming-sync-startup-race
+
+permissions:
+  contents: read
+
+env:
+  PREVIEW_WORKER_NAME: gotavita-manager-app-pr-40
+  PREVIEW_URL: https://gotavita-manager-app-pr-40.carleugenetolentino22.workers.dev
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: Deploy exact PR #40 candidate preview
+    steps:
+      - name: Checkout exact PR head candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 1
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check script.js
+          node --check js/core/sync-authority.js
+          node --check js/core/sync-queue-authority.js
+          node --check js/core/sync-cloud-write-reconciler.js
+          node --check js/core/sync-auth-startup-bridge.js
+          node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
+          node --check js/core/sync-manager.js
+          node --check worker.js
+
+      - name: Deploy exact PR head candidate to canonical isolated Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.124.0"
+          command: deploy --name ${{ env.PREVIEW_WORKER_NAME }} --var GV_RELEASE_SHA:${{ env.CANDIDATE_SHA }}
+
+      - name: Verify isolated preview release SHA and app shell
+        env:
+          EXPECTED_SHA: ${{ env.CANDIDATE_SHA }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            health="$(curl -fsS "$PREVIEW_URL/gv-health" || true)"
+            echo "Health: $health"
+            if [ -n "$health" ]; then
+              deployed_sha="$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
+              if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then
+                shell="$(curl -fsS "$PREVIEW_URL/" || true)"
+                EXPECTED_SHA="$EXPECTED_SHA" SHELL_TEXT="$shell" node <<'NODE'
+const expected = process.env.EXPECTED_SHA;
+const shell = process.env.SHELL_TEXT || "";
+if (!shell.includes("GotaVita")) process.exit(1);
+if (!shell.includes(`gv_release=${expected}`)) process.exit(1);
+NODE
+                echo "Canonical preview verified: $deployed_sha"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Canonical preview did not report expected SHA $EXPECTED_SHA"
+          exit 1

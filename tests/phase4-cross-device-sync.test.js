@@ -85,10 +85,16 @@ async function runScenario({ queued, cloud, expectError = false }) {
   const result = await context.window.GVData.sync(true);
 
   if (expectError) {
-    assert.equal(result.ok, false);
+    // ANTI BIG BANG partial-sync contract: one failed resource must remain
+    // queued for retry, while the synchronization cycle itself remains usable.
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "partial-sync");
+    assert.equal(result.partial, true);
     assert.equal(queue.length, queued.length);
-    assert.equal(replacedState, null);
-    assert.equal(persistedState, null);
+    assert.ok(result.failedResources.includes("orders"));
+    assert.ok(replacedState, "Partial synchronization must still converge readable resources");
+    assert.ok(persistedState, "Partial synchronization must persist readable resources");
+    assert.equal(syncMeta.lastSyncStatus, "partial-sync");
     return;
   }
 
