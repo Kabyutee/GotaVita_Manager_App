@@ -27,19 +27,17 @@ const moduleText = filesUnder("js/modules").map((file) => read(path.relative(ROO
 
 const stateBlock = state.match(/return\s*\{([\s\S]*?)\};/);
 assert(stateBlock, "state factory resource declaration not found");
-const requiredResources = [
-  "products", "clients", "services", "orders", "payments", "expenses", "payrollRecords", "employees",
-  "orderGroups", "deliveryRoutes", "orderGroupItems", "deliveryRouteItems", "dailyReports", "deletedOrders", "auditLog"
-];
+const requiredResources = ["products","clients","services","orders","payments","expenses","payrollRecords","employees","orderGroups","deliveryRoutes","orderGroupItems","deliveryRouteItems","dailyReports","deletedOrders","auditLog"];
 for (const resource of requiredResources) assert(new RegExp(`(?:^|,)\\s*${resource}\\s*:`).test(stateBlock[1]), `state resource missing: ${resource}`);
 
 const syncRegistry = config.match(/SYNC_RESOURCES:Object\.freeze\(\[([\s\S]*?)\]\)/);
 assert(syncRegistry, "SYNC_RESOURCES registry not found");
 for (const resource of requiredResources) assert(syncRegistry[1].includes(`\"${resource}\"`), `config SYNC_RESOURCES missing: ${resource}`);
 
-for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:", "requireAuthenticatedManager:"]) {
+for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:"]) {
   assert(gateway.includes(required), `gateway capability missing: ${required}`);
 }
+assert(/async function requireAuthenticatedManager\(/.test(gateway), "gateway authentication boundary missing: requireAuthenticatedManager");
 for (const required of [
   "orderGroups: \"order_groups\"", "deliveryRoutes: \"delivery_routes\"", "orderGroupItems: \"order_group_items\"",
   "deliveryRouteItems: \"delivery_route_items\"", "dailyReports: \"daily_reports\"", "deletedOrders: \"deleted_orders\"", "auditLog: \"audit_logs\"",
@@ -54,7 +52,7 @@ for (const forbidden of ["window.GVData.sync =", "GVData.sync = async", "window.
   assert(!syncManager.includes(forbidden), `GVSync must not decorate GVData.sync: ${forbidden}`);
 }
 
-const tabs = ["dashboard", "neworder", "orderlog", "expenses", "groups", "clients", "employees", "reports"];
+const tabs = ["dashboard","neworder","orderlog","expenses","groups","clients","employees","reports"];
 for (const tab of tabs) assert(index.includes(`data-tab=\"${tab}\"`), `UI tab missing: ${tab}`);
 
 const requiredModules = [
