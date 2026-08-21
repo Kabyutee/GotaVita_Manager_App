@@ -109,6 +109,13 @@
     }
   }
 
+  function hasTimestamp(row) {
+    if (window.GVConflictDetector?.rowUpdatedAt) {
+      return window.GVConflictDetector.rowUpdatedAt(row) != null;
+    }
+    return Boolean(row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at);
+  }
+
   function policy(localRow, remoteRow, baselineAt) {
     if (!window.GVConflictDetector?.resolveConflictPolicy) {
       return { action: "manual-review", reason: "policy-unavailable", mutation: false };
@@ -164,11 +171,12 @@
       }
 
       let result;
-      if (baselineRow && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+      const legacyTimestampGap = !hasTimestamp(localRow) || !hasTimestamp(remoteRow);
+      if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
         result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
-      } else if (baselineRow && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) {
+      } else if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) {
         result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
-      } else if (baselineRow && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+      } else if (baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
         result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
       } else {
         result = policy(localRow, remoteRow, baselineAt);
