@@ -57,4 +57,27 @@
       return "Sync pending";
     }
   });
+
+  // Sprint 20 acceptance hardening: keep an independent poll safety net.
+  // The authoritative GVSync object still owns queue/state/render behavior;
+  // this layer only requests another poll so a missed lifecycle event cannot
+  // leave a second device stale until the user clicks a tab or button.
+  function kickSync(){
+    try {
+      if (navigator.onLine === false) return;
+      if (!window.GVSync || typeof window.GVSync.poll !== "function") return;
+      if (window.GVAuth && typeof window.GVAuth.isAuthorized === "function" && !window.GVAuth.isAuthorized()) return;
+      window.GVSync.poll().catch(() => {});
+    } catch (_) {}
+  }
+
+  const fallbackTimer = setInterval(kickSync, 5000);
+  void fallbackTimer;
+
+  window.addEventListener("online", kickSync);
+  window.addEventListener("focus", kickSync);
+  window.addEventListener("pageshow", kickSync);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") kickSync();
+  });
 })();
