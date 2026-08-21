@@ -266,6 +266,36 @@
     await window.__GV_ORDER_NUMBER_RECONCILER_PROMISE;
   }
 
+  async function ensureQueueAuthority() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (window.__GV_QUEUE_AUTHORITY_READY === true) return;
+
+    if (!window.__GV_QUEUE_AUTHORITY_PROMISE) {
+      window.__GV_QUEUE_AUTHORITY_PROMISE = new Promise((resolve, reject) => {
+        const existing = document.querySelector("script[data-gv-queue-authority]");
+        if (existing) {
+          existing.addEventListener("load", () => resolve(), { once: true });
+          existing.addEventListener("error", reject, { once: true });
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "/js/core/sync-queue-authority.js";
+        script.defer = false;
+        script.async = false;
+        script.dataset.gvQueueAuthority = "true";
+        script.onload = () => {
+          window.__GV_QUEUE_AUTHORITY_READY = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Sync queue authority failed to load."));
+        (document.head || document.documentElement).appendChild(script);
+      });
+    }
+
+    await window.__GV_QUEUE_AUTHORITY_PROMISE;
+  }
+
   async function flush() {
     const queue = appQueue();
     if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
@@ -273,6 +303,7 @@
 
     try {
       await ensureOrderNumberReconciler();
+      if (typeof document !== "undefined") await ensureQueueAuthority();
       const result = await window.GVData.sync(true);
       if (result !== false) {
         if (syncResultRequiresRender(result)) {
