@@ -1,15 +1,4 @@
-/* GotaVita Manager — Sprint 12 Controlled Conflict Resolution Integration
- *
- * Anti Big Bang 2.0 gate:
- * detector -> pure policy -> safe integration -> unambiguous apply -> reconcile.
- *
- * Safety contract:
- * - manual-review never mutates local state or Supabase.
- * - no queue clearing occurs until every record in a resource is resolved.
- * - Supabase writes occur only for keep-local decisions.
- * - keep-remote decisions update local state only.
- * - every resource gets a fresh remote baseline after successful reconciliation.
- */
+/* GotaVita Manager — Sprint 12 Controlled Conflict Resolution Integration */
 (function () {
   "use strict";
 
@@ -85,9 +74,7 @@
 
   function indexRows(rows) {
     const map = new Map();
-    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
-      map.set(rowKey(row, index), row);
-    });
+    (Array.isArray(rows) ? rows : []).forEach((row, index) => map.set(rowKey(row, index), row));
     return map;
   }
 
@@ -102,17 +89,12 @@
   }
 
   function rowsEquivalent(left, right) {
-    try {
-      return JSON.stringify(comparableRow(left)) === JSON.stringify(comparableRow(right));
-    } catch (_) {
-      return false;
-    }
+    try { return JSON.stringify(comparableRow(left)) === JSON.stringify(comparableRow(right)); }
+    catch (_) { return false; }
   }
 
   function hasTimestamp(row) {
-    if (window.GVConflictDetector?.rowUpdatedAt) {
-      return window.GVConflictDetector.rowUpdatedAt(row) != null;
-    }
+    if (window.GVConflictDetector?.rowUpdatedAt) return window.GVConflictDetector.rowUpdatedAt(row) != null;
     return Boolean(row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at);
   }
 
@@ -129,22 +111,12 @@
 
   function tombstone(row, deletedAt) {
     if (!deletedAt) return null;
-    return {
-      id: row?.id,
-      legacy_id: row?.legacy_id,
-      deleted: true,
-      deletedAt,
-      updatedAt: deletedAt
-    };
+    return { id: row?.id, legacy_id: row?.legacy_id, deleted: true, deletedAt, updatedAt: deletedAt };
   }
 
   function baselinePlaceholder(id, baselineAt) {
     if (!baselineAt) return null;
-    return {
-      id,
-      updatedAt: baselineAt,
-      createdAt: baselineAt
-    };
+    return { id, updatedAt: baselineAt, createdAt: baselineAt };
   }
 
   function buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows = [], remoteDeletedRows = [], baselineRows = []) {
@@ -164,7 +136,6 @@
         const evidence = deletionEvidence(localDeletedRows, id);
         localRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
-
       if (!remoteRow) {
         const evidence = deletionEvidence(remoteDeletedRows, id);
         remoteRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
@@ -184,7 +155,6 @@
 
       decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: localMap.get(id) || null, remote: remoteMap.get(id) || null });
     }
-
     return decisions;
   }
 
@@ -205,7 +175,13 @@
   function recordConflicts(entries) {
     if (!entries.length) return;
     const current = readJson(CONFLICT_KEY, []);
-    writeJson(CONFLICT_KEY, [...current, ...entries].slice(-200));
+    const seen = new Set(current.map((entry) => `${entry.resource}:${entry.id}:${entry.reason}`));
+    const next = [...current];
+    for (const entry of entries) {
+      const key = `${entry.resource}:${entry.id}:${entry.reason}`;
+      if (!seen.has(key)) { seen.add(key); next.push(entry); }
+    }
+    writeJson(CONFLICT_KEY, next.slice(-200));
   }
 
   function removeResourceFromQueue(resource) {
@@ -216,11 +192,7 @@
 
   function resourceCloudName(resource) { return RESOURCE_MAP[resource] || resource; }
   function resourceStateName(resource) { return STATE_MAP[resource] || resource; }
-
-  function stateSnapshot() {
-    const snapshotReader = window["getStateSnapshot"];
-    return typeof snapshotReader === "function" ? snapshotReader() : null;
-  }
+  function stateSnapshot() { const reader = window["getStateSnapshot"]; return typeof reader === "function" ? reader() : null; }
 
   function supportedResources() {
     return Object.keys(RESOURCE_MAP).filter((resource) => {
@@ -233,7 +205,6 @@
   async function applyDecision(resource, decision, nextState) {
     const cloudName = resourceCloudName(resource);
     const stateName = resourceStateName(cloudName);
-
     if (decision.action === "keep-local") {
       if (decision.local) await window.GVData.upsertResource(cloudName, [decision.local]);
       else if (typeof window.GVData.deleteResourceByLegacyId === "function") {
@@ -242,13 +213,11 @@
       }
       return;
     }
-
     if (decision.action === "keep-remote") {
       const rows = Array.isArray(nextState[stateName]) ? nextState[stateName].slice() : [];
-      const index = rows.findIndex((row, index) => rowKey(row, index) === decision.id);
+      const index = rows.findIndex((row, rowIndex) => rowKey(row, rowIndex) === decision.id);
       if (decision.remote) {
-        if (index >= 0) rows[index] = clone(decision.remote);
-        else rows.push(clone(decision.remote));
+        if (index >= 0) rows[index] = clone(decision.remote); else rows.push(clone(decision.remote));
       } else if (index >= 0) rows.splice(index, 1);
       nextState[stateName] = rows;
     }
@@ -261,14 +230,22 @@
 
     if (manual.length) {
       recordConflicts(manual.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
-      return { resource, decisions, summary, reconciled: false };
     }
 
     for (const decision of decisions) {
-      if (decision.action === "keep-local" || decision.action === "keep-remote") await applyDecision(resource, decision, nextState);
+      if (decision.action === "keep-local" || decision.action === "keep-remote") {
+        await applyDecision(resource, decision, nextState);
+      }
     }
 
-    return { resource, decisions, summary, reconciled: true };
+    return {
+      resource,
+      decisions,
+      summary,
+      reconciled: true,
+      partial: manual.length > 0,
+      unresolvedCount: manual.length
+    };
   }
 
   async function run(force = false) {
@@ -304,19 +281,21 @@
         const result = await reconcileResource(resource, localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows, nextState);
         results.push(result);
 
-        if (result.reconciled) {
-          const refreshed = await window.GVData.selectResource(resourceCloudName(resource));
-          nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
-          removeResourceFromQueue(resourceCloudName(resource));
-        }
+        const refreshed = await window.GVData.selectResource(resourceCloudName(resource));
+        nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
+        if (!result.partial) removeResourceFromQueue(resourceCloudName(resource));
       }
 
       if (typeof window.persistState === "function") window.persistState();
       setBaseline(nextBaseline);
       const manualReviewCount = results.reduce((sum, result) => sum + (result.summary?.manualReview || 0), 0);
       const appliedCount = results.reduce((sum, result) => sum + (result.summary?.keepLocal || 0) + (result.summary?.keepRemote || 0), 0);
-
-      if (typeof window.setSyncStatus === "function") window.setSyncStatus(manualReviewCount ? `Conflict review required · ${manualReviewCount}` : `Synced · ${appliedCount} conflict decision(s) applied`, manualReviewCount ? "warning" : "online");
+      if (typeof window.setSyncStatus === "function") {
+        window.setSyncStatus(
+          manualReviewCount ? `Conflict review required · ${manualReviewCount}` : `Synced · ${appliedCount} conflict decision(s) applied`,
+          manualReviewCount ? "warning" : "online"
+        );
+      }
       return { ok: true, status: manualReviewCount ? "manual-review" : "reconciled", results };
     } finally {
       sessionStorage.removeItem(RUN_LOCK_KEY);
