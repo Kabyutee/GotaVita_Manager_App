@@ -35,10 +35,11 @@ assert(/employees|payroll/.test(reports+script),"reports are not connected to em
 assert(/readLocalStateSnapshot\(\)/.test(script),"existing records are not restored on startup");
 assert(/cachedState[\s\S]*?replaceState\(\s*cachedState/.test(script),"cached records are not restored before seed fallback");
 assert(/cachedState[\s\S]*?seedState\(\)/.test(script),"seed fallback is not isolated behind existing-cache lookup");
-const changedText = changed.filter((f)=>/\.(js|mjs|cjs|html)$/.test(f)&&exists(f)).map(read).join("\n");
-if (changedText) {
-  assert(!/localStorage\.clear\s*\(/.test(changedText),"PR introduces localStorage.clear(); existing records must remain available");
-  assert(!/indexedDB\.deleteDatabase\s*\(/.test(changedText),"PR introduces IndexedDB deletion; existing records must remain available");
+const changedApplicationFiles = changed.filter((f)=>/\.(js|mjs|cjs|html)$/.test(f)&&exists(f)&&!f.startsWith("tests/")&&!f.startsWith(".github/"));
+const changedApplicationText = changedApplicationFiles.map(read).join("\n");
+if (changedApplicationText) {
+  assert(!/localStorage\.clear\s*\(/.test(changedApplicationText),"PR introduces localStorage.clear(); existing records must remain available");
+  assert(!/indexedDB\.deleteDatabase\s*\(/.test(changedApplicationText),"PR introduces IndexedDB deletion; existing records must remain available");
 }
 assert(/GVData|syncChangedResources|persistState/.test(sync+gateway+script),"sync/persistence boundary missing");
 assert(/hydrateFirstBaseline\(|integration\.run\(|renderRemoteState\(/.test(sync+script),"remote convergence/hydration boundary missing");
