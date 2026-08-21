@@ -115,6 +115,12 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(authBridgeMarker, `${authBridgeMarker}\n${authBridgeInjected}`);
   }
 
+  const groupMembershipMarker = `<script src="/js/core/sync-auth-startup-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const groupMembershipInjected = `<script src="/js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(groupMembershipMarker) && !html.includes(groupMembershipInjected)) {
+    html = html.replace(groupMembershipMarker, `${groupMembershipMarker}\n${groupMembershipInjected}`);
+  }
+
   return withNoStore(response, html);
 }
 
