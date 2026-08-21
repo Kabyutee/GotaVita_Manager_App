@@ -80,4 +80,26 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") kickSync();
   });
+
+  function loadBulkSelectionInteractionBridge(){
+    if (typeof document === "undefined") return;
+    if (document.querySelector('script[data-gv-sync-checkbox-interaction="true"]')) return;
+
+    const script = document.createElement("script");
+    script.src = "/js/core/sync-checkbox-interaction-bridge.js";
+    script.defer = true;
+    script.dataset.gvSyncCheckboxInteraction = "true";
+    script.onerror = () => {
+      console.warn("GotaVita bulk-selection sync continuity bridge failed to load.");
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  try {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", loadBulkSelectionInteractionBridge, { once: true });
+    } else {
+      loadBulkSelectionInteractionBridge();
+    }
+  } catch (_) {}
 })();
