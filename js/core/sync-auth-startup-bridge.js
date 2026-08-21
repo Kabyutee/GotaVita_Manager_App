@@ -27,7 +27,12 @@
   });
 
   window.addEventListener("online", ensureAuthorizedForSync);
-  window.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") ensureAuthorizedForSync();
-  });
+
+  // visibilitychange is dispatched by Document, not Window. Revalidate the
+  // persisted session whenever a backgrounded tab becomes visible again.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") ensureAuthorizedForSync();
+    });
+  }
 })();
