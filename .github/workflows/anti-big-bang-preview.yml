@@ -2,149 +2,47 @@ name: ANTI BIG BANG — isolated browser preview
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact candidate commit SHA to deploy
+        required: true
+        type: string
   pull_request:
     types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - fix/sprint18-incoming-sync-startup-race
-      - anti-big-bang/order-log-ui-fix
-      - fix/sprint18-order-number-reconciler-activation
 
 permissions:
   contents: read
   deployments: write
-
-env:
-  PREVIEW_PR: ${{ github.event.pull_request.number || '43' }}
-  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   preview:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout candidate branch
-        uses: actions/checkout@v4
-
-      - name: Apply ANTI BIG BANG 2.2 interaction boundary to preview workspace
-        shell: python
-        run: |
-          from pathlib import Path
-
-          path = Path("js/core/sync-manager.js")
-          text = path.read_text(encoding="utf-8")
-
-          if "ANTI BIG BANG 2.2" in text:
-              print("ANTI BIG BANG 2.2 already present in candidate.")
-          else:
-              start = text.find("  function beginUserInteraction() {")
-              end = text.find("  function renderSyncedState() {", start)
-              if start < 0 or end < 0:
-                  raise SystemExit("Expected ANTI BIG BANG 2.1 interaction boundary not found")
-
-              replacement = '''  // ANTI BIG BANG 2.2 — focused controls define the interaction boundary.
-  // Native select/checkbox popups can release pointer events while the control
-  // remains focused, so pointerup timing alone must never permit destructive
-  // background rendering.
-  function activeFormControl() {
-    try {
-      const active = document.activeElement;
-      return active?.closest?.("input, select, textarea, button") || null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function interactionIsProtected() {
-    return Boolean(activeInteraction || activeFormControl());
-  }
-
-  function beginUserInteraction() {
-    activeInteraction = true;
-    if (interactionReleaseTimer) {
-      clearTimeout(interactionReleaseTimer);
-      interactionReleaseTimer = null;
-    }
-  }
-
-  function endUserInteractionSoon() {
-    if (interactionReleaseTimer) clearTimeout(interactionReleaseTimer);
-    interactionReleaseTimer = setTimeout(() => {
-      interactionReleaseTimer = null;
-      if (activeFormControl()) return;
-      activeInteraction = false;
-
-      if (deferredRender) {
-        deferredRender = false;
-        renderSyncedState();
-      }
-    }, INTERACTION_RELEASE_MS);
-  }
-
-  function installInteractionGuard() {
-    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
-      return;
-    }
-
-    document.addEventListener("pointerdown", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("keydown", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("focusin", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("focusout", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) endUserInteractionSoon();
-    }, true);
-  }
-
-'''
-
-              text = text[:start] + replacement + text[end:]
-              text = text.replace("ANTI BIG BANG 2.1 — live cross-device gate", "ANTI BIG BANG 2.2 — live cross-device gate", 1)
-
-          if "function activeFormControl" not in text or "interactionIsProtected" not in text:
-              raise SystemExit("ANTI BIG BANG 2.2 patch verification failed")
-
-          old_guard = '''  function renderSyncedState() {
-    if (activeInteraction) {
-      deferredRender = true;
-      return;
-    }
-'''
-          new_guard = '''  function renderSyncedState() {
-    if (interactionIsProtected()) {
-      deferredRender = true;
-      return;
-    }
-'''
-
-          if old_guard in text:
-              text = text.replace(old_guard, new_guard, 1)
-          elif "if (interactionIsProtected())" not in text:
-              raise SystemExit("Expected render protection guard not found")
-
-          path.write_text(text, encoding="utf-8")
-
-      - name: Verify actual 2.2 candidate code
+      - name: Resolve exact candidate SHA
+        id: candidate
         shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha }}
+          INPUT_SHA: ${{ inputs.candidate_sha }}
         run: |
-          node --check worker.js
+          set -euo pipefail
+          candidate="$EVENT_SHA"
+          if [ -n "$INPUT_SHA" ]; then candidate="$INPUT_SHA"; fi
+          if [ -z "$candidate" ]; then exit 1; fi
+          echo "sha=$candidate" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.sha }}
+          fetch-depth: 1
+      - name: Verify candidate syntax
+        run: |
+          node --check script.js
+          node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
-          grep -q "ANTI BIG BANG 2.2" js/core/sync-manager.js
-          grep -q "interactionIsProtected" js/core/sync-manager.js
-          grep -q "focusin" js/core/sync-manager.js
-          echo "Verified: preview workspace contains the ANTI BIG BANG 2.2 interaction fix."
-
+          node --check worker.js
       - name: Deploy isolated candidate Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -154,15 +52,15 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
             deploy
-            --name gotavita-manager-pr-${{ env.PREVIEW_PR }}
-            --var GV_RELEASE_SHA:${{ env.CANDIDATE_SHA }}
-
+            --name gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}
+            --var GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}
       - name: Verify exact preview health
         env:
-          EXPECTED_SHA: ${{ env.CANDIDATE_SHA }}
+          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 'manual' }}
         run: |
           set -euo pipefail
-          url="https://gotavita-manager-pr-${PREVIEW_PR}.carleugenetolentino22.workers.dev/gv-health"
+          url="https://gotavita-manager-pr-${PR_NUMBER}.carleugenetolentino22.workers.dev/gv-health"
           for attempt in $(seq 1 12); do
             health="$(curl -fsS "$url" || true)"
             echo "Health: $health"
@@ -171,11 +69,3 @@ jobs:
             sleep 5
           done
           exit 1
-
-      - name: Publish preview gate details
-        run: |
-          echo "Candidate commit: ${{ env.CANDIDATE_SHA }}"
-          echo "Preview Worker: gotavita-manager-pr-${{ env.PREVIEW_PR }}"
-          echo "Production was not targeted by this workflow."
-
-      # ANTI BIG BANG retrigger marker: preview-only workflow change.
