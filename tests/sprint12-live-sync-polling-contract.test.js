@@ -72,6 +72,7 @@ vm.runInNewContext(source, context, { filename: "sync-manager.js" });
   assert.equal(scheduled.ms, 5000, "Polling interval must remain bounded at 5 seconds");
 
   await scheduled.handler();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(syncCalls, 3, "Polling must invoke the shared canonical sync coordinator");
   assert.equal(renderCalls, 0, "Polling health checks must not rebuild Order Log without remote state change");
 
