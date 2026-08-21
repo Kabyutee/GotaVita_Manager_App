@@ -26,14 +26,20 @@ const context = {
     scheduled = { handler, ms };
     return 1;
   },
+  setTimeout,
   document: undefined,
   window: {
     GVAuth: { isAuthorized: () => true },
-    GVData: {
-      sync: async () => {
+    GVConflictIntegration: {
+      getBaseline: () => ({ baseline: { baselineAt: new Date().toISOString(), rows: [] } }),
+      run: async () => {
         syncCalls++;
-        return { ok: true, status: "synced" };
+        return { ok: true, status: "synced", results: [] };
       }
+    },
+    GVData: {
+      supportedResources: () => [],
+      selectResource: async () => []
     },
     GVUI: {
       renderAll: () => { renderCalls++; }
@@ -48,7 +54,7 @@ context.window.window = context.window;
 vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 
 (async () => {
-  // Authorized startup performs one immediate pull even with an empty queue.
+  // Authorized startup performs one immediate canonical pull even with an empty queue.
   await Promise.resolve();
   assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
 
@@ -64,7 +70,7 @@ vm.runInNewContext(source, context, { filename: "sync-manager.js" });
   assert.equal(scheduled.ms, 5000, "Polling interval must remain bounded at 5 seconds");
 
   await scheduled.handler();
-  assert.equal(syncCalls, 3, "Polling must invoke the shared sync gateway");
+  assert.equal(syncCalls, 3, "Polling must invoke the shared canonical sync coordinator");
   assert.equal(renderCalls, 0, "Polling health checks must not rebuild Order Log without remote state change");
 
   console.log("Sprint 12/17 live sync + UI preservation contract: PASS");
