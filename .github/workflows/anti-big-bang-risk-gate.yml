@@ -12,7 +12,8 @@ permissions:
 jobs:
   classify-and-test:
     runs-on: ubuntu-latest
-    name: Classify change and run focused safe gate
+    # Keep this exact job name because branch protection requires it.
+    name: Classify change and run minimal safe gate
     steps:
       - name: Checkout pull request
         uses: actions/checkout@v4
