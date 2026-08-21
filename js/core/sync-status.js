@@ -1,4 +1,4 @@
-/* GotaVita Manager — synchronization status UI boundary */
+/* GotaVita Manager — synchronization status UI boundary. */
 (function(){
   "use strict";
 
@@ -16,7 +16,7 @@
     try {
       return typeof window.getSyncMeta === "function"
         ? window.getSyncMeta()
-        : {};
+        : (window.GVSync ? window.GVSync.meta() : {});
     } catch (_) {
       return {};
     }
@@ -28,7 +28,9 @@
     const m = meta();
 
     if (!online) return "offline";
-    if (m.lastSyncStatus === "partial-sync" || (q && m.failedResources?.length)) return "sync-error";
+    if (m.lastSyncStatus === "partial-sync" || m.lastSyncStatus === "sync-error") return "sync-error";
+    if (m.lastSyncStatus === "conflict" || (q && m.failedResources?.length)) return "sync-error";
+    if (m.lastSyncStatus === "syncing") return "syncing";
     return q ? "sync-pending" : "online";
   }
 
@@ -36,11 +38,10 @@
     const m = meta();
     const failed = Array.isArray(m.failedResources) ? m.failedResources : [];
     const errors = m.failedErrors && typeof m.failedErrors === "object" ? m.failedErrors : {};
-
+    if (m.lastSyncError) return String(m.lastSyncError);
     if (!failed.length) return "";
-
     const first = failed[0];
-    return `${first}: ${String(errors[first] || "cloud write/read failed")}`;
+    return `${first}: ${String(errors[first] || "cloud synchronization failed")}`;
   }
 
   window.GVSyncStatus = Object.freeze({
@@ -50,6 +51,7 @@
       const s = status();
       if (s === "online") return "Synced ✓";
       if (s === "offline") return "Offline";
+      if (s === "syncing") return "Checking cloud…";
       if (s === "sync-error") {
         const detail = failureDetail();
         return detail ? `Sync blocked · ${detail}` : "Sync blocked";
@@ -57,49 +59,4 @@
       return "Sync pending";
     }
   });
-
-  // Sprint 20 acceptance hardening: keep an independent poll safety net.
-  // The authoritative GVSync object still owns queue/state/render behavior;
-  // this layer only requests another poll so a missed lifecycle event cannot
-  // leave a second device stale until the user clicks a tab or button.
-  function kickSync(){
-    try {
-      if (navigator.onLine === false) return;
-      if (!window.GVSync || typeof window.GVSync.poll !== "function") return;
-      if (window.GVAuth && typeof window.GVAuth.isAuthorized === "function" && !window.GVAuth.isAuthorized()) return;
-      window.GVSync.poll().catch(() => {});
-    } catch (_) {}
-  }
-
-  const fallbackTimer = setInterval(kickSync, 5000);
-  void fallbackTimer;
-
-  window.addEventListener("online", kickSync);
-  window.addEventListener("focus", kickSync);
-  window.addEventListener("pageshow", kickSync);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") kickSync();
-  });
-
-  function loadBulkSelectionInteractionBridge(){
-    if (typeof document === "undefined") return;
-    if (document.querySelector('script[data-gv-sync-checkbox-interaction="true"]')) return;
-
-    const script = document.createElement("script");
-    script.src = "/js/core/sync-checkbox-interaction-bridge.js";
-    script.defer = true;
-    script.dataset.gvSyncCheckboxInteraction = "true";
-    script.onerror = () => {
-      console.warn("GotaVita bulk-selection sync continuity bridge failed to load.");
-    };
-    (document.head || document.documentElement).appendChild(script);
-  }
-
-  try {
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", loadBulkSelectionInteractionBridge, { once: true });
-    } else {
-      loadBulkSelectionInteractionBridge();
-    }
-  } catch (_) {}
 })();
