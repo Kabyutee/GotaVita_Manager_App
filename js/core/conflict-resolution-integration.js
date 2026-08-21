@@ -132,9 +132,6 @@
       const baselineRow = baselineMap.get(id) || null;
       const existedAtBaseline = baselineRow != null;
 
-      // A record that exists on exactly one side and was absent from the last
-      // baseline is an unambiguous new record. Do not run it through timestamp
-      // conflict policy; converge it to the side that has the real record.
       let result = null;
       if (!rawLocalRow && rawRemoteRow && !existedAtBaseline) {
         result = { action: "keep-remote", reason: "remote-new-record", mutation: false };
@@ -297,6 +294,11 @@
         const refreshed = await window.GVData.selectResource(resourceCloudName(resource));
         nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
         if (!result.partial) removeResourceFromQueue(resourceCloudName(resource));
+      }
+
+      if (typeof window.GVGroupMembershipBridge?.reconcileRemoteState === "function") {
+        window.GVGroupMembershipBridge.reconcileRemoteState(nextState);
+        if (typeof window.replaceState === "function") window.replaceState(nextState);
       }
 
       if (typeof window.persistState === "function") window.persistState();

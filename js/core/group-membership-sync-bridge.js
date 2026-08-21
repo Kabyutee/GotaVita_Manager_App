@@ -16,7 +16,7 @@
     catch (_) { return null; }
   }
 
-  function applyStateSnapshot(snapshot) {
+  function replaceState(snapshot) {
     try { if (typeof window.replaceState === "function") window.replaceState(snapshot); }
     catch (error) { console.warn("GotaVita group membership state replace:", error?.message || error); }
   }
@@ -76,6 +76,17 @@
     }
   }
 
+  function membershipEquivalent(snapshot) {
+    const expectedItems = buildItemsFromGroups(snapshot);
+    const actualItems = Array.isArray(snapshot?.orderGroupItems) ? snapshot.orderGroupItems : [];
+    const expectedKeys = expectedItems.map((item) => `${item.groupLegacyId}::${item.orderLegacyId}`).sort();
+    const actualKeys = actualItems
+      .filter((item) => item && item.groupLegacyId != null && item.orderLegacyId != null)
+      .map((item) => `${item.groupLegacyId}::${item.orderLegacyId}`)
+      .sort();
+    return JSON.stringify(expectedKeys) === JSON.stringify(actualKeys);
+  }
+
   function reconcile(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.orderGroups)) return snapshot;
     if (!Array.isArray(snapshot.orderGroupItems)) snapshot.orderGroupItems = [];
@@ -100,30 +111,49 @@
     return snapshot;
   }
 
-  function install() {
-    if (window.__GV_GROUP_MEMBERSHIP_PERSIST_BRIDGE_INSTALLED) return true;
-    if (typeof window.persistState !== "function") return false;
-
-    const initial = stateSnapshot();
-    if (initial) {
-      reconcile(initial);
-      applyStateSnapshot(initial);
-    }
-
-    const originalPersistState = window.persistState;
-    window.persistState = function groupMembershipAwarePersistState(...args) {
-      const snapshot = stateSnapshot();
-      if (snapshot) {
-        reconcile(snapshot);
-        applyStateSnapshot(snapshot);
-      }
-      return originalPersistState.apply(this, args);
-    };
-    window.__GV_GROUP_MEMBERSHIP_PERSIST_BRIDGE_INSTALLED = true;
+  function reconcileCurrentState() {
+    const snapshot = stateSnapshot();
+    if (!snapshot) return false;
+    reconcile(snapshot);
+    replaceState(snapshot);
     return true;
   }
 
-  window.GVGroupMembershipBridge = Object.freeze({ reconcile, install });
+  function reconcileRemoteState(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.orderGroups)) return false;
+    if (!Array.isArray(snapshot.orderGroupItems)) snapshot.orderGroupItems = [];
+
+    const beforeParentDigest = lastParentDigest;
+    const beforeItemsDigest = lastItemsDigest;
+    reconcile(snapshot);
+
+    const parentChanged = digest(snapshot.orderGroups) !== beforeParentDigest;
+    const itemsChanged = digest(snapshot.orderGroupItems) !== beforeItemsDigest;
+
+    // A remote sync can update both resources before reconciliation runs.
+    // When both sides changed and they disagree, keep the application-facing
+    // parent membership authoritative and regenerate child rows from it.
+    if (parentChanged && itemsChanged && !membershipEquivalent(snapshot)) {
+      snapshot.orderGroupItems = buildItemsFromGroups(snapshot);
+      lastParentDigest = digest(snapshot.orderGroups);
+      lastItemsDigest = digest(snapshot.orderGroupItems);
+    }
+
+    return true;
+  }
+
+  function install() {
+    if (window.__GV_GROUP_MEMBERSHIP_BRIDGE_INSTALLED) return true;
+    const initial = stateSnapshot();
+    if (initial) {
+      reconcile(initial);
+      replaceState(initial);
+    }
+    window.__GV_GROUP_MEMBERSHIP_BRIDGE_INSTALLED = true;
+    return true;
+  }
+
+  window.GVGroupMembershipBridge = Object.freeze({ reconcile, reconcileCurrentState, reconcileRemoteState, install });
 
   install();
   document.addEventListener("DOMContentLoaded", install, { once: true });

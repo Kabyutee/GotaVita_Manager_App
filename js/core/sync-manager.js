@@ -211,6 +211,13 @@
       window.__GV_SYNC_TRANSACTION_ACTIVE = true;
       await hydrateFirstBaseline(integration);
 
+      // Canonical Group relationship reconciliation. Local Group mutations
+      // update orderGroups[].orderIds first; this hook materializes the
+      // synchronized orderGroupItems relationship before conflict resolution.
+      if (typeof window.GVGroupMembershipBridge?.reconcileCurrentState === "function") {
+        window.GVGroupMembershipBridge.reconcileCurrentState();
+      }
+
       const originalPersist = window.persistState;
       let result;
       if (typeof originalPersist === "function") {
