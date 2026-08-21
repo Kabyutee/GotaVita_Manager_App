@@ -10,13 +10,18 @@ permissions:
 jobs:
   classify-and-test:
     runs-on: ubuntu-latest
-    # Keep this exact job name because branch protection requires it.
     name: Classify change and run minimal safe gate
     steps:
       - name: Checkout pull request
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: JARVIS 7.0 adaptive whole-application scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node tests/anti-big-bang-7-adaptive-application-scan.test.js
 
       - name: ANTI BIG BANG 6.0 whole-application connection audit
         run: node tests/anti-big-bang-6-application-connection-audit.test.js
@@ -41,7 +46,7 @@ jobs:
           deployment=false
           workflow=false
           architecture=false
-          full_audit=false
+          full_audit=true
 
           for file in "${files[@]}"; do
             case "$file" in
@@ -52,7 +57,7 @@ jobs:
               wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/anti-big-bang-6-application-connection-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/anti-big-bang-6-application-connection-audit.test.js|tests/anti-big-bang-7-adaptive-application-scan.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
@@ -64,17 +69,13 @@ jobs:
             esac
           done
 
-          # Any change that can alter the connection graph is high-risk.
-          # The whole-application audit still runs for every PR regardless.
           if $sync || $data || $full_audit; then
             risk="high"
           elif $deployment || $ui; then
             risk="medium"
           fi
 
-          if $sync; then
-            architecture=true
-          fi
+          if $sync; then architecture=true; fi
 
           {
             echo "risk=$risk"
@@ -87,7 +88,7 @@ jobs:
             echo "full_audit=true"
           } >> "$GITHUB_OUTPUT"
 
-          echo "ANTI BIG BANG 6.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture full_audit=true"
+          echo "JARVIS 7.0 + ANTI BIG BANG 6.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture full_audit=true"
 
       - name: Low-risk fast gate
         if: steps.risk.outputs.risk == 'low'
@@ -117,6 +118,7 @@ jobs:
           node tests/anti-big-bang-4-system-audit.test.js
           node tests/anti-big-bang-5-sync-architecture-contract.test.js
           node tests/anti-big-bang-6-application-connection-audit.test.js
+          node tests/anti-big-bang-7-adaptive-application-scan.test.js
           node tests/sprint20-empty-resource-convergence-contract.test.js
           node --check js/core/sync-manager.js
           node --check js/core/sync-cloud-write-reconciler.js
@@ -130,6 +132,7 @@ jobs:
         run: |
           node tests/anti-big-bang-5-sync-architecture-contract.test.js
           node tests/anti-big-bang-6-application-connection-audit.test.js
+          node tests/anti-big-bang-7-adaptive-application-scan.test.js
           node tests/sprint18-transaction-sync-readiness-contract.test.js
           node tests/sprint18-sync-queue-preservation-contract.test.js
           node tests/sprint20-empty-resource-convergence-contract.test.js
@@ -139,10 +142,12 @@ jobs:
         run: |
           node tests/anti-big-bang-4-system-audit.test.js
           node tests/anti-big-bang-6-application-connection-audit.test.js
+          node tests/anti-big-bang-7-adaptive-application-scan.test.js
           node --check worker.js
 
       - name: Publish gate summary
         run: |
+          echo "JARVIS 7.0 adaptive whole-application scan: REQUIRED"
           echo "ANTI BIG BANG 6.0 classification: ${{ steps.risk.outputs.risk }}"
           echo "UI: ${{ steps.risk.outputs.ui }}"
           echo "Sync: ${{ steps.risk.outputs.sync }}"
