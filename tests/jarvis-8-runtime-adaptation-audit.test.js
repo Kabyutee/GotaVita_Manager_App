@@ -38,7 +38,7 @@ const profiles = {
   dailyReports: { files: ["js/modules/reports.js"], state: "dailyReports", runtimeManaged: true },
   deletedOrders: { files: ["js/modules/orders.js"], state: "deletedOrders", runtimeManaged: true },
   auditLog: { files: ["script.js"], state: "auditLog", runtimeManaged: false },
-  payments: { files: ["js/modules/orders.js"], state: "payments", runtimeManaged: true },
+  payments: { files: ["js/modules/orders.js"], state: "payments", runtimeManaged: false, owner: "orders" },
   services: { files: ["js/modules/products.js"], state: "services", runtimeManaged: false }
 };
 
@@ -95,6 +95,9 @@ for (const resource of impacted) {
     assert(source.includes(`state.${profile.state}`) || source.includes(profile.state), `${resource}: mutation/state surface not found`);
     assert(source.includes("persistState"), `${resource}: persistence boundary not connected`);
   }
+  if (profile.owner) {
+    assert(registry.includes(profile.owner), `${resource}: owning resource ${profile.owner} is not synchronized`);
+  }
 }
 
 if (changed.some((file) => file.includes("group-membership-sync-bridge.js"))) {
@@ -107,7 +110,8 @@ const summary = {
   changedFiles: changed.length,
   impactedResources: impacted,
   runtimeManagedResources: impacted.filter((r) => profiles[r]?.runtimeManaged),
-  referenceOnlyResources: impacted.filter((r) => profiles[r]?.runtimeManaged === false),
+  dependentResources: impacted.filter((r) => profiles[r]?.owner),
+  referenceOnlyResources: impacted.filter((r) => profiles[r]?.runtimeManaged === false && !profiles[r]?.owner),
   runtimeLayers: ["mutation", "state", "persistence", "queue", "cloud", "conflict", "hydration", "render"],
   result: "PASS"
 };
@@ -119,8 +123,9 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
     "## JARVIS 8.0 — Runtime Adaptation Audit",
     `- Changed files: **${summary.changedFiles}**`,
-    `- Impacted synchronized resources: **${impacted.length ? impacted.join(", ") : "none detected"}**`,
+    `- Impacted synchronized resources: **${impacted.length ? impacted.join(", ") : "none detected"}`,
     `- Runtime-managed resources: **${summary.runtimeManagedResources.length}**`,
+    `- Dependent resources: **${summary.dependentResources.length}**`,
     `- Reference-only resources: **${summary.referenceOnlyResources.length}**`,
     "- Runtime layers: mutation → state → persistence → queue → cloud → conflict → hydration → render",
     "- Result: **PASS**",
