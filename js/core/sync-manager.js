@@ -165,18 +165,20 @@
   async function hydrateFirstBaseline(integration) {
     if (!window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
-    const baseline = integration?.getBaseline?.() || {};
-    if (Object.keys(baseline).length) return false;
 
+    const baseline = integration?.getBaseline?.() || {};
     const state = window.getStateSnapshot();
     let changed = false;
     const supported = window.GVData.supportedResources();
+
     for (const resource of supported) {
       if (resource === "audit_logs") continue;
       const stateName = integration.resourceStateName ? integration.resourceStateName(resource) : resource;
-      if (!stateName) continue;
+      if (!stateName || baseline[resource]) continue;
+
       const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
       const remoteRows = await window.GVData.selectResource(resource);
+
       if (!localRows.length && remoteRows.length) {
         state[stateName] = remoteRows;
         changed = true;
