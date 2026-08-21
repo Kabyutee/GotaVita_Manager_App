@@ -91,6 +91,31 @@
     return map;
   }
 
+  function comparableRow(row) {
+    if (!row || typeof row !== "object") return row;
+    const output = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (/^(updatedAt|updated_at|createdAt|created_at)$/.test(key)) continue;
+      output[key] = value;
+    }
+    return output;
+  }
+
+  function rowsEquivalent(left, right) {
+    try {
+      return JSON.stringify(comparableRow(left)) === JSON.stringify(comparableRow(right));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function hasTimestamp(row) {
+    if (window.GVConflictDetector?.rowUpdatedAt) {
+      return window.GVConflictDetector.rowUpdatedAt(row) != null;
+    }
+    return Boolean(row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at);
+  }
+
   function policy(localRow, remoteRow, baselineAt) {
     if (!window.GVConflictDetector?.resolveConflictPolicy) {
       return { action: "manual-review", reason: "policy-unavailable", mutation: false };
@@ -132,7 +157,8 @@
     for (const id of ids) {
       let localRow = localMap.get(id) || null;
       let remoteRow = remoteMap.get(id) || null;
-      const existedAtBaseline = baselineMap.has(id);
+      const baselineRow = baselineMap.get(id) || null;
+      const existedAtBaseline = baselineRow != null;
 
       if (!localRow) {
         const evidence = deletionEvidence(localDeletedRows, id);
@@ -144,7 +170,18 @@
         remoteRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
-      const result = policy(localRow, remoteRow, baselineAt);
+      let result;
+      const legacyTimestampGap = !hasTimestamp(localRow) || !hasTimestamp(remoteRow);
+      if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+        result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
+      } else if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) {
+        result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
+      } else if (baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+        result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
+      } else {
+        result = policy(localRow, remoteRow, baselineAt);
+      }
+
       decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: localMap.get(id) || null, remote: remoteMap.get(id) || null });
     }
 
