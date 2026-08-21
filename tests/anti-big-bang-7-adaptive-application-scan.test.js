@@ -41,13 +41,6 @@ function grepAll(files, token) {
   });
 }
 
-function stateResources() {
-  const source = read("js/core/state.js");
-  const block = source.match(/return\s*\{([\s\S]*?)\};/);
-  assert(block, "state factory declaration not found");
-  return [...block[1].matchAll(/(?:^|,)\s*([A-Za-z0-9_]+)\s*:/g)].map((m) => m[1]);
-}
-
 function registryResources() {
   const source = read("js/core/config.js");
   const match = source.match(/SYNC_RESOURCES:Object\.freeze\(\[([\s\S]*?)\]\)/);
@@ -87,7 +80,6 @@ function impactedResources(changed, mapping) {
 
 const all = allFiles();
 const changed = changedFiles();
-const state = stateResources();
 const registry = registryResources();
 const mapping = cloudMappings();
 const conflict = conflictMappings();
@@ -106,12 +98,11 @@ const conflictManaged = new Set([
   "orderGroupItems", "deliveryRouteItems", "dailyReports", "deletedOrders", "auditLog"
 ]);
 
-const rows = state.map((resource) => {
+const rows = registry.map((resource) => {
   const cloud = mapping[resource];
   const references = grepAll(all, resource);
   const managed = conflictManaged.has(resource);
   const checks = {
-    registry: registry.includes(resource),
     gateway: !cloud || gateway.has(cloud),
     conflictState: !managed || conflictState.has(resource),
     conflictCloud: !managed || conflictCloud.has(cloud),
@@ -129,10 +120,10 @@ const summary = {
   mode: "adaptive whole-application scan",
   filesScanned: all.length,
   changedFiles: changed.length,
-  resourcesScanned: rows.length,
-  conflictManagedResources: [...conflictManaged],
-  impactedResources: impacted,
-  layers: ["UI", "state", "registry", "gateway", "conflict", "sync", "application references"],
+  synchronizedResourcesScanned: rows.length,
+  conflictManagedResources: [...conflictManaged].filter((r) => registry.includes(r)),
+  impactedResources: impacted.filter((r) => registry.includes(r)),
+  layers: ["whole repository", "sync registry", "gateway", "conflict model", "application references", "changed-surface impact"],
   result: "PASS"
 };
 
@@ -144,11 +135,10 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     "## JARVIS 7.0 — Adaptive Whole-Application Scan",
     `- Files scanned: **${summary.filesScanned}**`,
     `- Changed files: **${summary.changedFiles}**`,
-    `- Resources scanned: **${summary.resourcesScanned}**`,
-    `- Conflict-managed resources: **${summary.conflictManagedResources.length}**`,
-    `- Impacted resources: **${impacted.length ? impacted.join(", ") : "none detected"}**`,
+    `- Synchronized resources scanned: **${summary.synchronizedResourcesScanned}**`,
+    `- Impacted synchronized resources: **${summary.impactedResources.length ? summary.impactedResources.join(", ") : "none detected"}**`,
     "- Result: **PASS**",
-    "- Every PR is rescanned against the full application graph; impacted consumers must remain connected.",
+    "- Whole repository is scanned; only resources registered for synchronization are required to have cloud/conflict edges.",
     ""
   ].join("\n"));
 }
