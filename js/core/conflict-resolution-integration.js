@@ -127,11 +127,23 @@
     const decisions = [];
 
     for (const id of ids) {
-      let localRow = localMap.get(id) || null;
-      let remoteRow = remoteMap.get(id) || null;
+      const rawLocalRow = localMap.get(id) || null;
+      const rawRemoteRow = remoteMap.get(id) || null;
       const baselineRow = baselineMap.get(id) || null;
       const existedAtBaseline = baselineRow != null;
 
+      // A record that exists on exactly one side and was absent from the last
+      // baseline is an unambiguous new record. Do not run it through timestamp
+      // conflict policy; converge it to the side that has the real record.
+      let result = null;
+      if (!rawLocalRow && rawRemoteRow && !existedAtBaseline) {
+        result = { action: "keep-remote", reason: "remote-new-record", mutation: false };
+      } else if (rawLocalRow && !rawRemoteRow && !existedAtBaseline) {
+        result = { action: "keep-local", reason: "local-new-record", mutation: false };
+      }
+
+      let localRow = rawLocalRow;
+      let remoteRow = rawRemoteRow;
       if (!localRow) {
         const evidence = deletionEvidence(localDeletedRows, id);
         localRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
@@ -141,19 +153,20 @@
         remoteRow = evidence ? tombstone(evidence, evidence.archivedAt || evidence.deletedAt) : (existedAtBaseline ? null : baselinePlaceholder(id, baselineAt));
       }
 
-      let result;
-      const legacyTimestampGap = !hasTimestamp(localRow) || !hasTimestamp(remoteRow);
-      if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
-        result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
-      } else if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) {
-        result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
-      } else if (baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
-        result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
-      } else {
-        result = policy(localRow, remoteRow, baselineAt);
+      if (!result) {
+        const legacyTimestampGap = !hasTimestamp(localRow) || !hasTimestamp(remoteRow);
+        if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+          result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
+        } else if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) {
+          result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
+        } else if (baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) {
+          result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
+        } else {
+          result = policy(localRow, remoteRow, baselineAt);
+        }
       }
 
-      decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: localMap.get(id) || null, remote: remoteMap.get(id) || null });
+      decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: rawLocalRow, remote: rawRemoteRow });
     }
     return decisions;
   }
