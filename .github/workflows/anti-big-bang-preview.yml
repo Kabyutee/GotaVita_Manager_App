@@ -9,6 +9,9 @@ on:
         type: string
   pull_request:
     types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - preview/sprint18-candidate-6ce
 
 permissions:
   contents: read
@@ -25,10 +28,12 @@ jobs:
         env:
           EVENT_SHA: ${{ github.event.pull_request.head.sha }}
           INPUT_SHA: ${{ inputs.candidate_sha }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           candidate="$EVENT_SHA"
           if [ -n "$INPUT_SHA" ]; then candidate="$INPUT_SHA"; fi
+          if [ -z "$candidate" ]; then candidate="$PUSH_SHA"; fi
           if [ -z "$candidate" ]; then exit 1; fi
           echo "sha=$candidate" >> "$GITHUB_OUTPUT"
 
@@ -55,13 +60,13 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
             deploy
-            --name gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}
+            --name gotavita-manager-pr-${{ github.event.pull_request.number || '42' }}
             --var GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}
 
       - name: Verify exact preview health
         env:
           EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || 'manual' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '42' }}
         run: |
           set -euo pipefail
           url="https://gotavita-manager-pr-${PR_NUMBER}.carleugenetolentino22.workers.dev/gv-health"
