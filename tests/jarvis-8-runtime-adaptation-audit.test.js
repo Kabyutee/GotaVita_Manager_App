@@ -30,16 +30,16 @@ const profiles = {
   products: { files: ["js/modules/products.js"], state: "products", runtimeManaged: true },
   expenses: { files: ["js/modules/expenses.js"], state: "expenses", runtimeManaged: true },
   employees: { files: ["js/modules/employees-payroll.js"], state: "employees", runtimeManaged: true },
-  payrollRecords: { files: ["js/modules/employees-payroll.js"], state: "payrollRecords", runtimeManaged: true },
+  payrollRecords: { files: ["js/modules/employees-payroll.js"], owner: "employees", runtimeManaged: false },
   orderGroups: { files: ["js/modules/groups-routes.js", "js/core/group-membership-sync-bridge.js"], state: "orderGroups", runtimeManaged: true },
-  orderGroupItems: { files: ["js/modules/groups-routes.js", "js/core/group-membership-sync-bridge.js"], state: "orderGroupItems", runtimeManaged: true },
+  orderGroupItems: { files: ["js/modules/groups-routes.js", "js/core/group-membership-sync-bridge.js"], owner: "orderGroups", runtimeManaged: false },
   deliveryRoutes: { files: ["js/modules/groups-routes.js"], state: "deliveryRoutes", runtimeManaged: true },
-  deliveryRouteItems: { files: ["js/modules/groups-routes.js"], state: "deliveryRouteItems", runtimeManaged: true },
+  deliveryRouteItems: { files: ["js/modules/groups-routes.js"], owner: "deliveryRoutes", runtimeManaged: false },
   dailyReports: { files: ["js/modules/reports.js"], state: "dailyReports", runtimeManaged: true },
-  deletedOrders: { files: ["js/modules/orders.js"], state: "deletedOrders", runtimeManaged: true },
-  auditLog: { files: ["script.js"], state: "auditLog", runtimeManaged: false },
-  payments: { files: ["js/modules/orders.js"], state: "payments", runtimeManaged: false, owner: "orders" },
-  services: { files: ["js/modules/products.js"], state: "services", runtimeManaged: false }
+  deletedOrders: { files: ["js/modules/orders.js"], owner: "orders", runtimeManaged: false },
+  auditLog: { files: ["script.js"], runtimeManaged: false, referenceOnly: true },
+  payments: { files: ["js/modules/orders.js"], owner: "orders", runtimeManaged: false },
+  services: { files: ["js/modules/products.js"], owner: "products", runtimeManaged: false }
 };
 
 const changed = changedFiles();
@@ -86,17 +86,28 @@ function impactedResources() {
 
 const impacted = impactedResources();
 
+function ownerProfile(resource) {
+  const owner = profiles[resource]?.owner;
+  return owner ? profiles[owner] : null;
+}
+
 for (const resource of impacted) {
   const profile = profiles[resource];
   assert(profile, `${resource}: no runtime adaptation profile exists`);
-  const source = profile.files.filter(exists).map(read).join("\n");
   assert(registry.includes(resource), `${resource}: runtime surface is not present in sync registry`);
+
   if (profile.runtimeManaged) {
+    const source = profile.files.filter(exists).map(read).join("\n");
     assert(source.includes(`state.${profile.state}`) || source.includes(profile.state), `${resource}: mutation/state surface not found`);
     assert(source.includes("persistState"), `${resource}: persistence boundary not connected`);
   }
+
   if (profile.owner) {
+    const owner = ownerProfile(resource);
+    assert(owner, `${resource}: owner profile ${profile.owner} is missing`);
     assert(registry.includes(profile.owner), `${resource}: owning resource ${profile.owner} is not synchronized`);
+    const ownerSource = owner.files.filter(exists).map(read).join("\n");
+    assert(ownerSource.includes("persistState"), `${resource}: owning workflow ${profile.owner} lacks persistence boundary`);
   }
 }
 
@@ -111,7 +122,7 @@ const summary = {
   impactedResources: impacted,
   runtimeManagedResources: impacted.filter((r) => profiles[r]?.runtimeManaged),
   dependentResources: impacted.filter((r) => profiles[r]?.owner),
-  referenceOnlyResources: impacted.filter((r) => profiles[r]?.runtimeManaged === false && !profiles[r]?.owner),
+  referenceOnlyResources: impacted.filter((r) => profiles[r]?.referenceOnly),
   runtimeLayers: ["mutation", "state", "persistence", "queue", "cloud", "conflict", "hydration", "render"],
   result: "PASS"
 };
@@ -123,7 +134,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
     "## JARVIS 8.0 — Runtime Adaptation Audit",
     `- Changed files: **${summary.changedFiles}**`,
-    `- Impacted synchronized resources: **${impacted.length ? impacted.join(", ") : "none detected"}`,
+    `- Impacted synchronized resources: **${impacted.length ? impacted.join(", ") : "none detected"}**`,
     `- Runtime-managed resources: **${summary.runtimeManagedResources.length}**`,
     `- Dependent resources: **${summary.dependentResources.length}**`,
     `- Reference-only resources: **${summary.referenceOnlyResources.length}**`,
