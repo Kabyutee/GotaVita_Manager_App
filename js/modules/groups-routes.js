@@ -3,6 +3,20 @@
 
 function idsEqual(a, b) { return String(a) === String(b); }
 
+function newGroupLegacyId() {
+  return `group_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ensureGroupLegacyIds() {
+  if (!Array.isArray(state.orderGroups)) return;
+  state.orderGroups.forEach((group) => {
+    if (!group || group.id != null && String(group.id).trim() !== "") return;
+    group.id = newGroupLegacyId();
+  });
+}
+
+ensureGroupLegacyIds();
+
 function groupOf(orderId) {
   const g = state.orderGroups.find((g) => (g.orderIds || []).some((x) => idsEqual(x, orderId)));
   return g ? g.name : "";
@@ -13,7 +27,7 @@ function createGroup() {
   if (!name) { showToast("Enter a group name.", "error"); return; }
   if (state.orderGroups.some((g) => g.name.toLowerCase() === name.toLowerCase())) { showToast("Group already exists.", "error"); return; }
   saveStateForUndo();
-  state.orderGroups.push({ name, orderIds: [] });
+  state.orderGroups.push({ id: newGroupLegacyId(), name, orderIds: [] });
   $("newGroupName").value = "";
   persistState(); renderAll(); showToast(`Group "${name}" created.`);
 }
@@ -21,6 +35,7 @@ function createGroup() {
 function editGroup(index) {
   const g = state.orderGroups[index];
   if (!g) return;
+  if (!g.id) g.id = newGroupLegacyId();
   const newName = prompt("Edit Route / Group Name:", g.name);
   if (newName && newName.trim() !== "" && newName.trim().toLowerCase() !== g.name.toLowerCase()) {
     if (state.orderGroups.some((grp, i) => i !== index && grp.name.toLowerCase() === newName.trim().toLowerCase())) {
@@ -58,6 +73,7 @@ function renderOrderGroups() {
 
 function openGroupManager(index) {
   const g = state.orderGroups[index]; if (!g) return;
+  if (!g.id) g.id = newGroupLegacyId();
   $("groupManageIndex").value = index; $("groupManageTitle").textContent = `📦 Manage Orders · ${g.name}`; $("groupManageSearch").value=''; renderGroupManager(); openModal('groupManageModal');
 }
 
@@ -73,6 +89,7 @@ function renderGroupManager() {
 
 function saveGroupManager() {
   const index = Number($("groupManageIndex").value); const g = state.orderGroups[index]; if (!g) return;
+  if (!g.id) g.id = newGroupLegacyId();
   saveStateForUndo();
   const validOrderIds = new Set(state.orders.filter(o => o.status !== "Cancelled").map(o => String(o.id)));
   g.orderIds = Array.from(document.querySelectorAll('.group-manage-check:checked')).map(c => String(c.value)).filter(id => validOrderIds.has(id));
@@ -82,7 +99,7 @@ function saveGroupManager() {
 function removeOrderFromGroup(orderId) {
   saveStateForUndo();
   let removed = 0;
-  state.orderGroups.forEach((g) => {
+  state.orderGroups.forEach((g) => { if (!g.id) g.id = newGroupLegacyId();
     const before = (g.orderIds || []).length;
     g.orderIds = (g.orderIds || []).filter((x) => !idsEqual(x, orderId));
     removed += before - g.orderIds.length;
@@ -93,9 +110,10 @@ function removeOrderFromGroup(orderId) {
 
 function assignOrdersToGroup(orderIds, groupName) {
   saveStateForUndo();
+  ensureGroupLegacyIds();
   state.orderGroups.forEach((g) => { g.orderIds = (g.orderIds || []).filter((x) => !orderIds.some((id) => idsEqual(x, id))); });
   let g = state.orderGroups.find((g) => String(g.name).toLowerCase() === String(groupName).toLowerCase());
-  if (!g) { g = { name: groupName, orderIds: [] }; state.orderGroups.push(g); }
+  if (!g) { g = { id: newGroupLegacyId(), name: groupName, orderIds: [] }; state.orderGroups.push(g); }
   const eligibleIds = orderIds.filter((id) => {
     const order = state.orders.find(o => idsEqual(o.id, id));
     return order && order.status !== "Cancelled";
@@ -136,6 +154,7 @@ function openGroupPicker(orderIds) {
 
 function removeSelectedFromGroup() {
   saveStateForUndo();
+  ensureGroupLegacyIds();
   state.orderGroups.forEach((g) => { g.orderIds = (g.orderIds || []).filter((x) => !groupPickerOrderIds.some((id) => idsEqual(x, id))); });
   persistState(); renderPartial("groups"); closeModal("groupPickerModal");
   showToast("Removed from group.");
@@ -149,6 +168,7 @@ function groupPickerCreate() {
 
 function markGroupPaid(i) {
   const g = state.orderGroups[i]; if (!g) return;
+  if (!g.id) g.id = newGroupLegacyId();
   saveStateForUndo();
   let updated = 0;
   state.orders.forEach((o) => {
@@ -220,98 +240,22 @@ function copyGroupList(i) {
     const productName = $("editOrderProduct").value;
     const editedClient = state.clients.find(c => c.name === clientName);
     const editedProduct = state.products.find(p => p.name === productName);
-    const validation = validateOrderInput({
-      clientName,
-      clientId: editedClient?.id,
-      custType: productName,
-      productId: editedProduct?.id,
-      gallons: $("editOrderGallons").value,
-      price: $("editOrderPrice").value,
-      status: $("editOrderStatus").value,
-      emptyGallonsCollected: $("editOrderEmpty").value
-    });
+    const validation = validateOrderInput({ clientName, clientId: editedClient?.id, custType: productName, productId: editedProduct?.id, gallons: $("editOrderGallons").value, price: $("editOrderPrice").value, status: $("editOrderStatus").value, emptyGallonsCollected: $("editOrderEmpty").value });
     if (!validation.ok) { validationError(validation.message); return; }
-
     const before = clone(o);
     const beforeGroup = groupOf(o.id);
     const selectedGroup = $("editOrderGroup")?.value?.trim() || "";
-    if (selectedGroup && !state.orderGroups.some((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase())) {
-      validationError("Selected delivery group no longer exists.");
-      return;
-    }
-
+    if (selectedGroup && !state.orderGroups.some((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase())) { validationError("Selected delivery group no longer exists."); return; }
     saveStateForUndo();
-    o.clientName = validation.value.clientName;
-    o.custType = validation.value.custType;
-    o.clientId = editedClient.id;
-    o.productId = editedProduct.id;
-    o.gallons = validation.value.gallons;
-    o.price = validation.value.price;
-    o.emptyGallonsCollected = validation.value.emptyGallonsCollected;
-    recalculateOrderFinancials(o);
-    applyOrderStatus(o, $("editOrderStatus").value);
-    o.address = $("editOrderAddress").value.trim();
-    o.notes = $("editOrderNotes").value.trim();
-    o.updatedAt = new Date().toISOString();
-
-    state.orderGroups.forEach((g) => {
-      g.orderIds = (g.orderIds || []).filter((orderId) => !idsEqual(orderId, o.id));
-    });
-    if (selectedGroup) {
-      const group = state.orderGroups.find((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase());
-      if (group) {
-        group.orderIds = group.orderIds || [];
-        if (!group.orderIds.some((orderId) => idsEqual(orderId, o.id))) group.orderIds.push(o.id);
-      }
-    }
-
-    audit("update", "order", o.id, {
-      before,
-      after: clone(o),
-      groupBefore: beforeGroup,
-      groupAfter: selectedGroup || ""
-    });
-    persistState();
-    renderAll();
-    closeModal("orderEditModal");
-    showToast(`Order #${o.orderNumber} updated${selectedGroup ? ` and assigned to "${selectedGroup}"` : " and removed from its group"}.`);
+    o.clientName = validation.value.clientName; o.custType = validation.value.custType; o.clientId = editedClient.id; o.productId = editedProduct.id; o.gallons = validation.value.gallons; o.price = validation.value.price; o.emptyGallonsCollected = validation.value.emptyGallonsCollected;
+    recalculateOrderFinancials(o); applyOrderStatus(o, $("editOrderStatus").value); o.address = $("editOrderAddress").value.trim(); o.notes = $("editOrderNotes").value.trim(); o.updatedAt = new Date().toISOString();
+    ensureGroupLegacyIds();
+    state.orderGroups.forEach((g) => { g.orderIds = (g.orderIds || []).filter((orderId) => !idsEqual(orderId, o.id)); });
+    if (selectedGroup) { const group = state.orderGroups.find((g) => String(g.name).toLowerCase() === selectedGroup.toLowerCase()); if (group) { group.orderIds = group.orderIds || []; if (!group.orderIds.some((orderId) => idsEqual(orderId, o.id))) group.orderIds.push(o.id); } }
+    persistState(); renderAll(); closeModal("orderEditModal");
+    audit("update", "order", o.id, { before, after: clone(o), source: "edit-order", groupBefore: beforeGroup, groupAfter: selectedGroup });
+    if (typeof GVSync !== "undefined" && typeof GVSync.flush === "function") GVSync.flush().catch(() => {});
+    showToast("Order updated.");
   };
-  handleOrderEditSubmit = window.handleOrderEditSubmit;
-})();
-
-/* Sprint 14 display hardening — keep group name visible in Completed and All Orders. */
-(function installGroupLabelAcrossOrderViews() {
-  function decorate(tableId, checkboxClass) {
-    const table = $(tableId);
-    if (!table) return;
-    table.querySelectorAll("tr").forEach((row) => {
-      const checkbox = row.querySelector(`input.${checkboxClass}`);
-      const cell = row.querySelector("td:nth-child(4)");
-      if (!checkbox || !cell) return;
-      const group = groupOf(checkbox.value);
-      cell.querySelector(".gv-order-group-label")?.remove();
-      if (!group) return;
-      const label = document.createElement("small");
-      label.className = "gv-order-group-label";
-      label.style.cssText = "display:block; margin-top:4px; font-weight:700;";
-      label.textContent = `📦 ${group}`;
-      cell.appendChild(label);
-    });
-  }
-
-  const originalCompleted = renderCompletedTransactions;
-  renderCompletedTransactions = function wrappedRenderCompletedTransactions() {
-    const result = originalCompleted.apply(this, arguments);
-    decorate("billingTableBody", "billing-checkbox");
-    return result;
-  };
-  window.renderCompletedTransactions = renderCompletedTransactions;
-
-  const originalAll = renderAllOrders;
-  renderAllOrders = function wrappedRenderAllOrders() {
-    const result = originalAll.apply(this, arguments);
-    decorate("allOrdersTableBody", "all-order-checkbox");
-    return result;
-  };
-  window.renderAllOrders = renderAllOrders;
+  window.handleOrderEditSubmit = window.handleOrderEditSubmit;
 })();
