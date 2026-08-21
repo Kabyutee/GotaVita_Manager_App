@@ -114,11 +114,6 @@
     };
   }
 
-  /*
-   * Pure conflict policy. It returns a recommended action only; it does not
-   * mutate rows, local state, the sync queue, or the cloud. Ambiguous cases
-   * intentionally require manual review instead of implicit last-write-wins.
-   */
   function resolveConflictPolicy(localRow, remoteRow, baselineAt) {
     const baseline = parseTime(baselineAt);
     const localUpdated = rowUpdatedAt(localRow);
@@ -174,6 +169,92 @@
     return result;
   }
 
+  function installEmptyResourceReconciliation() {
+    if (window.__GV_EMPTY_RESOURCE_RECONCILIATION_READY || !window.GVData || typeof window.GVData.sync !== "function") return;
+
+    const originalSync = window.GVData.sync.bind(window.GVData);
+    const stateNames = Object.freeze({
+      clients: "clients", products: "products", services: "services", employees: "employees",
+      orders: "orders", payments: "payments", expenses: "expenses", payroll_records: "payrollRecords",
+      order_groups: "orderGroups", delivery_routes: "deliveryRoutes", order_group_items: "orderGroupItems",
+      delivery_route_items: "deliveryRouteItems", daily_reports: "dailyReports", deleted_orders: "deletedOrders",
+      audit_logs: "auditLog"
+    });
+    const baselineKey = "gotavita_sync_baseline_v1";
+
+    function readBaseline() {
+      try {
+        const parsed = JSON.parse(window.localStorage?.getItem(baselineKey) || "null");
+        return parsed?.state && typeof parsed.state === "object" ? parsed.state : null;
+      } catch (_) { return null; }
+    }
+
+    function queuedResources() {
+      try {
+        const queue = typeof window.getSyncQueue === "function" ? window.getSyncQueue() : [];
+        return new Set(Array.isArray(queue) ? queue.filter(Boolean) : []);
+      } catch (_) { return new Set(); }
+    }
+
+    async function reconcile(result) {
+      if (!result?.ok || !window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return result;
+      if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return result;
+
+      const baseline = readBaseline();
+      if (!baseline) return result;
+
+      const queued = queuedResources();
+      const state = window.getStateSnapshot();
+      const supported = window.GVData.supportedResources();
+      const cleared = [];
+
+      for (const resource of supported) {
+        const stateName = stateNames[resource];
+        if (!stateName || queued.has(resource) || !Object.prototype.hasOwnProperty.call(baseline, stateName)) continue;
+
+        const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
+        if (!localRows.length) continue;
+
+        try {
+          const remoteRows = await window.GVData.selectResource(resource);
+          if (Array.isArray(remoteRows) && remoteRows.length === 0) {
+            state[stateName] = [];
+            cleared.push(resource);
+          }
+        } catch (_) {}
+      }
+
+      if (!cleared.length) return result;
+
+      const now = Date.now();
+      state._meta = Object.assign({}, state._meta, {
+        lastUpdated: now,
+        lastSynchronizedAt: now,
+        lastRemoteChangedResources: [...new Set([...(result.remoteChangedResources || []), ...cleared])]
+      });
+
+      window.replaceState(state);
+      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+
+      return Object.assign({}, result, {
+        remoteChanged: true,
+        stateChanged: true,
+        renderRequired: true,
+        remoteChangedResources: [...new Set([...(result.remoteChangedResources || []), ...cleared])],
+        emptyRemoteResourcesCleared: cleared
+      });
+    }
+
+    window.GVData = Object.freeze(Object.assign({}, window.GVData, {
+      sync: async function (...args) {
+        const result = await originalSync(...args);
+        return reconcile(result);
+      }
+    }));
+
+    window.__GV_EMPTY_RESOURCE_RECONCILIATION_READY = true;
+  }
+
   window.GVConflictDetector = Object.freeze({
     detect,
     resolveConflictPolicy,
@@ -187,18 +268,19 @@
   window.GVProductionGuard = Object.freeze({ diagnostics, run, isLocal, cloudConfigured });
   window.addEventListener("load", () => { try { run(); } catch (_) {} }, { once: true });
 
-  /* Sprint 12 controlled integration loader. It waits until the deferred
-   * application has initialized, then activates the safe integration layer.
-   * The integration itself is side-effect guarded and never runs on file/local mode.
-   */
   window.addEventListener("DOMContentLoaded", () => {
     try {
-      if (document.querySelector('script[data-gv-conflict-integration="true"]')) return;
-      const script = document.createElement("script");
-      script.src = "/js/core/conflict-resolution-integration.js";
-      script.defer = true;
-      script.dataset.gvConflictIntegration = "true";
-      document.head.appendChild(script);
+      if (!document.querySelector('script[data-gv-conflict-integration="true"]')) {
+        const script = document.createElement("script");
+        script.src = "/js/core/conflict-resolution-integration.js";
+        script.defer = true;
+        script.dataset.gvConflictIntegration = "true";
+        document.head.appendChild(script);
+      }
+      installEmptyResourceReconciliation();
     } catch (_) {}
   }, { once: true });
+
+  // The gateway may be installed before DOMContentLoaded; retry once after all deferred scripts are ready.
+  try { installEmptyResourceReconciliation(); } catch (_) {}
 })();
