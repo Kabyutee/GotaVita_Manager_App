@@ -39,6 +39,7 @@ jobs:
           data=false
           deployment=false
           workflow=false
+          architecture=false
 
           for file in "${files[@]}"; do
             case "$file" in
@@ -49,7 +50,7 @@ jobs:
               wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
@@ -61,10 +62,17 @@ jobs:
             esac
           done
 
+          # A synchronization change is architecture-risk by default. It must
+          # prove one coordinator, one queue owner, one baseline owner, and no
+          # decorated GVData.sync transaction before any merge is eligible.
           if $sync || $data; then
             risk="high"
           elif $deployment || $ui; then
             risk="medium"
+          fi
+
+          if $sync; then
+            architecture=true
           fi
 
           {
@@ -74,9 +82,10 @@ jobs:
             echo "data=$data"
             echo "deployment=$deployment"
             echo "workflow=$workflow"
+            echo "architecture=$architecture"
           } >> "$GITHUB_OUTPUT"
 
-          echo "ANTI BIG BANG 5.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow"
+          echo "ANTI BIG BANG 5.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture"
 
       - name: Low-risk fast gate
         if: steps.risk.outputs.risk == 'low'
@@ -104,12 +113,22 @@ jobs:
           node tests/sprint18-sync-queue-preservation-contract.test.js
           node tests/sprint18-order-number-reconciliation-contract.test.js
           node tests/anti-big-bang-4-system-audit.test.js
+          node tests/anti-big-bang-5-sync-architecture-contract.test.js
           node tests/sprint20-empty-resource-convergence-contract.test.js
+          node --check js/core/sync-manager.js
           node --check js/core/sync-cloud-write-reconciler.js
 
       - name: Focused sync polling gate
         if: steps.risk.outputs.sync == 'true'
         run: node tests/sprint12-live-sync-polling-contract.test.js
+
+      - name: Sync architecture gate
+        if: steps.risk.outputs.architecture == 'true'
+        run: |
+          node tests/anti-big-bang-5-sync-architecture-contract.test.js
+          node tests/sprint18-transaction-sync-readiness-contract.test.js
+          node tests/sprint18-sync-queue-preservation-contract.test.js
+          node tests/sprint20-empty-resource-convergence-contract.test.js
 
       - name: Workflow safety gate
         if: steps.risk.outputs.workflow == 'true'
@@ -125,4 +144,5 @@ jobs:
           echo "Data: ${{ steps.risk.outputs.data }}"
           echo "Deployment: ${{ steps.risk.outputs.deployment }}"
           echo "Workflow: ${{ steps.risk.outputs.workflow }}"
+          echo "Architecture gate: ${{ steps.risk.outputs.architecture }}"
           echo "Production deployment: NOT performed by this workflow"
