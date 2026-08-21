@@ -86,6 +86,7 @@
     return { conflictCount: conflicts.length, indeterminateCount: indeterminate.length, conflicts, indeterminate };
   }
 
+  // Side-effect-free resolver: policy returns decisions only; it does not mutate state or cloud data.
   function resolveConflictPolicy(localRow, remoteRow, baselineAt) {
     const baseline = parseTime(baselineAt);
     const localUpdated = rowUpdatedAt(localRow);
@@ -98,13 +99,11 @@
     if (baseline == null || localUpdated == null || remoteUpdated == null) {
       return { action: "manual-review", reason: "indeterminate", mutation: false };
     }
-
     if (localDeleted !== remoteDeleted) {
       if (localDeletedAt != null && remoteUpdated != null && localDeletedAt > remoteUpdated) return { action: "keep-local", reason: "local-deletion-newer", mutation: false };
       if (remoteDeletedAt != null && localUpdated != null && remoteDeletedAt > localUpdated) return { action: "keep-remote", reason: "remote-deletion-newer", mutation: false };
       return { action: "manual-review", reason: "deletion-vs-update-ambiguous", mutation: false };
     }
-
     const localChanged = localUpdated > baseline;
     const remoteChanged = remoteUpdated > baseline;
     if (!localChanged && !remoteChanged) return { action: "no-conflict", reason: "unchanged-since-baseline", mutation: false };
