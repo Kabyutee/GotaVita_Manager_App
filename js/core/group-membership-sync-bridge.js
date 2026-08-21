@@ -111,6 +111,14 @@
     return snapshot;
   }
 
+  function reconcileCurrentState() {
+    const snapshot = stateSnapshot();
+    if (!snapshot) return false;
+    reconcile(snapshot);
+    replaceState(snapshot);
+    return true;
+  }
+
   function reconcileRemoteState(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.orderGroups)) return false;
     if (!Array.isArray(snapshot.orderGroupItems)) snapshot.orderGroupItems = [];
@@ -135,29 +143,17 @@
   }
 
   function install() {
-    if (window.__GV_GROUP_MEMBERSHIP_PERSIST_BRIDGE_INSTALLED) return true;
-    if (typeof window.persistState !== "function") return false;
-
+    if (window.__GV_GROUP_MEMBERSHIP_BRIDGE_INSTALLED) return true;
     const initial = stateSnapshot();
     if (initial) {
       reconcile(initial);
       replaceState(initial);
     }
-
-    const originalPersistState = window.persistState;
-    window.persistState = function groupMembershipAwarePersistState(...args) {
-      const snapshot = stateSnapshot();
-      if (snapshot) {
-        reconcile(snapshot);
-        replaceState(snapshot);
-      }
-      return originalPersistState.apply(this, args);
-    };
-    window.__GV_GROUP_MEMBERSHIP_PERSIST_BRIDGE_INSTALLED = true;
+    window.__GV_GROUP_MEMBERSHIP_BRIDGE_INSTALLED = true;
     return true;
   }
 
-  window.GVGroupMembershipBridge = Object.freeze({ reconcile, reconcileRemoteState, install });
+  window.GVGroupMembershipBridge = Object.freeze({ reconcile, reconcileCurrentState, reconcileRemoteState, install });
 
   install();
   document.addEventListener("DOMContentLoaded", install, { once: true });
