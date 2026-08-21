@@ -1,373 +1,311 @@
-/* GotaVita Manager — Phase 5 Sprint 5.5 synchronization compatibility boundary */
+/* GotaVita Manager — Sprint 20 canonical synchronization coordinator. */
 (function () {
   "use strict";
 
-  // Sprint 5.5 hardening: use the application's authoritative sync queue.
-  // The older standalone queue used a different localStorage key and could
-  // report "Synced" while the real application queue still had resources.
-  //
-  // ANTI BIG BANG 2.2 — live cross-device gate:
-  // - queued local changes are pushed through GVData.sync().
-  // - when the queue is empty, GVData.sync() is still called so an already
-  //   open second device can pull remote changes.
-  // - polling never clears or mutates the queue itself; GVData remains the
-  //   single synchronization authority.
-  // - background sync must never rebuild the UI while a user is actively
-  //   interacting with a form/select control.
-  // - sync continues during protected interaction; only the destructive UI
-  //   render is deferred until the interaction is safely finished.
-  //
-  // ANTI BIG BANG 3.0 / Sprint 17:
-  // - a successful gateway/auth check is NOT itself a remote-state change.
-  // - renderAll() is therefore allowed only when GVData.sync() explicitly
-  //   reports that remote state changed (or legacy boolean true is returned).
-  // - this prevents a 15-second background health/sync check from rebuilding
-  //   Order Log while a user is selecting/filtering orders.
-  const LEGACY_KEY = "gotavita_sync_queue_v1";
-  const LEGACY_META = "gotavita_sync_meta_v1";
   const POLL_MS = 5000;
+  const META_KEY = "gotavita_sync_meta_v1";
+  const QUEUE_KEY = "gotavita_sync_queue_v1";
   const INTERACTION_RELEASE_MS = 250;
 
-  let pollTimer = null;
-  let pollInFlight = false;
-  let interactionReleaseTimer = null;
+  let timer = null;
+  let inFlight = false;
   let activeInteraction = false;
   let deferredRender = false;
+  let releaseTimer = null;
+  let conflictPromise = null;
 
-  function appQueue() {
+  function readJson(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (_) { return fallback; }
+  }
+
+  function writeJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function queue() {
     try {
       if (typeof window.getSyncQueue === "function") return window.getSyncQueue();
     } catch (_) {}
-    return [];
+    const legacy = readJson(QUEUE_KEY, []);
+    return Array.isArray(legacy) ? legacy : [];
+  }
+
+  function clearQueue() {
+    try {
+      if (typeof window.setSyncQueue === "function") window.setSyncQueue([]);
+    } catch (_) {}
+    try { localStorage.removeItem(QUEUE_KEY); } catch (_) {}
   }
 
   function enqueue(payload, entity = "state", action = "upsert") {
-    const resources = Array.isArray(payload) ? payload : [entity];
-    if (typeof window.queueSyncResources === "function") {
-      window.queueSyncResources(resources.filter(Boolean));
-      return resources[0] || "";
-    }
+    const resources = Array.isArray(payload) ? payload.filter(Boolean) : [entity].filter(Boolean);
     try {
-      const q = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]");
-      q.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
-      localStorage.setItem(LEGACY_KEY, JSON.stringify(q));
+      if (typeof window.queueSyncResources === "function") {
+        window.queueSyncResources(resources.length ? resources : ["state"]);
+        return resources[0] || "state";
+      }
     } catch (_) {}
+
+    const current = queue();
+    current.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
+    writeJson(QUEUE_KEY, current);
     return entity;
   }
 
-  function activeFormContainer() {
+  function getMeta() { return readJson(META_KEY, {}); }
+  function setMeta(next) { writeJson(META_KEY, next || {}); }
+
+  function authorized() {
+    try { return window.GVAuth?.isAuthorized?.() === true; }
+    catch (_) { return false; }
+  }
+
+  function activeEditableControl() {
     try {
       const active = document.activeElement;
-      if (!active) return null;
-      return active.closest?.("form, [role='dialog'], .modal") || null;
-    } catch (_) {
-      return null;
-    }
+      return active?.closest?.("input:not([type='checkbox']), select, textarea, button") || null;
+    } catch (_) { return null; }
   }
 
-  function getControlKey(control, index) {
-    if (control.id) return `id:${control.id}`;
-    if (control.name) return `name:${control.name}:${index}`;
-    return `index:${index}`;
-  }
+  function interactionProtected() { return Boolean(activeInteraction || activeEditableControl()); }
 
-  function captureActiveFormState() {
-    const container = activeFormContainer();
-    if (!container) return null;
-
-    const controls = [...container.querySelectorAll("input, select, textarea")];
-    const values = controls.map((control, index) => ({
-      key: getControlKey(control, index),
-      type: control.type || control.tagName.toLowerCase(),
-      value: control.value,
-      checked: control.type === "checkbox" || control.type === "radio" ? control.checked : undefined,
-      selectedValues:
-        control.tagName === "SELECT" && control.multiple
-          ? [...control.selectedOptions].map((option) => option.value)
-          : undefined
-    }));
-
-    return {
-      containerId: container.id || null,
-      values,
-      activeId: document.activeElement?.id || null,
-      activeName: document.activeElement?.name || null
-    };
-  }
-
-  function restoreActiveFormState(snapshot) {
-    if (!snapshot) return;
-
-    let container = snapshot.containerId ? document.getElementById(snapshot.containerId) : null;
-    if (!container) container = document.querySelector("form, [role='dialog'], .modal");
-    if (!container) return;
-
-    const controls = [...container.querySelectorAll("input, select, textarea")];
-    const byKey = new Map(
-      controls.map((control, index) => [getControlKey(control, index), control])
-    );
-
-    for (const item of snapshot.values) {
-      const control = byKey.get(item.key);
-      if (!control) continue;
-
-      try {
-        if (control.tagName === "SELECT" && control.multiple && Array.isArray(item.selectedValues)) {
-          const selected = new Set(item.selectedValues.map(String));
-          for (const option of control.options) {
-            option.selected = selected.has(String(option.value));
-          }
-        } else if (item.type === "checkbox" || item.type === "radio") {
-          control.checked = Boolean(item.checked);
-        } else {
-          control.value = item.value;
-        }
-      } catch (_) {}
-    }
-
-    let active = null;
-    if (snapshot.activeId) active = document.getElementById(snapshot.activeId);
-    if (!active && snapshot.activeName) {
-      active = container.querySelector(`[name="${CSS.escape(snapshot.activeName)}"]`);
-    }
-    try { active?.focus?.(); } catch (_) {}
-  }
-
-  // ANTI BIG BANG 2.2 — the focused control is the authoritative interaction
-  // boundary. Native select/checkbox popups can release pointer events while
-  // the control remains focused, so pointerup timing alone is insufficient.
-  function activeFormControl() {
-    try {
-      const active = document.activeElement;
-      return active?.closest?.("input, select, textarea, button") || null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function interactionIsProtected() {
-    return Boolean(activeInteraction || activeFormControl());
-  }
-
-  function beginUserInteraction() {
+  function beginInteraction() {
     activeInteraction = true;
-    if (interactionReleaseTimer) {
-      clearTimeout(interactionReleaseTimer);
-      interactionReleaseTimer = null;
-    }
+    if (releaseTimer) clearTimeout(releaseTimer);
+    releaseTimer = null;
   }
 
-  function endUserInteractionSoon() {
-    if (interactionReleaseTimer) clearTimeout(interactionReleaseTimer);
-    interactionReleaseTimer = setTimeout(() => {
-      interactionReleaseTimer = null;
-
-      // A native select/checkbox can remain focused after pointerup/change.
-      // Keep the render deferred until focus has actually left the control.
-      if (activeFormControl()) return;
-
+  function endInteractionSoon() {
+    if (releaseTimer) clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(() => {
+      releaseTimer = null;
+      if (activeEditableControl()) return;
       activeInteraction = false;
-
       if (deferredRender) {
         deferredRender = false;
-        renderSyncedState();
+        renderRemoteState();
       }
     }, INTERACTION_RELEASE_MS);
   }
 
-  function installInteractionGuard() {
-    // Browser-only interaction protection. The sync manager is also loaded by
-    // Node/VM contract tests, where document is intentionally unavailable.
-    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
-      return;
-    }
-
-    document.addEventListener("pointerdown", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("keydown", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("focusin", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) beginUserInteraction();
-    }, true);
-
-    document.addEventListener("focusout", (event) => {
-      const control = event.target?.closest?.("input, select, textarea, button");
-      if (control) endUserInteractionSoon();
-    }, true);
+  function checkboxKey(control, index) {
+    return [control.dataset?.orderId, control.dataset?.id, control.id, control.name, control.value, index]
+      .find((value) => value != null && String(value) !== "")?.toString() || `index:${index}`;
   }
 
-  function renderSyncedState() {
-    if (interactionIsProtected()) {
+  function captureBulkSelections() {
+    if (typeof document === "undefined") return [];
+    return [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
+      .filter((control) => control.type === "checkbox" && control.checked)
+      .map((control, index) => ({ className: control.className, key: checkboxKey(control, index) }));
+  }
+
+  function restoreBulkSelections(snapshot) {
+    if (!snapshot?.length || typeof document === "undefined") return;
+    const wanted = new Set(snapshot.map((item) => `${item.className}::${item.key}`));
+    [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
+      .filter((control) => control.type === "checkbox")
+      .forEach((control, index) => {
+        if (wanted.has(`${control.className}::${checkboxKey(control, index)}`)) control.checked = true;
+      });
+  }
+
+  function stateDigest(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return "";
+    try { return JSON.stringify(snapshot); } catch (_) { return ""; }
+  }
+
+  function renderRemoteState() {
+    if (interactionProtected()) {
       deferredRender = true;
       return;
     }
-
-    const formState = captureActiveFormState();
-
+    const selections = captureBulkSelections();
     try {
-      if (window.GVUI && typeof window.GVUI.renderAll === "function") {
-        window.GVUI.renderAll();
-      }
-    } catch (renderError) {
-      console.warn(
-        "GotaVita background sync render skipped:",
-        renderError?.message || renderError
-      );
+      if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll();
+      else if (typeof window.renderAll === "function") window.renderAll();
+    } catch (error) {
+      console.warn("GotaVita sync render:", error?.message || error);
       return;
     }
-
-    restoreActiveFormState(formState);
+    restoreBulkSelections(selections);
   }
 
-  function syncResultRequiresRender(result) {
-    return result === true || Boolean(
-      result && (
-        result.remoteChanged === true ||
-        result.stateChanged === true ||
-        result.renderRequired === true
-      )
-    );
+  async function ensureConflictIntegration() {
+    if (window.GVConflictIntegration?.run) return window.GVConflictIntegration;
+    if (conflictPromise) return conflictPromise;
+    conflictPromise = new Promise((resolve, reject) => {
+      if (typeof document === "undefined") {
+        reject(new Error("Conflict integration requires a browser document."));
+        return;
+      }
+      const existing = document.querySelector('script[data-gv-conflict-integration="true"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.GVConflictIntegration), { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "/js/core/conflict-resolution-integration.js";
+      script.defer = true;
+      script.dataset.gvConflictIntegration = "true";
+      script.onload = () => resolve(window.GVConflictIntegration);
+      script.onerror = () => reject(new Error("Conflict integration failed to load."));
+      (document.head || document.documentElement).appendChild(script);
+    });
+    return conflictPromise;
   }
 
-  async function ensureOrderNumberReconciler() {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (window.__GV_ORDER_NUMBER_RECONCILER_READY === true) return;
+  async function hydrateFirstBaseline(integration) {
+    if (!window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return false;
+    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
+    const baseline = integration?.getBaseline?.() || {};
+    if (Object.keys(baseline).length) return false;
 
-    if (!window.__GV_ORDER_NUMBER_RECONCILER_PROMISE) {
-      window.__GV_ORDER_NUMBER_RECONCILER_PROMISE = new Promise((resolve, reject) => {
-        const existing = document.querySelector("script[data-gv-order-number-reconciler]");
-        if (existing) {
-          existing.addEventListener("load", () => resolve(), { once: true });
-          existing.addEventListener("error", reject, { once: true });
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.src = "/js/core/sync-cloud-write-reconciler.js";
-        script.defer = false;
-        script.async = false;
-        script.dataset.gvOrderNumberReconciler = "true";
-        script.onload = () => {
-          window.__GV_ORDER_NUMBER_RECONCILER_READY = true;
-          resolve();
-        };
-        script.onerror = () => reject(new Error("Order-number reconciler failed to load."));
-        (document.head || document.documentElement).appendChild(script);
-      });
+    const state = window.getStateSnapshot();
+    let changed = false;
+    const supported = window.GVData.supportedResources();
+    for (const resource of supported) {
+      if (resource === "audit_logs") continue;
+      const stateName = integration.resourceStateName ? integration.resourceStateName(resource) : resource;
+      if (!stateName) continue;
+      const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
+      const remoteRows = await window.GVData.selectResource(resource);
+      if (!localRows.length && remoteRows.length) {
+        state[stateName] = remoteRows;
+        changed = true;
+      }
     }
 
-    await window.__GV_ORDER_NUMBER_RECONCILER_PROMISE;
-  }
-
-  async function ensureQueueAuthority() {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (window.__GV_QUEUE_AUTHORITY_READY === true) return;
-
-    if (!window.__GV_QUEUE_AUTHORITY_PROMISE) {
-      window.__GV_QUEUE_AUTHORITY_PROMISE = new Promise((resolve, reject) => {
-        const existing = document.querySelector("script[data-gv-queue-authority]");
-        if (existing) {
-          existing.addEventListener("load", () => resolve(), { once: true });
-          existing.addEventListener("error", reject, { once: true });
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.src = "/js/core/sync-queue-authority.js";
-        script.defer = false;
-        script.async = false;
-        script.dataset.gvQueueAuthority = "true";
-        script.onload = () => {
-          window.__GV_QUEUE_AUTHORITY_READY = true;
-          resolve();
-        };
-        script.onerror = () => reject(new Error("Sync queue authority failed to load."));
-        (document.head || document.documentElement).appendChild(script);
-      });
-    }
-
-    await window.__GV_QUEUE_AUTHORITY_PROMISE;
+    if (!changed) return false;
+    const now = Date.now();
+    state._meta = Object.assign({}, state._meta, { lastUpdated: now, lastSynchronizedAt: now });
+    window.replaceState(state);
+    if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+    return true;
   }
 
   async function flush() {
-    const queue = appQueue();
-    if (!navigator.onLine) return { ok: false, status: "offline", queued: queue.length };
-    if (!window.GVData || typeof window.GVData.sync !== "function") return { ok: false, status: "unavailable", queued: queue.length };
+    if (inFlight) return { ok: false, status: "busy", queued: queue().length };
+    if (typeof window === "undefined" || typeof navigator === "undefined") return { ok: false, status: "unavailable", queued: queue().length };
+    if (navigator.onLine === false) return { ok: false, status: "offline", queued: queue().length };
+    if (!authorized()) return { ok: false, status: "unauthorized", queued: queue().length };
+
+    inFlight = true;
+    const before = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
+    const beforeDigest = stateDigest(before);
+    const queuedBefore = queue().length;
 
     try {
-      await ensureOrderNumberReconciler();
-      if (typeof document !== "undefined") await ensureQueueAuthority();
-      const result = await window.GVData.sync(true);
-      if (result !== false) {
-        if (syncResultRequiresRender(result)) {
-          renderSyncedState();
-        }
+      const integration = await ensureConflictIntegration();
+      if (!integration?.run) throw new Error("Canonical conflict/sync integration is unavailable.");
 
+      window.__GV_SYNC_TRANSACTION_ACTIVE = true;
+      await hydrateFirstBaseline(integration);
+
+      const originalPersist = window.persistState;
+      let result;
+      if (typeof originalPersist === "function") {
+        const originalSyncChanged = window.syncChangedResources;
+        const originalSyncNow = window.syncNow;
+        window.syncChangedResources = () => Promise.resolve(false);
+        window.syncNow = () => Promise.resolve(false);
         try {
-          const meta = JSON.parse(localStorage.getItem(LEGACY_META) || "{}");
-          meta.lastSyncAt = new Date().toISOString();
-          localStorage.setItem(LEGACY_META, JSON.stringify(meta));
-        } catch (_) {}
-        return { ok: true, status: "synced", queued: appQueue().length, result };
+          result = await integration.run(true);
+        } finally {
+          window.syncChangedResources = originalSyncChanged;
+          window.syncNow = originalSyncNow;
+        }
+      } else {
+        result = await integration.run(true);
       }
-      return { ok: false, status: "sync-error", queued: appQueue().length };
-    } catch (err) {
-      return { ok: false, status: "sync-error", queued: appQueue().length, error: String(err?.message || err) };
+
+      const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
+      const changed = beforeDigest !== stateDigest(after);
+
+      if (result?.ok === true) {
+        clearQueue();
+        const meta = getMeta();
+        setMeta({ ...meta, lastSyncAt: new Date().toISOString(), lastSyncStatus: result.status || "synced", lastSyncQueuedBefore: queuedBefore, lastSyncStateChanged: changed, lastSyncResults: result.results || [] });
+        if (changed) renderRemoteState();
+        return { ok: true, status: result.status || "synced", queued: 0, stateChanged: changed, remoteChanged: changed, renderRequired: changed, result };
+      }
+
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
+      return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
+    } catch (error) {
+      const message = String(error?.message || error);
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: "sync-error", lastSyncError: message });
+      return { ok: false, status: "sync-error", queued: queue().length, error: message };
+    } finally {
+      window.__GV_SYNC_TRANSACTION_ACTIVE = false;
+      inFlight = false;
     }
   }
 
-  async function poll() {
-    if (pollInFlight) return;
-    if (!navigator.onLine) return;
-    if (!window.GVAuth?.isAuthorized?.()) return;
-    pollInFlight = true;
-    try {
-      await flush();
-    } finally {
-      pollInFlight = false;
-    }
-  }
+  async function poll() { return flush(); }
 
   function startPolling() {
-    if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      poll().catch(() => {});
-    }, POLL_MS);
-    poll().catch(() => {});
+    if (timer) return;
+    timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS);
+    flush().catch(() => {});
   }
 
-  window.GVSync = Object.freeze({
-    enqueue,
-    flush,
-    poll,
-    startPolling,
-    queue: appQueue,
-    meta: () => {
-      try { return JSON.parse(localStorage.getItem(LEGACY_META) || "{}"); } catch (_) { return {}; }
-    },
-    clear: () => {
-      if (typeof window.setSyncQueue === "function") window.setSyncQueue([]);
-      try { localStorage.removeItem(LEGACY_KEY); } catch (_) {}
-    }
-  });
+  function stopPolling() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  }
 
-  window.addEventListener("online", () => { try { window.GVSync.flush(); } catch (_) {} });
-  window.addEventListener("gv-auth-state-changed", (event) => {
-    if (event?.detail?.authenticated === true) startPolling();
-  });
+  function attachLifecycle() {
+    if (typeof document === "undefined") return;
+    document.addEventListener("pointerdown", (event) => {
+      const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
+      if (target) beginInteraction();
+    }, true);
+    document.addEventListener("keydown", (event) => {
+      const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
+      if (target) beginInteraction();
+    }, true);
+    document.addEventListener("focusin", (event) => {
+      const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
+      if (target) beginInteraction();
+    }, true);
+    document.addEventListener("focusout", (event) => {
+      const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
+      if (target) endInteractionSoon();
+    }, true);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flush().catch(() => {}); });
+    window.addEventListener("online", () => flush().catch(() => {}));
+    window.addEventListener("focus", () => flush().catch(() => {}));
+    window.addEventListener("pageshow", () => flush().catch(() => {}));
+    window.addEventListener("gv-auth-state-changed", (event) => {
+      if (event?.detail?.authenticated === true) {
+        startPolling();
+        flush().catch(() => {});
+      } else {
+        clearQueue();
+        stopPolling();
+      }
+    });
+  }
 
-  installInteractionGuard();
+  window.GVSync = Object.freeze({ enqueue, flush, poll, startPolling, stopPolling, queue, meta: getMeta, clear: clearQueue, render: renderRemoteState });
 
-  // Start the timer unconditionally. poll() itself remains authorization-gated,
-  // so signed-out sessions do not access cloud data. This removes a lifecycle
-  // race where authentication can complete without emitting the expected
-  // event after the sync manager has initialized.
+  window.addEventListener("DOMContentLoaded", () => {
+    if (typeof window.stopSyncReliability === "function") window.stopSyncReliability();
+    window.syncChangedResources = () => window.GVSync.flush();
+    window.syncNow = () => window.GVSync.flush();
+    window.startSyncReliability = () => {};
+    startPolling();
+  }, { once: true });
+
+  attachLifecycle();
   startPolling();
 })();
