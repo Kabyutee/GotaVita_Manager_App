@@ -170,6 +170,9 @@ window.GVUI = Object.freeze({
         return [resource, Array.isArray(rows) ? rows : []];
       }));
       const cloudRows = Object.fromEntries(entries);
+      const baseline = readBaseline();
+      const cloudIsCompletelyEmpty = !Object.values(cloudRows).some((rows) => rows.length > 0);
+      if (!baseline?.state && cloudIsCompletelyEmpty) return { hydrated: false, reason: "cloud-empty" };
 
       const nextState = window.getStateSnapshot();
       for (const [resource, rows] of Object.entries(cloudRows)) {
