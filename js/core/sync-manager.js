@@ -53,14 +53,7 @@
     } catch (_) {}
 
     const current = queue();
-    current.push({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      entity,
-      action,
-      payload,
-      createdAt: new Date().toISOString(),
-      attempts: 0
-    });
+    current.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
     writeJson(QUEUE_KEY, current);
     return entity;
   }
@@ -102,14 +95,8 @@
   }
 
   function checkboxKey(control, index) {
-    return [
-      control.dataset?.orderId,
-      control.dataset?.id,
-      control.id,
-      control.name,
-      control.value,
-      index
-    ].find((value) => value != null && String(value) !== "")?.toString() || `index:${index}`;
+    return [control.dataset?.orderId, control.dataset?.id, control.id, control.name, control.value, index]
+      .find((value) => value != null && String(value) !== "")?.toString() || `index:${index}`;
   }
 
   function captureBulkSelections() {
@@ -139,7 +126,6 @@
       deferredRender = true;
       return;
     }
-
     const selections = captureBulkSelections();
     try {
       if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll();
@@ -154,7 +140,6 @@
   async function ensureConflictIntegration() {
     if (window.GVConflictIntegration?.run) return window.GVConflictIntegration;
     if (conflictPromise) return conflictPromise;
-
     conflictPromise = new Promise((resolve, reject) => {
       if (typeof document === "undefined") {
         reject(new Error("Conflict integration requires a browser document."));
@@ -180,7 +165,6 @@
   async function hydrateFirstBaseline(integration) {
     if (!window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
-
     const baseline = integration?.getBaseline?.() || {};
     if (Object.keys(baseline).length) return false;
 
@@ -194,9 +178,6 @@
       if (!stateName) continue;
       const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
       const remoteRows = await window.GVData.selectResource(resource);
-
-      // First-run safety rule: a non-empty cloud hydrates an empty local resource;
-      // an empty cloud never destroys seeded/local business data.
       if (!localRows.length && remoteRows.length) {
         state[stateName] = remoteRows;
         changed = true;
@@ -204,33 +185,11 @@
     }
 
     if (!changed) return false;
-
     const now = Date.now();
-    state._meta = Object.assign({}, state._meta, {
-      lastUpdated: now,
-      lastSynchronizedAt: now
-    });
+    state._meta = Object.assign({}, state._meta, { lastUpdated: now, lastSynchronizedAt: now });
     window.replaceState(state);
     if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
     return true;
-  }
-
-  function withLocalPersistDuringTransaction(run) {
-    const originalPersist = window.persistState;
-    if (typeof originalPersist !== "function") return run;
-
-    const originalSyncChanged = window.syncChangedResources;
-    const originalSyncNow = window.syncNow;
-
-    window.syncChangedResources = () => Promise.resolve(false);
-    window.syncNow = () => Promise.resolve(false);
-
-    try {
-      return run(originalPersist);
-    } finally {
-      window.syncChangedResources = originalSyncChanged;
-      window.syncNow = originalSyncNow;
-    }
   }
 
   async function flush() {
@@ -274,31 +233,12 @@
       if (result?.ok === true) {
         clearQueue();
         const meta = getMeta();
-        setMeta({
-          ...meta,
-          lastSyncAt: new Date().toISOString(),
-          lastSyncStatus: result.status || "synced",
-          lastSyncQueuedBefore: queuedBefore,
-          lastSyncStateChanged: changed,
-          lastSyncResults: result.results || []
-        });
+        setMeta({ ...meta, lastSyncAt: new Date().toISOString(), lastSyncStatus: result.status || "synced", lastSyncQueuedBefore: queuedBefore, lastSyncStateChanged: changed, lastSyncResults: result.results || [] });
         if (changed) renderRemoteState();
-        return {
-          ok: true,
-          status: result.status || "synced",
-          queued: 0,
-          stateChanged: changed,
-          remoteChanged: changed,
-          renderRequired: changed,
-          result
-        };
+        return { ok: true, status: result.status || "synced", queued: 0, stateChanged: changed, remoteChanged: changed, renderRequired: changed, result };
       }
 
-      setMeta({
-        ...getMeta(),
-        lastSyncAt: new Date().toISOString(),
-        lastSyncStatus: result?.status || "sync-error"
-      });
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
       return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
     } catch (error) {
       const message = String(error?.message || error);
@@ -315,7 +255,6 @@
   function startPolling() {
     if (timer) return;
     timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS);
-    setTimeout(() => flush().catch(() => {}), 0);
   }
 
   function stopPolling() {
@@ -326,7 +265,6 @@
 
   function attachLifecycle() {
     if (typeof document === "undefined") return;
-
     document.addEventListener("pointerdown", (event) => {
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) beginInteraction();
@@ -343,10 +281,7 @@
       const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button");
       if (target) endInteractionSoon();
     }, true);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") flush().catch(() => {});
-    });
-
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flush().catch(() => {}); });
     window.addEventListener("online", () => flush().catch(() => {}));
     window.addEventListener("focus", () => flush().catch(() => {}));
     window.addEventListener("pageshow", () => flush().catch(() => {}));
@@ -374,6 +309,7 @@
   });
 
   window.addEventListener("DOMContentLoaded", () => {
+    if (typeof window.stopSyncReliability === "function") window.stopSyncReliability();
     window.syncChangedResources = () => window.GVSync.flush();
     window.syncNow = () => window.GVSync.flush();
     window.startSyncReliability = () => {};
