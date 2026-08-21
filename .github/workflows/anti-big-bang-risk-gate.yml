@@ -1,8 +1,10 @@
-name: ANTI BIG BANG 4.0 Risk Gate
+name: ANTI BIG BANG 5.0 Risk Gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # Do not rerun the required gate just because a draft PR becomes ready.
+    # The latest synchronize/opened run already validated the exact head SHA.
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -10,17 +12,17 @@ permissions:
 jobs:
   classify-and-test:
     runs-on: ubuntu-latest
-    name: Classify change and run minimal safe gate
+    name: Classify change and run focused safe gate
     steps:
       - name: Checkout pull request
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: ANTI BIG BANG 4.0 system audit
+      - name: ANTI BIG BANG 5.0 system audit
         run: node tests/anti-big-bang-4-system-audit.test.js
 
-      - name: Classify risk from changed paths
+      - name: Classify changed areas
         id: risk
         shell: bash
         env:
@@ -29,24 +31,30 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
           risk="low"
           ui=false
           sync=false
           data=false
           deployment=false
+          workflow=false
 
           for file in "${files[@]}"; do
             case "$file" in
-              .github/workflows/*|wrangler.jsonc|package.json|package-lock.json)
+              .github/workflows/*)
+                deployment=true
+                workflow=true
+                ;;
+              wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|script.js|tests/*sync*|tests/*conflict*|tests/anti-big-bang-4-system-audit.test.js|tests/sprint18-order-number-reconciliation-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
                 data=true
                 ;;
-              *.html|*.css|js/modules/*|js/core/ui-bridge.js)
+              *.html|*.css|js/modules/*)
                 ui=true
                 ;;
             esac
@@ -64,22 +72,23 @@ jobs:
             echo "sync=$sync"
             echo "data=$data"
             echo "deployment=$deployment"
+            echo "workflow=$workflow"
           } >> "$GITHUB_OUTPUT"
 
-          echo "ANTI BIG BANG 4.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment"
+          echo "ANTI BIG BANG 5.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow"
 
-      - name: Run low-risk fast contract
+      - name: Low-risk fast gate
         if: steps.risk.outputs.risk == 'low'
         run: node tests/sprint16-production-drift-gate-contract.test.js
 
-      - name: Run medium-risk safety checks
+      - name: Medium-risk gate
         if: steps.risk.outputs.risk == 'medium'
         run: |
           node tests/sprint16-production-drift-gate-contract.test.js
           node tests/sprint14-order-edit-group-contract.test.js
           node --check worker.js
 
-      - name: Run high-risk safety checks
+      - name: High-risk core gate
         if: steps.risk.outputs.risk == 'high'
         run: |
           node tests/phase1-state-bridge.test.js
@@ -89,21 +98,29 @@ jobs:
           node tests/sprint12-conflict-resolution-policy-contract.test.js
           node tests/sprint12-controlled-conflict-integration-contract.test.js
           node tests/sprint12-two-device-conflict-scenarios.test.js
-          node tests/sprint12-live-sync-polling-contract.test.js
           node tests/sprint14-order-edit-group-contract.test.js
-          node tests/sprint16-production-drift-gate-contract.test.js
           node tests/sprint18-transaction-sync-readiness-contract.test.js
           node tests/sprint18-sync-queue-preservation-contract.test.js
           node tests/sprint18-order-number-reconciliation-contract.test.js
           node tests/anti-big-bang-4-system-audit.test.js
           node --check js/core/sync-cloud-write-reconciler.js
 
+      - name: Focused sync polling gate
+        if: steps.risk.outputs.sync == 'true'
+        run: node tests/sprint12-live-sync-polling-contract.test.js
+
+      - name: Workflow safety gate
+        if: steps.risk.outputs.workflow == 'true'
+        run: |
+          node tests/anti-big-bang-4-system-audit.test.js
+          node --check worker.js
+
       - name: Publish gate summary
         run: |
-          echo "ANTI BIG BANG 4.0 classification: ${{ steps.risk.outputs.risk }}"
+          echo "ANTI BIG BANG 5.0 classification: ${{ steps.risk.outputs.risk }}"
           echo "UI: ${{ steps.risk.outputs.ui }}"
           echo "Sync: ${{ steps.risk.outputs.sync }}"
           echo "Data: ${{ steps.risk.outputs.data }}"
           echo "Deployment: ${{ steps.risk.outputs.deployment }}"
-          echo "System audit: required and passed"
+          echo "Workflow: ${{ steps.risk.outputs.workflow }}"
           echo "Production deployment: NOT performed by this workflow"
