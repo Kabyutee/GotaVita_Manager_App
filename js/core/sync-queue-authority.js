@@ -4,6 +4,7 @@
 
   const BASELINE_KEY = "gotavita_sync_baseline_v1";
   let installed = false;
+  let renderPreservationInstalled = false;
 
   function readQueue() {
     try {
@@ -28,6 +29,85 @@
       if (value == null) window.localStorage?.removeItem(BASELINE_KEY);
       else window.localStorage?.setItem(BASELINE_KEY, value);
     } catch (_) {}
+  }
+
+  function bulkSelectionKey(control) {
+    if (!control) return "";
+    const dataset = control.dataset || {};
+    return String(
+      dataset.orderId ||
+      dataset.id ||
+      control.value ||
+      control.name ||
+      ""
+    ).trim();
+  }
+
+  function captureBulkSelectionState() {
+    if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") {
+      return [];
+    }
+
+    const selectors = [
+      ".order-checkbox",
+      ".billing-checkbox",
+      ".all-order-checkbox"
+    ];
+
+    const snapshot = [];
+
+    for (const selector of selectors) {
+      let controls = [];
+      try {
+        controls = [...document.querySelectorAll(selector)];
+      } catch (_) {
+        continue;
+      }
+
+      controls.forEach((control, index) => {
+        if (!control?.checked) return;
+        const key = bulkSelectionKey(control);
+        if (!key) return;
+        snapshot.push({ selector, key, index });
+      });
+    }
+
+    return snapshot;
+  }
+
+  function restoreBulkSelectionState(snapshot) {
+    if (!Array.isArray(snapshot) || !snapshot.length) return;
+    if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
+
+    for (const item of snapshot) {
+      let controls = [];
+      try {
+        controls = [...document.querySelectorAll(item.selector)];
+      } catch (_) {
+        continue;
+      }
+
+      const match = controls.find((control) => bulkSelectionKey(control) === item.key);
+      if (!match) continue;
+
+      try { match.checked = true; } catch (_) {}
+    }
+  }
+
+  function installRenderPreservation() {
+    if (renderPreservationInstalled) return;
+    if (!window.GVUI || typeof window.GVUI.renderAll !== "function") return;
+
+    const originalRenderAll = window.GVUI.renderAll;
+
+    window.GVUI.renderAll = function guardedBulkSelectionRender(...args) {
+      const selection = captureBulkSelectionState();
+      const result = originalRenderAll.apply(this, args);
+      restoreBulkSelectionState(selection);
+      return result;
+    };
+
+    renderPreservationInstalled = true;
   }
 
   async function forceQueuedResourcesThroughSync(original, args) {
@@ -66,6 +146,7 @@
 
     window.GVData = Object.freeze(facade);
     installed = true;
+    installRenderPreservation();
   }
 
   try { install(); } catch (error) {
@@ -73,7 +154,10 @@
   }
 
   window.addEventListener("DOMContentLoaded", () => {
-    try { install(); } catch (error) {
+    try {
+      install();
+      installRenderPreservation();
+    } catch (error) {
       console.warn("GotaVita queue authority boundary initialization skipped:", error?.message || error);
     }
   }, { once: true });
