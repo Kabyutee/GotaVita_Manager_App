@@ -38,6 +38,12 @@ jobs:
           node --check js/modules/groups-routes.js
           node --check worker.js
 
+      - name: JARVIS 9.0 business-first adaptive workflow
+        env:
+          BASE_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
+
       - name: Run full regression contracts
         run: |
           node tests/phase1-state-bridge.test.js
