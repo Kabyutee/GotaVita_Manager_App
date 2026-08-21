@@ -72,6 +72,15 @@
     }
   }
 
+  function isBaselinePlaceholder(row, baseline) {
+    if (!row || typeof row !== "object" || baseline == null) return false;
+    const keys = Object.keys(row).filter((key) => row[key] != null && row[key] !== "");
+    if (!keys.some((key) => ["id", "legacy_id", "legacyId"].includes(key))) return false;
+    const timestamp = rowUpdatedAt(row);
+    if (timestamp == null || timestamp !== baseline) return false;
+    return keys.every((key) => ["id", "legacy_id", "legacyId", "updatedAt", "updated_at", "createdAt", "created_at"].includes(key));
+  }
+
   function detect(localRows, remoteRows, baselineAt) {
     const baseline = parseTime(baselineAt);
     const local = Array.isArray(localRows) ? localRows : [];
@@ -117,6 +126,12 @@
 
     if (rowsEquivalent(localRow, remoteRow)) {
       return { action: "no-conflict", reason: "equivalent-records", mutation: false };
+    }
+    if (isBaselinePlaceholder(localRow, baseline) && !isBaselinePlaceholder(remoteRow, baseline)) {
+      return { action: "keep-remote", reason: "remote-new-record-against-baseline", mutation: false };
+    }
+    if (isBaselinePlaceholder(remoteRow, baseline) && !isBaselinePlaceholder(localRow, baseline)) {
+      return { action: "keep-local", reason: "local-new-record-against-baseline", mutation: false };
     }
     if (baseline == null || localUpdated == null || remoteUpdated == null) {
       return { action: "manual-review", reason: "indeterminate", mutation: false };
