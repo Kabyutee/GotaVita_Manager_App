@@ -35,10 +35,21 @@
 
   window.GV_STATE=Object.freeze({createInitialState:function(){return {products:[],clients:[],services:[],orders:[],payments:[],expenses:[],payrollRecords:[],employees:[],orderGroups:[],deliveryRoutes:[],orderGroupItems:[],deliveryRouteItems:[],dailyReports:[],dailyRuns:[],deletedOrders:[],auditLog:[],orderCounter:138,_meta:{schemaVersion:3,lastUpdated:0,deviceId:""}};}});
 
+  function loadDailyL300Module() {
+    if (document.querySelector('script[data-gv-module="daily-l300-runs"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/modules/daily-l300-runs.js";
+    script.defer = true;
+    script.dataset.gvModule = "daily-l300-runs";
+    script.onerror = () => console.warn("GotaVita Daily L300 module failed to load.");
+    document.head.appendChild(script);
+  }
+
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("submit", function(event) {
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
+    document.addEventListener("DOMContentLoaded", loadDailyL300Module, { once: true });
   }
 })();
