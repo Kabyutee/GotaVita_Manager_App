@@ -90,5 +90,10 @@
     };
   }
 
+  // The application keeps `state` in the global lexical environment rather
+  // than as a window property. The dashboard is dynamically loaded later and
+  // must only use this bridge as a readiness marker; the adapter itself keeps
+  // reading the live lexical `state` so state replacement remains safe.
+  if (!window.state) window.state = state;
   window.GV_L300_REPORTING = Object.freeze({ daily, period });
 })();
