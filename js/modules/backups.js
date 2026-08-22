@@ -124,7 +124,7 @@ function exportCSV(type) {
     state.orders.forEach(o => rows.push([o.orderNumber, new Date(o.date).toLocaleDateString(), o.clientName, o.custType, Number(o.gallons)||0, Number(o.price)||0, Number(o.total)||0, o.status, o.deliveryStatus || "Not Assigned", Number(o.emptyGallonsCollected)||0]));
   } else if (type === "clients") {
     rows.push(["Name","Group","Phone","Address","Default Price"]);
-    state.clients.forEach(c => rows.push([c.name, c.group, c.phone, c.address, Number(c.defaultPrice)||0]));
+    state.clients.forEach(c => rows.push(["${c.name}", c.group, c.phone, c.address, Number(c.defaultPrice)||0]));
   } else {
     showToast("Unsupported CSV export.", "error");
     return;
@@ -148,3 +148,30 @@ function download(name, content, mime) {
 function stamp() { return new Date().toISOString().slice(0, 10); }
 
 function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
+
+/* L300 dashboard modules are loaded after the existing deferred application
+ * boot completes. This preserves the existing script order while keeping the
+ * new operating layer isolated from core business logic.
+ */
+(function loadL300DashboardModules() {
+  function load(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[data-gv-l300-src="${src}"]`)) return resolve();
+      const script = document.createElement("script");
+      script.src = src;
+      script.defer = false;
+      script.dataset.gvL300Src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Unable to load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+  function start() {
+    load("js/modules/l300-reporting-adapter.js")
+      .then(() => load("js/modules/daily-l300-runs.js"))
+      .then(() => load("js/modules/l300-operations-dashboard.js"))
+      .catch(error => console.warn("L300 dashboard modules initialization skipped:", error?.message || error));
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();
