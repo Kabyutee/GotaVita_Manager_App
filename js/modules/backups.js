@@ -124,7 +124,7 @@ function exportCSV(type) {
     state.orders.forEach(o => rows.push([o.orderNumber, new Date(o.date).toLocaleDateString(), o.clientName, o.custType, Number(o.gallons)||0, Number(o.price)||0, Number(o.total)||0, o.status, o.deliveryStatus || "Not Assigned", Number(o.emptyGallonsCollected)||0]));
   } else if (type === "clients") {
     rows.push(["Name","Group","Phone","Address","Default Price"]);
-    state.clients.forEach(c => rows.push(["${c.name}", c.group, c.phone, c.address, Number(c.defaultPrice)||0]));
+    state.clients.forEach(c => rows.push([c.name, c.group, c.phone, c.address, Number(c.defaultPrice)||0]));
   } else {
     showToast("Unsupported CSV export.", "error");
     return;
