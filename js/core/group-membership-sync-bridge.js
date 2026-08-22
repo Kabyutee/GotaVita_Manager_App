@@ -16,11 +16,6 @@
     catch (_) { return null; }
   }
 
-  function replaceState(snapshot) {
-    try { if (typeof window.replaceState === "function") window.replaceState(snapshot); }
-    catch (error) { console.warn("GotaVita group membership state replace:", error?.message || error); }
-  }
-
   function digest(value) {
     try { return JSON.stringify(value ?? []); } catch (_) { return ""; }
   }
@@ -115,7 +110,11 @@
     const snapshot = stateSnapshot();
     if (!snapshot) return false;
     reconcile(snapshot);
-    replaceState(snapshot);
+    try {
+      if (typeof window.replaceState === "function") window.replaceState(snapshot);
+    } catch (error) {
+      console.warn("GotaVita group membership state replace:", error?.message || error);
+    }
     return true;
   }
 
@@ -147,7 +146,11 @@
     const initial = stateSnapshot();
     if (initial) {
       reconcile(initial);
-      replaceState(initial);
+      try {
+        if (typeof window.replaceState === "function") window.replaceState(initial);
+      } catch (error) {
+        console.warn("GotaVita group membership state replace:", error?.message || error);
+      }
     }
     window.__GV_GROUP_MEMBERSHIP_BRIDGE_INSTALLED = true;
     return true;
