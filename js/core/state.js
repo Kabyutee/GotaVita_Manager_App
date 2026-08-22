@@ -45,11 +45,24 @@
     document.head.appendChild(script);
   }
 
+  function loadL300ReportingAdapter() {
+    if (document.querySelector('script[data-gv-module="l300-reporting-adapter"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/modules/l300-reporting-adapter.js";
+    script.defer = true;
+    script.dataset.gvModule = "l300-reporting-adapter";
+    script.onerror = () => console.warn("GotaVita L300 reporting adapter failed to load.");
+    document.head.appendChild(script);
+  }
+
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("submit", function(event) {
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
-    document.addEventListener("DOMContentLoaded", loadDailyL300Module, { once: true });
+    document.addEventListener("DOMContentLoaded", function () {
+      loadDailyL300Module();
+      loadL300ReportingAdapter();
+    }, { once: true });
   }
 })();
