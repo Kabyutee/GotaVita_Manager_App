@@ -115,15 +115,15 @@ assert(summary.manualReview >= 1, "Ambiguous cases must be preserved for manual 
 assert(summary.keepLocal >= 2 && summary.keepRemote >= 2, "Plan must contain both unambiguous winner directions");
 
 assert(
-  /if \(manual\.length\)\s*\{[\s\S]*recordConflicts\(/.test(source),
+  /if\s*\(manual\.length\)\s*\{[\s\S]*recordConflicts\(/.test(source),
   "Manual conflicts must be recorded without aborting the resource reconciliation"
 );
 assert(
-  /for \(const decision of decisions\)/.test(source),
+  /for\s*\(const decision of decisions\)/.test(source),
   "Safe decisions must still be applied when a resource contains manual conflicts"
 );
 assert(
-  /partial: manual\.length > 0/.test(source),
+  /partial:\s*manual\.length\s*>\s*0/.test(source),
   "Partially reconciled resources must retain an explicit unresolved marker"
 );
 
