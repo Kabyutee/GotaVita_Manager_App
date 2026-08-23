@@ -37,15 +37,16 @@
 
       if(!result&&!rowsEquivalent(localRow,remoteRow)){
         // Timestamp precedence is authoritative whenever both sides expose
-        // comparable update timestamps. Baseline/content reconciliation is a
-        // fallback for legacy rows that lack usable timestamps.
+        // comparable update timestamps. Equal timestamps with divergent
+        // business content are deliberately unresolved: silently choosing a
+        // side can destroy a concurrent edit.
         const localTime=rowTimestamp(localRow),remoteTime=rowTimestamp(remoteRow);
         if(localTime!=null&&remoteTime!=null){
           const localMs=Date.parse(localTime),remoteMs=Date.parse(remoteTime);
-          if(Number.isFinite(localMs)&&Number.isFinite(remoteMs)&&localMs!==remoteMs){
-            result=localMs>remoteMs
-              ?{action:"keep-local",reason:"local-newer-by-timestamp",mutation:true}
-              :{action:"keep-remote",reason:"remote-newer-by-timestamp",mutation:false};
+          if(Number.isFinite(localMs)&&Number.isFinite(remoteMs)){
+            if(localMs>remoteMs)result={action:"keep-local",reason:"local-newer-by-timestamp",mutation:true};
+            else if(remoteMs>localMs)result={action:"keep-remote",reason:"remote-newer-by-timestamp",mutation:false};
+            else result={action:"manual-review",reason:"same-timestamp-divergent-content",mutation:false};
           }
         }
       }
