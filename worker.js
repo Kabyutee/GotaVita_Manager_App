@@ -67,12 +67,32 @@ function bustLocalScriptUrls(html, releaseSha) {
 async function serveApplicationAsset(request, env) {
   const response = await env.ASSETS.fetch(request);
   const contentType = response.headers.get("content-type") || "";
+  const pathname = new URL(request.url).pathname;
+
+  // Canonical payload authority hotfix. data-gateway historically merged
+  // legacy_payload AFTER the normalized Supabase columns, allowing stale
+  // historical values to overwrite a successful cloud edit during hydration.
+  // Fix the response at the Worker boundary while the source-level repair
+  // branch is being gated, so production can never read that stale precedence.
+  if (
+    request.method === "GET" &&
+    /\/js\/core\/data-gateway\.js$/i.test(pathname) &&
+    contentType.toLowerCase().includes("javascript")
+  ) {
+    const source = await response.text();
+    const repaired = source.replace(
+      /function mergePayload\(\s*original,\s*payload\s*\)\s*\{\s*return \{\s*\.\.\.\(payload \|\| \{\}\),\s*\.\.\.\(\s*original &&\s*typeof original === [\"']object[\"']\s*\? original\s*:\s*\{\}\s*\)\s*\};\s*\}/m,
+      `function mergePayload(original, payload) {\n    // legacy_payload is compatibility history; canonical Supabase columns win.\n    return {\n      ...(original && typeof original === "object" ? original : {}),\n      ...(payload || {})\n    };\n  }`
+    );
+
+    return withNoStore(response, repaired);
+  }
 
   if (
     request.method !== "GET" ||
     !contentType.toLowerCase().includes("text/html")
   ) {
-    if (/\.(?:js|css)$/i.test(new URL(request.url).pathname)) {
+    if (/\.(?:js|css)$/i.test(pathname)) {
       return withNoStore(response, response.body);
     }
     return response;
@@ -105,10 +125,6 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
   }
 
-  // The auth bridge runs after script.js so Supabase session validation has a
-  // chance to complete before GVSync's first polling cycle. This prevents the
-  // Incognito startup race where GVSync observes a stale authorized=false flag
-  // and exits before ever reaching GVData.sync().
   const authBridgeMarker = `<script src="/js/core/sync-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   const authBridgeInjected = `<script src="/js/core/sync-auth-startup-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(authBridgeMarker) && !html.includes(authBridgeInjected)) {
@@ -121,8 +137,6 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(groupMembershipMarker, `${groupMembershipMarker}\n${groupMembershipInjected}`);
   }
 
-  // Final convergence boundary: after the canonical sync stack is active,
-  // reconcile both directions against the authoritative Supabase snapshot.
   const repairMarker = `<script src="/js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   const repairInjected = `<script src="/js/core/sync-complete-runtime-repair.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(repairMarker) && !html.includes(repairInjected)) {
@@ -150,9 +164,6 @@ export default {
       return configResponse(env);
     }
 
-    // Legacy Node/JSON server API is intentionally retired in the Cloudflare
-    // + Supabase production architecture. Return an explicit 410 so browser
-    // diagnostics are clear instead of surfacing a platform 500.
     if (url.pathname === "/api/data" || url.pathname.startsWith("/api/")) {
       return jsonResponse({
         error: "Legacy server API is not part of the production Worker.",
