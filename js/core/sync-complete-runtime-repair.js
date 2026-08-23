@@ -89,9 +89,11 @@
 
         for (const [key, localRow] of localMap.entries()) {
           const remoteRow = remoteMap.get(key);
+          const localTime = timeOf(localRow);
+          const remoteTime = timeOf(remoteRow);
           if (!remoteRow) {
-            if (timeOf(localRow) > 0) localWrites.push(localRow);
-          } else if (!equivalent(localRow, remoteRow) && timeOf(localRow) > timeOf(remoteRow)) {
+            if (localTime > 0) localWrites.push(localRow);
+          } else if (!equivalent(localRow, remoteRow) && localTime > remoteTime) {
             localWrites.push(localRow);
           }
         }
