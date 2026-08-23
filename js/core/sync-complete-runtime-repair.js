@@ -57,6 +57,22 @@
     } catch (_) { return false; }
   }
 
+  async function canonicalSnapshotIsSafe(resource, previous, normalized) {
+    if (!Array.isArray(previous) || !previous.length) return true;
+    if (normalized.length >= previous.length) return true;
+    if (resource !== "orders") return true;
+    if (!window.GVData?.selectResource) return false;
+
+    try {
+      const tombstones = await window.GVData.selectResource("deleted_orders");
+      const deletedIds = new Set((Array.isArray(tombstones) ? tombstones : []).map(idOf).filter(Boolean));
+      const missing = previous.map(idOf).filter(Boolean).filter((id) => !mapRows(normalized).has(id));
+      return missing.length > 0 && missing.every((id) => deletedIds.has(id));
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function reconcile() {
     if (inRepair) return { ok: false, status: "repair-busy" };
     if (!navigator.onLine || !window.GVAuth?.isAuthorized?.()) return { ok: false, status: "not-ready" };
@@ -102,19 +118,21 @@
           try {
             await window.GVData.upsertResource(resource, localWrites);
             writes += localWrites.length;
-            // Critical: do not render the locally constructed merge. The next
-            // read is the only source used for final application state.
           } catch (error) {
             failures.push({ resource, error: String(error?.message || error) });
           }
         }
 
-        // Always re-read after any local write. This makes the final state
-        // canonical and also makes remote deletions/additions converge.
         try {
           const canonicalRows = await window.GVData.selectResource(resource);
           const normalized = Array.isArray(canonicalRows) ? canonicalRows.map(clone) : [];
           const previous = Array.isArray(state[stateName]) ? state[stateName] : [];
+
+          if (!(await canonicalSnapshotIsSafe(resource, previous, normalized))) {
+            failures.push({ resource, error: "canonical-snapshot-incomplete" });
+            continue;
+          }
+
           const changed = JSON.stringify(previous) !== JSON.stringify(normalized);
           if (changed) {
             state[stateName] = normalized;
