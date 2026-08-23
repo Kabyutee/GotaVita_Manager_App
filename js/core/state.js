@@ -35,24 +35,27 @@
 
   window.GV_STATE=Object.freeze({createInitialState:function(){return {products:[],clients:[],services:[],orders:[],payments:[],expenses:[],payrollRecords:[],employees:[],orderGroups:[],deliveryRoutes:[],orderGroupItems:[],deliveryRouteItems:[],dailyReports:[],dailyRuns:[],deletedOrders:[],auditLog:[],orderCounter:138,_meta:{schemaVersion:3,lastUpdated:0,deviceId:""}};}});
 
-  function loadDailyL300Module() {
-    if (document.querySelector('script[data-gv-module="daily-l300-runs"]')) return;
+  function loadScriptSequentially(src, marker, next) {
+    if (document.querySelector(`script[${marker}]`)) return next?.();
     const script = document.createElement("script");
-    script.src = "/js/modules/daily-l300-runs.js";
-    script.defer = true;
-    script.dataset.gvModule = "daily-l300-runs";
-    script.onerror = () => console.warn("GotaVita Daily L300 module failed to load.");
+    script.src = src;
+    script.defer = false;
+    script.setAttribute(marker, "true");
+    script.onload = () => next?.();
+    script.onerror = () => console.warn(`GotaVita module failed to load: ${src}`);
     document.head.appendChild(script);
   }
 
-  function loadL300ReportingAdapter() {
-    if (document.querySelector('script[data-gv-module="l300-reporting-adapter"]')) return;
-    const script = document.createElement("script");
-    script.src = "/js/modules/l300-reporting-adapter.js";
-    script.defer = true;
-    script.dataset.gvModule = "l300-reporting-adapter";
-    script.onerror = () => console.warn("GotaVita L300 reporting adapter failed to load.");
-    document.head.appendChild(script);
+  function loadDailyL300Module(next) {
+    loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module=\"daily-l300-runs\"", next);
+  }
+
+  function loadL300ReportingAdapter(next) {
+    loadScriptSequentially("/js/modules/l300-reporting-adapter.js", "data-gv-module=\"l300-reporting-adapter\"", next);
+  }
+
+  function loadL300OperationsDashboard() {
+    loadScriptSequentially("/js/modules/l300-operations-dashboard.js", "data-gv-module=\"l300-operations-dashboard\"");
   }
 
   function loadCanonicalSyncRuntime() {
@@ -70,9 +73,13 @@
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
+
     document.addEventListener("DOMContentLoaded", function () {
-      loadDailyL300Module();
-      loadL300ReportingAdapter();
+      loadDailyL300Module(() => {
+        loadL300ReportingAdapter(() => {
+          loadL300OperationsDashboard();
+        });
+      });
       loadCanonicalSyncRuntime();
     }, { once: true });
   }
