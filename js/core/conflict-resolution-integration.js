@@ -24,10 +24,6 @@
   function readJson(key, fallback) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (_) { return fallback; } }
   function writeJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } }
 
-  // Cross-device identity MUST be based on the stable GotaVita legacy ID.
-  // The conflict detector may use a database UUID or another implementation
-  // detail, but local state and remote gateway rows converge on legacy_id/id.
-  // Prefer those stable identifiers before consulting the optional detector.
   function stableRowId(row) {
     if (row?.legacy_id != null && String(row.legacy_id).trim() !== "") return String(row.legacy_id).trim();
     if (row?.legacyId != null && String(row.legacyId).trim() !== "") return String(row.legacyId).trim();
@@ -109,11 +105,26 @@
       }
 
       if (!result) {
+        // Content-vs-baseline reconciliation is authoritative when one side
+        // still matches the last synchronized snapshot. This deliberately
+        // does not require updatedAt to have changed: older/local edit paths
+        // can mutate business fields without touching the timestamp. In that
+        // case the unchanged side is strong evidence for the changed side.
+        if (baselineRow && !rowsEquivalent(localRow, remoteRow)) {
+          const localMatchesBaseline = rowsEquivalent(localRow, baselineRow);
+          const remoteMatchesBaseline = rowsEquivalent(remoteRow, baselineRow);
+          if (!localMatchesBaseline && remoteMatchesBaseline) {
+            result = { action: "keep-local", reason: "local-content-change-by-baseline", mutation: true };
+          } else if (localMatchesBaseline && !remoteMatchesBaseline) {
+            result = { action: "keep-remote", reason: "remote-content-change-by-baseline", mutation: false };
+          }
+        }
+
         const legacyTimestampGap = !hasTimestamp(localRow) || !hasTimestamp(remoteRow);
-        if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
-        else if (baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
-        else if (baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
-        else result = policy(localRow, remoteRow, baselineAt);
+        if (!result && baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) result = { action: "no-conflict", reason: "both-match-baseline", mutation: false };
+        else if (!result && baselineRow && legacyTimestampGap && rowsEquivalent(localRow, baselineRow) && !rowsEquivalent(remoteRow, baselineRow)) result = { action: "keep-remote", reason: "remote-only-change-by-baseline", mutation: false };
+        else if (!result && baselineRow && legacyTimestampGap && !rowsEquivalent(localRow, baselineRow) && rowsEquivalent(remoteRow, baselineRow)) result = { action: "keep-local", reason: "local-only-change-by-baseline", mutation: false };
+        else if (!result) result = policy(localRow, remoteRow, baselineAt);
       }
 
       decisions.push({ id, action: result.action, reason: result.reason, mutation: result.mutation, local: rawLocalRow, remote: rawRemoteRow });
