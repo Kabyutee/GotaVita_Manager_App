@@ -10,20 +10,14 @@
   function reconcileOrderCounterBeforeCreate() {
     try {
       if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return;
-
       const snapshot = window.getStateSnapshot();
       if (!snapshot || typeof snapshot !== "object") return;
-
       const rows = [
         ...(Array.isArray(snapshot.orders) ? snapshot.orders : []),
         ...(Array.isArray(snapshot.deletedOrders) ? snapshot.deletedOrders : [])
       ];
-
       let maxOrderNumber = Number(snapshot.orderCounter) || 0;
-      for (const row of rows) {
-        maxOrderNumber = Math.max(maxOrderNumber, numericOrderNumber(row?.orderNumber));
-      }
-
+      for (const row of rows) maxOrderNumber = Math.max(maxOrderNumber, numericOrderNumber(row?.orderNumber));
       if (maxOrderNumber !== (Number(snapshot.orderCounter) || 0)) {
         snapshot.orderCounter = maxOrderNumber;
         window.replaceState(snapshot);
@@ -39,17 +33,12 @@
       if (!window.GVData?.selectResource || !window.getStateSnapshot || !window.replaceState) return;
       const current = window.getStateSnapshot();
       if (Array.isArray(current?.orders) && current.orders.length) return;
-
       const remoteOrders = await window.GVData.selectResource("orders");
       if (!Array.isArray(remoteOrders) || !remoteOrders.length) return;
-
       const next = window.getStateSnapshot();
       if (Array.isArray(next?.orders) && next.orders.length) return;
       next.orders = remoteOrders;
-      next._meta = Object.assign({}, next._meta, {
-        lastUpdated: Date.now(),
-        lastSynchronizedAt: Date.now()
-      });
+      next._meta = Object.assign({}, next._meta, { lastUpdated: Date.now(), lastSynchronizedAt: Date.now() });
       window.replaceState(next);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(next);
       if (typeof window.renderAll === "function") window.renderAll();
@@ -64,7 +53,6 @@
   function loadScriptSequentially(src, markerName, markerValue, next) {
     const selector = `script[${markerName}="${markerValue}"]`;
     if (document.querySelector(selector)) return next?.();
-
     const script = document.createElement("script");
     script.src = src;
     script.defer = false;
@@ -74,16 +62,8 @@
     document.head.appendChild(script);
   }
 
-  function loadDailyL300Module(next) {
-    loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module", "daily-l300-runs", next);
-  }
-
-  function loadL300ReportingAdapter(next) {
-    loadScriptSequentially("/js/modules/l300-reporting-adapter.js", "data-gv-module", "l300-reporting-adapter", next);
-  }
-
-  function loadL300OperationsDashboard() {
-    loadScriptSequentially("/js/modules/l300-operations-dashboard.js", "data-gv-module", "l300-operations-dashboard");
+  function loadDailyL300Module() {
+    loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module", "daily-l300-runs");
   }
 
   function loadCanonicalSyncRuntime() {
@@ -101,17 +81,11 @@
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
-
     document.addEventListener("gv-auth-state-changed", function(event) {
       if (event?.detail?.authenticated === true) setTimeout(hydrateEmptyOrdersAfterAuth, 0);
     });
-
     document.addEventListener("DOMContentLoaded", function () {
-      loadDailyL300Module(() => {
-        loadL300ReportingAdapter(() => {
-          loadL300OperationsDashboard();
-        });
-      });
+      loadDailyL300Module();
       loadCanonicalSyncRuntime();
       setTimeout(hydrateEmptyOrdersAfterAuth, 250);
     }, { once: true });
