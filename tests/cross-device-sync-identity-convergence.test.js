@@ -13,5 +13,8 @@ assert(source.indexOf("row?.legacy_id") < source.indexOf("window.GVConflictDetec
 assert(source.includes("if (row?.id != null && String(row.id).trim() !== \"\")"), "Local id fallback is missing.");
 assert(source.includes("remote-new-record"), "Remote-only records must remain an explicit reconciliation decision.");
 assert(source.includes("nextState[stateName] = rows"), "Remote reconciliation must update application state.");
+assert(source.includes("local-content-change-by-baseline"), "Local edits must reconcile from content even when timestamps do not change.");
+assert(source.includes("remote-content-change-by-baseline"), "Remote edits must reconcile from content even when timestamps do not change.");
+assert(source.includes("!rowsEquivalent(localRow, remoteRow)"), "Edit reconciliation must detect divergent business content.");
 
-console.log("cross-device sync identity convergence contract: PASS");
+console.log("cross-device sync identity + edit convergence contract: PASS");
