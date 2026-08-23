@@ -90,10 +90,8 @@
     };
   }
 
-  // The application keeps `state` in the global lexical environment rather
-  // than as a window property. The dashboard is dynamically loaded later and
-  // must only use this bridge as a readiness marker; the adapter itself keeps
-  // reading the live lexical `state` so state replacement remains safe.
-  if (!window.state) window.state = state;
+  // Never dereference the lexical `state` during module initialization.
+  // The dashboard invokes the projection only after application state exists.
   window.GV_L300_REPORTING = Object.freeze({ daily, period });
+  window.dispatchEvent(new CustomEvent("gv:l300-reporting-ready"));
 })();
