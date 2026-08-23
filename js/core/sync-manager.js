@@ -53,7 +53,10 @@
     } catch (_) {}
 
     const current = queue();
-    current.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
+    const id = typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${String(Math.random()).slice(2)}`;
+    current.push({ id, entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
     writeJson(QUEUE_KEY, current);
     return entity;
   }
@@ -211,9 +214,6 @@
       window.__GV_SYNC_TRANSACTION_ACTIVE = true;
       await hydrateFirstBaseline(integration);
 
-      // Canonical Group relationship reconciliation. Local Group mutations
-      // update orderGroups[].orderIds first; this hook materializes the
-      // synchronized orderGroupItems relationship before conflict resolution.
       if (typeof window.GVGroupMembershipBridge?.reconcileCurrentState === "function") {
         window.GVGroupMembershipBridge.reconcileCurrentState();
       }
@@ -299,7 +299,9 @@
         startPolling();
         flush().catch(() => {});
       } else {
-        clearQueue();
+        // Preserve the local queue across sign-out. Queued work belongs to the
+        // authenticated manager/device and must not be destroyed by an auth
+        // transition; the next authorized session can reconcile it safely.
         stopPolling();
       }
     });
