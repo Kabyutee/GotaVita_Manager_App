@@ -24,6 +24,9 @@ const syncManager = read("js/core/sync-manager.js");
 const config = read("js/core/config.js");
 const riskGate = read(".github/workflows/anti-big-bang-risk-gate.yml");
 const moduleText = filesUnder("js/modules").map((file) => read(path.relative(ROOT, file))).join("\n");
+const l300Runs = read("js/modules/daily-l300-runs.js");
+const l300Reporting = read("js/modules/l300-reporting-adapter.js");
+const l300Dashboard = read("js/modules/l300-operations-dashboard.js");
 
 const stateBlock = state.match(/return\s*\{([\s\S]*?)\};/);
 assert(stateBlock, "state factory resource declaration not found");
@@ -87,7 +90,22 @@ for (const [feature, tokens] of [
   ["reports", ["state.dailyReports", "persistState"]]
 ]) for (const token of tokens) assert(moduleText.includes(token), `${feature} missing source evidence: ${token}`);
 
+// Mitsubishi L300 delivery operation must be reachable from the application runtime.
+assert(Array.isArray((stateBlock[0].match(/dailyRuns:\[\]/) || [])) || stateBlock[0].includes("dailyRuns:[]"), "dailyRuns state resource missing");
+for (const [file, source] of [
+  ["daily-l300-runs.js", l300Runs],
+  ["l300-reporting-adapter.js", l300Reporting],
+  ["l300-operations-dashboard.js", l300Dashboard]
+]) assert(source.length > 0, `L300 module unavailable: ${file}`);
+for (const windowName of ["GV_DAILY_L300", "GV_L300_REPORTING", "renderL300OperationsDashboard"]) {
+  assert(l300Runs.includes(windowName) || l300Reporting.includes(windowName) || l300Dashboard.includes(windowName), `L300 runtime export missing: ${windowName}`);
+}
+assert(l300Runs.includes('timeWindow: "Morning"') && l300Runs.includes('timeWindow: "After Lunch"') && l300Runs.includes('timeWindow: "Before Dinner"'), "L300 daily schedule windows missing");
+assert(l300Runs.includes('area: "ALABANG"') && l300Reporting.includes('area: "ALABANG"') && l300Dashboard.includes("Alabang"), "L300 Alabang routing metadata missing");
+assert(state.includes('loadDailyL300Module') && state.includes('loadL300ReportingAdapter') && state.includes('loadL300OperationsDashboard'), "L300 modules are not connected to state runtime loading");
+assert(state.indexOf('loadDailyL300Module') < state.indexOf('loadL300ReportingAdapter') && state.indexOf('loadL300ReportingAdapter') < state.indexOf('loadL300OperationsDashboard'), "L300 runtime loading order is invalid");
+
 assert(riskGate.includes("anti-big-bang-6-application-connection-audit.test.js"), "full application connection audit not wired into ANTI BIG BANG");
 
 console.log("ANTI BIG BANG 6 — FULL APPLICATION CONNECTION AUDIT: PASS");
-console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, scheduler: "GVSync" }, null, 2));
+console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, l300Runs: 3, scheduler: "GVSync" }, null, 2));
