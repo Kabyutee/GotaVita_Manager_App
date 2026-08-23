@@ -6,9 +6,9 @@
   "use strict";
 
   const RUN_DEFS = [
-    { id: "masagana-alabang", name: "MASAGANA", area: "ALABANG" },
-    { id: "atc-alabang", name: "ATC", area: "ALABANG" },
-    { id: "festival-alabang", name: "FESTIVAL", area: "ALABANG" }
+    { id: "masagana-alabang", name: "MASAGANA", area: "ALABANG", timeWindow: "Morning" },
+    { id: "atc-alabang", name: "ATC", area: "ALABANG", timeWindow: "After Lunch" },
+    { id: "festival-alabang", name: "FESTIVAL", area: "ALABANG", timeWindow: "Before Dinner" }
   ];
 
   function escRun(value) {
@@ -24,11 +24,12 @@
     RUN_DEFS.forEach(def => {
       let run = state.dailyRuns.find(x => x.id === def.id);
       if (!run) {
-        run = { id: def.id, name: def.name, area: def.area, status: "Ready", date: null, sequence: [], deliveredOrderIds: [], notes: "" };
+        run = { id: def.id, name: def.name, area: def.area, timeWindow: def.timeWindow, status: "Ready", date: null, sequence: [], deliveredOrderIds: [], notes: "" };
         state.dailyRuns.push(run);
       }
       run.name = def.name;
       run.area = def.area;
+      run.timeWindow = def.timeWindow;
       if (!Array.isArray(run.sequence)) run.sequence = [];
       if (!Array.isArray(run.deliveredOrderIds)) run.deliveredOrderIds = [];
     });
@@ -166,7 +167,7 @@
         <div class="daily-l300-run-grid">
           ${summary.map(({def, run, rows, m}) => `
             <article class="daily-l300-run" data-run-id="${escRun(run.id)}">
-              <div class="toolbar"><div><h4>🚚 ${escRun(def.name)} · ${escRun(def.area)}</h4><span class="badge soft">${escRun(run.status || "Ready")}</span></div><div class="btn-wrap"><button class="btn ghost tiny" data-action="setDailyL300RunStatus" data-action-args='[${jsAttrArg(run.id)},${jsAttrArg("En Route")}]'>▶ En Route</button><button class="btn ghost tiny" data-action="setDailyL300RunStatus" data-action-args='[${jsAttrArg(run.id)},${jsAttrArg("Completed")}]'>✓ Complete</button></div></div>
+              <div class="toolbar"><div><h4>🚚 ${escRun(def.name)} · ${escRun(def.area)}</h4><span class="badge soft">${escRun(def.timeWindow)} · ${escRun(run.status || "Ready")}</span></div><div class="btn-wrap"><button class="btn ghost tiny" data-action="setDailyL300RunStatus" data-action-args='[${jsAttrArg(run.id)},${jsAttrArg("En Route")}]'>▶ En Route</button><button class="btn ghost tiny" data-action="setDailyL300RunStatus" data-action-args='[${jsAttrArg(run.id)},${jsAttrArg("Completed")}]'>✓ Complete</button></div></div>
               <div class="stat-grid small"><div class="mini-card"><span class="mini-label">Orders</span><b>${m.orders}</b></div><div class="mini-card"><span class="mini-label">Gallons</span><b>${m.gallons}</b></div><div class="mini-card"><span class="mini-label">Expected</span><b>${money(m.revenue)}</b></div><div class="mini-card"><span class="mini-label">Paid</span><b class="ok">${money(m.paid)}</b></div><div class="mini-card"><span class="mini-label">Receivable</span><b class="bad">${money(m.receivable)}</b></div><div class="mini-card"><span class="mini-label">Containers Returned</span><b>${m.returned}</b></div></div>
               <div class="daily-l300-order-list">
                 ${rows.length ? rows.map((o, i) => {
