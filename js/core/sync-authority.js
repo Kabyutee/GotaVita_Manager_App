@@ -20,8 +20,15 @@
         }
       }
 
-      // Queue ownership is centralized here. GVData.sync() owns dirty detection,
-      // cloud writes, reads, baseline updates, and queue draining.
+      // A sync transaction already owns queue draining and must not enqueue a
+      // second background transaction while it is reconciling state. Doing so
+      // creates a self-sustaining "Sync pending" loop after every successful
+      // reconciliation. The transaction marker is set by GVSync.flush().
+      if (window.__GV_SYNC_TRANSACTION_ACTIVE === true) {
+        return true;
+      }
+
+      // Queue ownership is centralized here for normal business writes.
       if (typeof queueSyncResources === "function" && Array.isArray(window.GV_CONFIG?.SYNC_RESOURCES)) {
         queueSyncResources(window.GV_CONFIG.SYNC_RESOURCES);
       }
