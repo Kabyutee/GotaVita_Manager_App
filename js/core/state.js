@@ -35,27 +35,29 @@
 
   window.GV_STATE=Object.freeze({createInitialState:function(){return {products:[],clients:[],services:[],orders:[],payments:[],expenses:[],payrollRecords:[],employees:[],orderGroups:[],deliveryRoutes:[],orderGroupItems:[],deliveryRouteItems:[],dailyReports:[],dailyRuns:[],deletedOrders:[],auditLog:[],orderCounter:138,_meta:{schemaVersion:3,lastUpdated:0,deviceId:""}};}});
 
-  function loadScriptSequentially(src, marker, next) {
-    if (document.querySelector(`script[${marker}]`)) return next?.();
+  function loadScriptSequentially(src, markerName, markerValue, next) {
+    const selector = `script[${markerName}="${markerValue}"]`;
+    if (document.querySelector(selector)) return next?.();
+
     const script = document.createElement("script");
     script.src = src;
     script.defer = false;
-    script.setAttribute(marker, "true");
+    script.setAttribute(markerName, markerValue);
     script.onload = () => next?.();
     script.onerror = () => console.warn(`GotaVita module failed to load: ${src}`);
     document.head.appendChild(script);
   }
 
   function loadDailyL300Module(next) {
-    loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module=\"daily-l300-runs\"", next);
+    loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module", "daily-l300-runs", next);
   }
 
   function loadL300ReportingAdapter(next) {
-    loadScriptSequentially("/js/modules/l300-reporting-adapter.js", "data-gv-module=\"l300-reporting-adapter\"", next);
+    loadScriptSequentially("/js/modules/l300-reporting-adapter.js", "data-gv-module", "l300-reporting-adapter", next);
   }
 
   function loadL300OperationsDashboard() {
-    loadScriptSequentially("/js/modules/l300-operations-dashboard.js", "data-gv-module=\"l300-operations-dashboard\"");
+    loadScriptSequentially("/js/modules/l300-operations-dashboard.js", "data-gv-module", "l300-operations-dashboard");
   }
 
   function loadCanonicalSyncRuntime() {
