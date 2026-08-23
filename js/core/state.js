@@ -55,6 +55,16 @@
     document.head.appendChild(script);
   }
 
+  function loadCanonicalSyncRuntime() {
+    if (document.querySelector('script[data-gv-runtime-sync-loader="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/core/sync-runtime-activation.js";
+    script.defer = false;
+    script.dataset.gvRuntimeSyncLoader = "true";
+    script.onerror = () => console.warn("GotaVita canonical sync runtime activation failed to load.");
+    document.head.appendChild(script);
+  }
+
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("submit", function(event) {
       const target = event?.target;
@@ -63,6 +73,7 @@
     document.addEventListener("DOMContentLoaded", function () {
       loadDailyL300Module();
       loadL300ReportingAdapter();
+      loadCanonicalSyncRuntime();
     }, { once: true });
   }
 })();
