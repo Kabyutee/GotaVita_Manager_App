@@ -176,7 +176,11 @@
     const decisions = buildResolutionPlan(localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows);
     const summary = summarize(decisions);
     const manual = decisions.filter((decision) => decision.action === "manual-review");
-    if (manual.length) recordConflicts(manual.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
+
+    if (manual.length) {
+      recordConflicts(manual.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
+    }
+
     for (const decision of decisions) {
       if (decision.action === "keep-local" || decision.action === "keep-remote") await applyDecision(resource, decision, nextState);
     }
@@ -220,10 +224,7 @@
         if (!result.partial) removeResourceFromQueue(resourceCloudName(resource));
       }
 
-      if (typeof window.GVGroupMembershipBridge?.reconcileRemoteState === "function") {
-        window.GVGroupMembershipBridge.reconcileRemoteState(nextState);
-      }
-
+      if (typeof window.GVGroupMembershipBridge?.reconcileRemoteState === "function") window.GVGroupMembershipBridge.reconcileRemoteState(nextState);
       if (typeof window.replaceState === "function") window.replaceState(nextState);
       if (typeof window.persistState === "function") window.persistState();
       setBaseline(nextBaseline);
