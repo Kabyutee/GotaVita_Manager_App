@@ -27,24 +27,45 @@
     }
   }
 
-  async function hydrateEmptyOrdersAfterAuth() {
+  async function hydrateEmptyCriticalResourcesAfterAuth() {
     try {
       if (window.GVAuth?.isAuthorized?.() !== true) return;
       if (!window.GVData?.selectResource || !window.getStateSnapshot || !window.replaceState) return;
-      const current = window.getStateSnapshot();
-      if (Array.isArray(current?.orders) && current.orders.length) return;
-      const remoteOrders = await window.GVData.selectResource("orders");
-      if (!Array.isArray(remoteOrders) || !remoteOrders.length) return;
+
+      const resources = [
+        ["clients", "clients"],
+        ["orders", "orders"],
+        ["order_groups", "orderGroups"],
+        ["delivery_routes", "deliveryRoutes"],
+        ["products", "products"],
+        ["employees", "employees"]
+      ];
+
+      let changed = false;
       const next = window.getStateSnapshot();
-      if (Array.isArray(next?.orders) && next.orders.length) return;
-      next.orders = remoteOrders;
+
+      for (const [resource, stateName] of resources) {
+        if (Array.isArray(next?.[stateName]) && next[stateName].length) continue;
+        try {
+          const remoteRows = await window.GVData.selectResource(resource);
+          if (Array.isArray(remoteRows) && remoteRows.length && (!Array.isArray(next[stateName]) || !next[stateName].length)) {
+            next[stateName] = remoteRows;
+            changed = true;
+          }
+        } catch (error) {
+          console.warn(`GotaVita ${resource} startup hydration skipped:`, error?.message || error);
+        }
+      }
+
+      if (!changed) return;
       next._meta = Object.assign({}, next._meta, { lastUpdated: Date.now(), lastSynchronizedAt: Date.now() });
       window.replaceState(next);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(next);
       if (typeof window.renderAll === "function") window.renderAll();
       else if (window.GVUI?.renderAll) window.GVUI.renderAll();
+      if (typeof window.renderDailyL300Runs === "function") window.renderDailyL300Runs();
     } catch (error) {
-      console.warn("GotaVita empty Orders hydration skipped:", error?.message || error);
+      console.warn("GotaVita critical startup hydration skipped:", error?.message || error);
     }
   }
 
@@ -97,13 +118,13 @@
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
     document.addEventListener("gv-auth-state-changed", function(event) {
-      if (event?.detail?.authenticated === true) setTimeout(hydrateEmptyOrdersAfterAuth, 0);
+      if (event?.detail?.authenticated === true) setTimeout(hydrateEmptyCriticalResourcesAfterAuth, 0);
     });
     document.addEventListener("DOMContentLoaded", function () {
       ensureDailyL300Host();
       loadDailyL300Module();
       loadCanonicalSyncRuntime();
-      setTimeout(hydrateEmptyOrdersAfterAuth, 250);
+      setTimeout(hydrateEmptyCriticalResourcesAfterAuth, 250);
     }, { once: true });
   }
 })();
