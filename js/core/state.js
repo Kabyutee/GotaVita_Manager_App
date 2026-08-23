@@ -48,11 +48,25 @@
     }
   }
 
+  function ensureDailyL300Host() {
+    if (typeof document === "undefined") return null;
+    const existing = document.getElementById("dailyL300Runs");
+    if (existing) return existing;
+    const dashboard = document.getElementById("panel-dashboard");
+    if (!dashboard) return null;
+    const host = document.createElement("div");
+    host.id = "dailyL300Runs";
+    const anchor = dashboard.querySelector(".dashboard-today-ops") || dashboard.querySelector(".dashboard-overview");
+    if (anchor) anchor.insertAdjacentElement("beforebegin", host);
+    else dashboard.prepend(host);
+    return host;
+  }
+
   window.GV_STATE=Object.freeze({createInitialState:function(){return {products:[],clients:[],services:[],orders:[],payments:[],expenses:[],payrollRecords:[],employees:[],orderGroups:[],deliveryRoutes:[],orderGroupItems:[],deliveryRouteItems:[],dailyReports:[],dailyRuns:[],deletedOrders:[],auditLog:[],orderCounter:138,_meta:{schemaVersion:3,lastUpdated:0,deviceId:""}};}});
 
   function loadScriptSequentially(src, markerName, markerValue, next) {
     const selector = `script[${markerName}="${markerValue}"]`;
-    if (document.querySelector(selector)) return next?.();
+    if (document.querySelector(selector) || document.querySelector(`script[src*="${src}"]`)) return next?.();
     const script = document.createElement("script");
     script.src = src;
     script.defer = false;
@@ -63,6 +77,7 @@
   }
 
   function loadDailyL300Module() {
+    ensureDailyL300Host();
     loadScriptSequentially("/js/modules/daily-l300-runs.js", "data-gv-module", "daily-l300-runs");
   }
 
@@ -85,6 +100,7 @@
       if (event?.detail?.authenticated === true) setTimeout(hydrateEmptyOrdersAfterAuth, 0);
     });
     document.addEventListener("DOMContentLoaded", function () {
+      ensureDailyL300Host();
       loadDailyL300Module();
       loadCanonicalSyncRuntime();
       setTimeout(hydrateEmptyOrdersAfterAuth, 250);
