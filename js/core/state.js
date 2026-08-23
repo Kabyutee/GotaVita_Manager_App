@@ -33,6 +33,32 @@
     }
   }
 
+  async function hydrateEmptyOrdersAfterAuth() {
+    try {
+      if (window.GVAuth?.isAuthorized?.() !== true) return;
+      if (!window.GVData?.selectResource || !window.getStateSnapshot || !window.replaceState) return;
+      const current = window.getStateSnapshot();
+      if (Array.isArray(current?.orders) && current.orders.length) return;
+
+      const remoteOrders = await window.GVData.selectResource("orders");
+      if (!Array.isArray(remoteOrders) || !remoteOrders.length) return;
+
+      const next = window.getStateSnapshot();
+      if (Array.isArray(next?.orders) && next.orders.length) return;
+      next.orders = remoteOrders;
+      next._meta = Object.assign({}, next._meta, {
+        lastUpdated: Date.now(),
+        lastSynchronizedAt: Date.now()
+      });
+      window.replaceState(next);
+      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(next);
+      if (typeof window.renderAll === "function") window.renderAll();
+      else if (window.GVUI?.renderAll) window.GVUI.renderAll();
+    } catch (error) {
+      console.warn("GotaVita empty Orders hydration skipped:", error?.message || error);
+    }
+  }
+
   window.GV_STATE=Object.freeze({createInitialState:function(){return {products:[],clients:[],services:[],orders:[],payments:[],expenses:[],payrollRecords:[],employees:[],orderGroups:[],deliveryRoutes:[],orderGroupItems:[],deliveryRouteItems:[],dailyReports:[],dailyRuns:[],deletedOrders:[],auditLog:[],orderCounter:138,_meta:{schemaVersion:3,lastUpdated:0,deviceId:""}};}});
 
   function loadScriptSequentially(src, markerName, markerValue, next) {
@@ -76,6 +102,10 @@
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
 
+    document.addEventListener("gv-auth-state-changed", function(event) {
+      if (event?.detail?.authenticated === true) setTimeout(hydrateEmptyOrdersAfterAuth, 0);
+    });
+
     document.addEventListener("DOMContentLoaded", function () {
       loadDailyL300Module(() => {
         loadL300ReportingAdapter(() => {
@@ -83,6 +113,7 @@
         });
       });
       loadCanonicalSyncRuntime();
+      setTimeout(hydrateEmptyOrdersAfterAuth, 250);
     }, { once: true });
   }
 })();
