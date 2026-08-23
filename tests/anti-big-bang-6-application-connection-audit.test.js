@@ -1,11 +1,9 @@
 const fs = require("fs");
 const path = require("path");
-
-const ROOT = process.cwd();
-function read(file) { return fs.readFileSync(path.join(ROOT, file), "utf8"); }
+function read(file) { return fs.readFileSync(path.join(process.cwd(), file), "utf8"); }
 function assert(condition, message) { if (!condition) throw new Error(`ANTI BIG BANG 6 CONNECTION AUDIT: ${message}`); }
 function filesUnder(dir) {
-  const root = path.join(ROOT, dir); if (!fs.existsSync(root)) return [];
+  const root = path.join(process.cwd(), dir); if (!fs.existsSync(root)) return [];
   const out = [];
   const walk = (current) => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
@@ -23,7 +21,10 @@ const conflict = read("js/core/conflict-resolution-integration.js");
 const syncManager = read("js/core/sync-manager.js");
 const config = read("js/core/config.js");
 const riskGate = read(".github/workflows/anti-big-bang-risk-gate.yml");
-const moduleText = filesUnder("js/modules").map((file) => read(path.relative(ROOT, file))).join("\n");
+const moduleText = filesUnder("js/modules").map((file) => read(path.relative(process.cwd(), file))).join("\n");
+const l300Runs = read("js/modules/daily-l300-runs.js");
+const l300Reporting = read("js/modules/l300-reporting-adapter.js");
+const l300Dashboard = read("js/modules/l300-operations-dashboard.js");
 
 const stateBlock = state.match(/return\s*\{([\s\S]*?)\};/);
 assert(stateBlock, "state factory resource declaration not found");
@@ -34,29 +35,11 @@ const syncRegistry = config.match(/SYNC_RESOURCES:Object\.freeze\(\[([\s\S]*?)\]
 assert(syncRegistry, "SYNC_RESOURCES registry not found");
 for (const resource of requiredResources) assert(syncRegistry[1].includes(`\"${resource}\"`), `config SYNC_RESOURCES missing: ${resource}`);
 
-for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:"]) {
-  assert(gateway.includes(required), `gateway capability missing: ${required}`);
-}
+for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:"]) assert(gateway.includes(required), `gateway capability missing: ${required}`);
 assert(/async function requireAuthenticatedManager\(/.test(gateway), "gateway authentication boundary missing: requireAuthenticatedManager");
 
-const requiredMappings = {
-  orderGroups: "order_groups",
-  deliveryRoutes: "delivery_routes",
-  orderGroupItems: "order_group_items",
-  deliveryRouteItems: "delivery_route_items",
-  dailyReports: "daily_reports",
-  deletedOrders: "deleted_orders",
-  auditLog: "audit_logs"
-};
-const requiredReverseMappings = {
-  order_groups: "orderGroups",
-  delivery_routes: "deliveryRoutes",
-  order_group_items: "orderGroupItems",
-  delivery_route_items: "deliveryRouteItems",
-  daily_reports: "dailyReports",
-  deleted_orders: "deletedOrders",
-  audit_logs: "auditLog"
-};
+const requiredMappings = { orderGroups: "order_groups", deliveryRoutes: "delivery_routes", orderGroupItems: "order_group_items", deliveryRouteItems: "delivery_route_items", dailyReports: "daily_reports", deletedOrders: "deleted_orders", auditLog: "audit_logs" };
+const requiredReverseMappings = { order_groups: "orderGroups", delivery_routes: "deliveryRoutes", order_group_items: "orderGroupItems", delivery_route_items: "deliveryRouteItems", daily_reports: "dailyReports", deleted_orders: "deletedOrders", audit_logs: "auditLog" };
 function mappingExists(text, key, value) {
   const pattern = new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*[\"']${value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}['\"]`);
   return pattern.test(text);
@@ -64,30 +47,29 @@ function mappingExists(text, key, value) {
 for (const [key, value] of Object.entries(requiredMappings)) assert(mappingExists(conflict, key, value), `conflict mapping missing: ${key}: ${value}`);
 for (const [key, value] of Object.entries(requiredReverseMappings)) assert(mappingExists(conflict, key, value), `conflict reverse mapping missing: ${key}: ${value}`);
 
-for (const required of ["hydrateFirstBaseline(", "flush(", "startPolling(", "window.GVSync = Object.freeze"]) {
-  assert(syncManager.includes(required), `canonical sync coordinator missing: ${required}`);
-}
-for (const forbidden of ["window.GVData.sync =", "GVData.sync = async", "window.GVData.sync = async"]) {
-  assert(!syncManager.includes(forbidden), `GVSync must not decorate GVData.sync: ${forbidden}`);
-}
+for (const required of ["hydrateFirstBaseline(", "flush(", "startPolling(", "window.GVSync = Object.freeze"]) assert(syncManager.includes(required), `canonical sync coordinator missing: ${required}`);
+for (const forbidden of ["window.GVData.sync =", "GVData.sync = async", "window.GVData.sync = async"]) assert(!syncManager.includes(forbidden), `GVSync must not decorate GVData.sync: ${forbidden}`);
 
 const tabs = ["dashboard","neworder","orderlog","expenses","groups","clients","employees","reports"];
 for (const tab of tabs) assert(index.includes(`data-tab=\"${tab}\"`), `UI tab missing: ${tab}`);
 
-const requiredModules = [
-  "js/modules/orders.js", "js/modules/clients.js", "js/modules/products.js", "js/modules/expenses.js",
-  "js/modules/groups-routes.js", "js/modules/employees-payroll.js", "js/modules/reports.js", "js/modules/containers.js", "js/modules/backups.js"
-];
+const requiredModules = ["js/modules/orders.js", "js/modules/clients.js", "js/modules/products.js", "js/modules/expenses.js", "js/modules/groups-routes.js", "js/modules/employees-payroll.js", "js/modules/reports.js", "js/modules/containers.js", "js/modules/backups.js"];
 for (const file of requiredModules) assert(index.includes(file), `module missing from index.html: ${file}`);
 
-for (const [feature, tokens] of [
-  ["orders", ["state.orders", "persistState"]], ["clients", ["state.clients", "persistState"]],
-  ["products", ["state.products", "persistState"]], ["expenses", ["state.expenses", "persistState"]],
-  ["groups/routes", ["state.orderGroups", "persistState"]], ["employees/payroll", ["state.employees", "persistState"]],
-  ["reports", ["state.dailyReports", "persistState"]]
-]) for (const token of tokens) assert(moduleText.includes(token), `${feature} missing source evidence: ${token}`);
+for (const [feature, tokens] of [["orders", ["state.orders", "persistState"]],["clients", ["state.clients", "persistState"]],["products", ["state.products", "persistState"]],["expenses", ["state.expenses", "persistState"]],["groups/routes", ["state.orderGroups", "persistState"]],["employees/payroll", ["state.employees", "persistState"]],["reports", ["state.dailyReports", "persistState"]]]) for (const token of tokens) assert(moduleText.includes(token), `${feature} missing source evidence: ${token}`);
+
+// Mitsubishi L300 delivery operation is part of the application runtime and derives orders from Group Orders.
+assert(state.includes("dailyRuns:[]"), "dailyRuns state resource missing");
+assert(l300Runs.includes('timeWindow: "Morning"') && l300Runs.includes('timeWindow: "After Lunch"') && l300Runs.includes('timeWindow: "Before Dinner"'), "L300 daily schedule windows missing");
+assert(l300Runs.includes('area: "ALABANG"') && l300Reporting.includes('area: "ALABANG"') && l300Dashboard.includes("Alabang"), "L300 Alabang routing metadata missing");
+assert(l300Runs.includes("groupId") && l300Runs.includes("state.orderGroups") && l300Runs.includes("function groupForRun"), "L300 is not connected to canonical Group Orders");
+assert(l300Runs.includes("openGroupManagerForDailyL300") && l300Dashboard.includes("Group Orders"), "L300 Group Orders management bridge missing");
+assert(!l300Runs.includes("byExplicitRun"), "L300 must not maintain a second independent order source outside Group Orders");
+assert(state.includes("loadDailyL300Module") && state.includes("loadL300ReportingAdapter") && state.includes("loadL300OperationsDashboard"), "L300 modules are not connected to state runtime loading");
+assert(state.indexOf("loadDailyL300Module") < state.indexOf("loadL300ReportingAdapter") && state.indexOf("loadL300ReportingAdapter") < state.indexOf("loadL300OperationsDashboard"), "L300 runtime loading order is invalid");
 
 assert(riskGate.includes("anti-big-bang-6-application-connection-audit.test.js"), "full application connection audit not wired into ANTI BIG BANG");
+assert(riskGate.includes("l300-group-order-contract.test.js"), "L300 Group Orders contract not wired into ANTI BIG BANG");
 
 console.log("ANTI BIG BANG 6 — FULL APPLICATION CONNECTION AUDIT: PASS");
-console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, scheduler: "GVSync" }, null, 2));
+console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, l300Runs: 3, scheduler: "GVSync", l300Authority: "OrderGroups" }, null, 2));
