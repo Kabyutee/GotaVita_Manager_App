@@ -13,9 +13,9 @@
 
   function runDefinitions() {
     return window.GV_DAILY_L300?.runDefinitions || [
-      { id: "masagana-alabang", name: "MASAGANA", area: "ALABANG" },
-      { id: "atc-alabang", name: "ATC", area: "ALABANG" },
-      { id: "festival-alabang", name: "FESTIVAL", area: "ALABANG" }
+      { id: "masagana-alabang", name: "MASAGANA", area: "ALABANG", timeWindow: "Morning" },
+      { id: "atc-alabang", name: "ATC", area: "ALABANG", timeWindow: "After Lunch" },
+      { id: "festival-alabang", name: "FESTIVAL", area: "ALABANG", timeWindow: "Before Dinner" }
     ];
   }
 
@@ -49,7 +49,7 @@
     const byId = new Map(runs.map(run => [String(run.id), run]));
     const details = runDefinitions().map(def => {
       const run = byId.get(String(def.id)) || { ...def, sequence: [], deliveredOrderIds: [] };
-      return { id: def.id, name: def.name, area: def.area, status: run.status || "Ready", ...summarizeRows(rowsForRun(run, reference), run) };
+      return { id: def.id, name: def.name, area: def.area, timeWindow: run.timeWindow || def.timeWindow, status: run.status || "Ready", ...summarizeRows(rowsForRun(run, reference), run) };
     });
     return details.reduce((report, run) => {
       report.runs.push(run); report.orders += run.orders; report.gallons += run.gallons; report.expectedRevenue += run.expectedRevenue; report.paid += run.paid; report.receivable += run.receivable; report.containersReturned += run.containersReturned; report.delivered += run.delivered; report.pendingDelivery += run.pendingDelivery;
