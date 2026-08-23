@@ -121,6 +121,14 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(groupMembershipMarker, `${groupMembershipMarker}\n${groupMembershipInjected}`);
   }
 
+  // Final convergence boundary: after the canonical sync stack is active,
+  // reconcile both directions against the authoritative Supabase snapshot.
+  const repairMarker = `<script src="/js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const repairInjected = `<script src="/js/core/sync-complete-runtime-repair.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(repairMarker) && !html.includes(repairInjected)) {
+    html = html.replace(repairMarker, `${repairMarker}\n${repairInjected}`);
+  }
+
   return withNoStore(response, html);
 }
 
