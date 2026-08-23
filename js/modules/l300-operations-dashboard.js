@@ -5,12 +5,6 @@
 (function () {
   "use strict";
 
-  const RUNS = [
-    { id: "masagana-alabang", name: "MASAGANA", area: "ALABANG" },
-    { id: "atc-alabang", name: "ATC", area: "ALABANG" },
-    { id: "festival-alabang", name: "FESTIVAL", area: "ALABANG" }
-  ];
-
   const money = value => typeof peso === "function" ? peso(Number(value) || 0) : `₱${(Number(value) || 0).toFixed(2)}`;
   const escSafe = value => typeof esc === "function" ? esc(value == null ? "" : String(value)) : String(value == null ? "" : value);
 
@@ -28,7 +22,7 @@
       .l300-metric{padding:9px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border)}
       .l300-metric span{display:block;font-size:.72rem;color:var(--muted)}
       .l300-metric b{display:block;margin-top:3px;font-size:.95rem}
-      .l300-period-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+      .l300-period-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
       .l300-run-card .badge{margin-top:5px}
       @media(max-width:900px){.l300-run-grid,.l300-period-grid{grid-template-columns:1fr}.l300-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     `;
@@ -86,22 +80,21 @@
       <div class="l300-metric-grid">
         <div class="l300-metric"><span>Orders</span><b>${run.orders}</b></div>
         <div class="l300-metric"><span>Gallons</span><b>${run.gallons}</b></div>
-        <div class="l300-metric"><span>Expected</span><b>${money(run.expectedRevenue)}</b></div>
+        <div class="l300-metric"><span>Revenue</span><b>${money(run.expectedRevenue)}</b></div>
         <div class="l300-metric"><span>Paid</span><b class="ok">${money(run.paid)}</b></div>
         <div class="l300-metric"><span>Receivable</span><b class="bad">${money(run.receivable)}</b></div>
-        <div class="l300-metric"><span>Delivery</span><b>${run.delivered}/${run.orders}</b></div>
+        <div class="l300-metric"><span>Containers</span><b>${run.containersReturned}</b></div>
+        <div class="l300-metric"><span>Delivered</span><b>${run.delivered}</b></div>
+        <div class="l300-metric"><span>Pending Delivery</span><b>${run.pendingDelivery}</b></div>
       </div>
     </article>`;
   }
 
   function render() {
     const host = $("l300OperationsDashboard");
-    if (!host || !window.state) return;
+    if (!host || !window.GV_L300_REPORTING) return;
     const daily = getDaily();
-    if (!daily) {
-      host.innerHTML = `<div class="card"><h3>🚚 L300 Today</h3><p class="emp-meta">Reporting adapter is not available yet.</p></div>`;
-      return;
-    }
+    if (!daily) return;
     const periods = getPeriods();
     host.innerHTML = `
       <div class="card">
@@ -112,10 +105,10 @@
         <div class="stat-grid small" style="margin-top:14px">
           <div class="mini-card"><span class="mini-label">Orders</span><b>${daily.orders}</b></div>
           <div class="mini-card"><span class="mini-label">Gallons</span><b>${daily.gallons}</b></div>
-          <div class="mini-card"><span class="mini-label">Expected Revenue</span><b>${money(daily.expectedRevenue)}</b></div>
+          <div class="mini-card"><span class="mini-label">Revenue</span><b>${money(daily.expectedRevenue)}</b></div>
           <div class="mini-card"><span class="mini-label">Paid</span><b class="ok">${money(daily.paid)}</b></div>
           <div class="mini-card"><span class="mini-label">Receivable</span><b class="bad">${money(daily.receivable)}</b></div>
-          <div class="mini-card"><span class="mini-label">Delivered</span><b>${daily.delivered}/${daily.orders}</b></div>
+          <div class="mini-card"><span class="mini-label">Delivery</span><b>${daily.delivered}/${daily.orders}</b></div>
         </div>
       </div>
       <div class="l300-run-grid">${daily.runs.map(runCard).join("")}</div>
@@ -134,6 +127,7 @@
       ensureTab();
       ensurePanel();
       render();
+      document.addEventListener("gv:l300-reporting-ready", () => setTimeout(render, 0), { once: true });
       const originalPersist = window.persistState;
       if (typeof originalPersist === "function" && !originalPersist.__l300DashboardWrapped) {
         const wrapped = function () {
