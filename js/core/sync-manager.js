@@ -1,4 +1,4 @@
-/* GotaVita Manager — Sprint 20 canonical synchronization coordinator. */
+/* GotaVita Manager — Sprint 21 canonical synchronization coordinator. */
 (function () {
   "use strict";
 
@@ -197,11 +197,27 @@
       const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       const changed = beforeDigest !== stateDigest(after);
       if (result?.ok === true) {
-        clearQueue();
+        const manualReview = result.status === "manual-review";
+        if (!manualReview) clearQueue();
         const meta = getMeta();
-        setMeta({ ...meta, lastSyncAt: new Date().toISOString(), lastSyncStatus: result.status || "synced", lastSyncQueuedBefore: queuedBefore, lastSyncStateChanged: changed, lastSyncResults: result.results || [] });
+        setMeta({
+          ...meta,
+          lastSyncAt: new Date().toISOString(),
+          lastSyncStatus: manualReview ? "conflict" : (result.status || "synced"),
+          lastSyncQueuedBefore: queuedBefore,
+          lastSyncStateChanged: changed,
+          lastSyncResults: result.results || []
+        });
         if (changed) renderRemoteState();
-        return { ok: true, status: result.status || "synced", queued: 0, stateChanged: changed, remoteChanged: changed, renderRequired: changed, result };
+        return {
+          ok: !manualReview,
+          status: manualReview ? "conflict" : (result.status || "synced"),
+          queued: queue().length,
+          stateChanged: changed,
+          remoteChanged: changed,
+          renderRequired: changed,
+          result
+        };
       }
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
       return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
