@@ -18,7 +18,9 @@ assert(logoutSection, "auth lifecycle handler missing");
 assert(!/else\s*\{[\s\S]*?clearQueue\(\)/.test(logoutSection[0]), "sign-out path clears queued work");
 assert(logoutSection[0].includes("stopPolling()"), "sign-out path does not stop polling");
 
-assert(conflictIntegration.includes("const result = await reconcileResource"), "first-sync reconciliation path missing");
+// Keep this contract semantic rather than whitespace-sensitive: the canonical
+// integration must actually invoke reconcileResource and capture its result.
+assert(/(?:const|let|var)\s+result\s*=\s*await\s+reconcileResource\s*\(/.test(conflictIntegration), "first-sync reconciliation path missing");
 assert(!conflictIntegration.includes('if (!baselineAt) {\n          nextBaseline'), "first sync still skips reconciliation and only initializes a baseline");
 assert(conflictIntegration.includes("remote-new-record"), "remote-only record resolution missing");
 assert(conflictIntegration.includes("local-new-record"), "local-only record resolution missing");

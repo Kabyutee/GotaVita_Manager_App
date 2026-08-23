@@ -38,12 +38,31 @@ for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResourc
   assert(gateway.includes(required), `gateway capability missing: ${required}`);
 }
 assert(/async function requireAuthenticatedManager\(/.test(gateway), "gateway authentication boundary missing: requireAuthenticatedManager");
-for (const required of [
-  "orderGroups: \"order_groups\"", "deliveryRoutes: \"delivery_routes\"", "orderGroupItems: \"order_group_items\"",
-  "deliveryRouteItems: \"delivery_route_items\"", "dailyReports: \"daily_reports\"", "deletedOrders: \"deleted_orders\"", "auditLog: \"audit_logs\"",
-  "order_groups: \"orderGroups\"", "delivery_routes: \"deliveryRoutes\"", "order_group_items: \"orderGroupItems\"",
-  "delivery_route_items: \"deliveryRouteItems\"", "daily_reports: \"dailyReports\"", "deleted_orders: \"deletedOrders\"", "audit_logs: \"auditLog\""
-]) assert(conflict.includes(required), `conflict mapping missing: ${required}`);
+
+const requiredMappings = {
+  orderGroups: "order_groups",
+  deliveryRoutes: "delivery_routes",
+  orderGroupItems: "order_group_items",
+  deliveryRouteItems: "delivery_route_items",
+  dailyReports: "daily_reports",
+  deletedOrders: "deleted_orders",
+  auditLog: "audit_logs"
+};
+const requiredReverseMappings = {
+  order_groups: "orderGroups",
+  delivery_routes: "deliveryRoutes",
+  order_group_items: "orderGroupItems",
+  delivery_route_items: "deliveryRouteItems",
+  daily_reports: "dailyReports",
+  deleted_orders: "deletedOrders",
+  audit_logs: "auditLog"
+};
+function mappingExists(text, key, value) {
+  const pattern = new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*[\"']${value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}['\"]`);
+  return pattern.test(text);
+}
+for (const [key, value] of Object.entries(requiredMappings)) assert(mappingExists(conflict, key, value), `conflict mapping missing: ${key}: ${value}`);
+for (const [key, value] of Object.entries(requiredReverseMappings)) assert(mappingExists(conflict, key, value), `conflict reverse mapping missing: ${key}: ${value}`);
 
 for (const required of ["hydrateFirstBaseline(", "flush(", "startPolling(", "window.GVSync = Object.freeze"]) {
   assert(syncManager.includes(required), `canonical sync coordinator missing: ${required}`);
