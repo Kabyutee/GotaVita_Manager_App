@@ -24,10 +24,24 @@
   function readJson(key, fallback) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (_) { return fallback; } }
   function writeJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } }
 
+  // Cross-device identity MUST be based on the stable GotaVita legacy ID.
+  // The conflict detector may use a database UUID or another implementation
+  // detail, but local state and remote gateway rows converge on legacy_id/id.
+  // Prefer those stable identifiers before consulting the optional detector.
+  function stableRowId(row) {
+    if (row?.legacy_id != null && String(row.legacy_id).trim() !== "") return String(row.legacy_id).trim();
+    if (row?.legacyId != null && String(row.legacyId).trim() !== "") return String(row.legacyId).trim();
+    if (row?.id != null && String(row.id).trim() !== "") return String(row.id).trim();
+    return null;
+  }
+
   function rowKey(row, index) {
-    if (window.GVConflictDetector?.rowKey) { const key = window.GVConflictDetector.rowKey(row); if (key != null) return String(key); }
-    if (row?.id != null) return String(row.id);
-    if (row?.legacy_id != null) return String(row.legacy_id);
+    const stable = stableRowId(row);
+    if (stable != null) return stable;
+    if (window.GVConflictDetector?.rowKey) {
+      const key = window.GVConflictDetector.rowKey(row);
+      if (key != null) return String(key);
+    }
     return `index:${index}`;
   }
 
@@ -62,7 +76,7 @@
     return window.GVConflictDetector.resolveConflictPolicy(localRow, remoteRow, baselineAt);
   }
 
-  function deletionEvidence(rows, key) { return (Array.isArray(rows) ? rows : []).find((row) => rowKey(row) === key) || null; }
+  function deletionEvidence(rows, key) { return (Array.isArray(rows) ? rows : []).find((row, index) => rowKey(row, index) === key) || null; }
   function tombstone(row, deletedAt) { if (!deletedAt) return null; return { id: row?.id, legacy_id: row?.legacy_id, deleted: true, deletedAt, updatedAt: deletedAt }; }
   function baselinePlaceholder(id, baselineAt) { if (!baselineAt) return null; return { id, updatedAt: baselineAt, createdAt: baselineAt }; }
 
@@ -211,11 +225,6 @@
         const localDeletedRows = resource === "orders" ? (nextState.deletedOrders || []) : [];
         const remoteDeletedRows = resource === "orders" ? await window.GVData.selectResource("deleted_orders") : [];
 
-        // First run is still a reconciliation. The old implementation only
-        // stored the remote rows as a baseline and skipped state hydration,
-        // which left an existing device unable to see cloud-only records until
-        // a later cycle. With no baseline, the resolution policy safely keeps
-        // local-only rows, imports remote-only rows, and evaluates shared rows.
         const result = await reconcileResource(resource, localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows, nextState);
         results.push({ ...result, status: baselineAt ? undefined : "baseline-initialized" });
 
