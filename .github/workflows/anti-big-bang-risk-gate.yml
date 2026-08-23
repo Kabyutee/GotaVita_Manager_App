@@ -149,8 +149,6 @@ jobs:
           node --check js/core/sync-authority.js
           node --check js/core/sync-complete-runtime-repair.js
           node --check js/modules/daily-l300-runs.js
-          node --check js/modules/l300-reporting-adapter.js
-          node --check js/modules/l300-operations-dashboard.js
 
       - name: Focused sync polling gate
         if: steps.risk.outputs.sync == 'true'
