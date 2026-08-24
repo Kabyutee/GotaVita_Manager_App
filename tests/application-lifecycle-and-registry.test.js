@@ -17,12 +17,14 @@ const assert = require("node:assert/strict");
   assert.match(lifecycleSource, /supportedResources\(\)\s*\{[\s\S]*filter/);
   assert.match(lifecycleSource, /health:\s*safeHealth/);
   assert.match(runtimeSource, /__GV_APP_READY\s*!==\s*true/);
-  assert.doesNotMatch(configSource, /SYNC_RESOURCES:[\s\S]*auditLog/);
+  assert.match(configSource, /SYNC_RESOURCES:[\s\S]*auditLog/);
+  assert.match(lifecycleSource, /AUDIT_ONLY_RESOURCES/);
   assert.match(authSource, /requireManagerSession[\s\S]*validateSession\(data\?\.session \|\| null, false\)/);
   assert.match(authSource, /onAuthStateChange[\s\S]*validateSession\(session, false\)/);
   assert.match(stateSource, /window\.addEventListener\("gv-auth-state-changed"/);
   assert.match(stateSource, /__GV_APP_READY/);
   assert.match(stateSource, /gateDomReadyListener/);
+  assert.match(stateSource, /scheduleAuthorizedHydration\(\)\s*\{[\s\S]*return false/);
 
   let originalHealthCalled = 0;
   let syncCalled = 0;
