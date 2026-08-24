@@ -29,6 +29,30 @@
       }));
   }
 
+  function fenceLegacySyncEntryPoints() {
+    const canonical = (...args) => {
+      if (window.__GV_APP_READY === true && window.GVSync?.flush) return window.GVSync.flush(...args);
+      return Promise.resolve({ ok: false, status: "booting" });
+    };
+
+    window.syncChangedResources = canonical;
+    window.syncNow = canonical;
+    try { window.stopSyncReliability?.(); } catch (_) {}
+    window.startSyncReliability = () => {};
+    window.__GV_CANONICAL_SYNC_ONLY = true;
+  }
+
+  function ensureRecoveryModule() {
+    if (window.GVEmergencyRecovery?.run) return;
+    if (document.querySelector('script[data-gv-emergency-recovery="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/core/emergency-recovery.js?gv_recovery=1";
+    script.defer = false;
+    script.dataset.gvEmergencyRecovery = "true";
+    script.onerror = () => console.warn("GotaVita emergency recovery module failed to load.");
+    (document.head || document.documentElement).appendChild(script);
+  }
+
   function install() {
     if (installed) return true;
     if (!window.GVData) return false;
@@ -44,9 +68,7 @@
       },
       health: safeHealth,
       sync(...args) {
-        if (window.__GV_APP_READY === true && window.GVSync?.flush) {
-          return window.GVSync.flush(...args);
-        }
+        if (window.__GV_APP_READY === true && window.GVSync?.flush) return window.GVSync.flush(...args);
         return Promise.resolve({ ok: false, status: "booting" });
       }
     });
@@ -59,6 +81,8 @@
     });
 
     try { window.GVSync?.stopPolling?.(); } catch (_) {}
+    fenceLegacySyncEntryPoints();
+    ensureRecoveryModule();
 
     installed = true;
     return true;
