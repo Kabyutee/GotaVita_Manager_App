@@ -3,14 +3,17 @@
  * This guard runs before the canonical conflict/reconciliation transaction.
  * A populated local collection must never be reconciled against an empty or
  * sharply reduced remote snapshot without explicit per-record deletion proof.
- * The guard fails closed and exposes an explicit recovery operation so a
- * populated browser can restore an intentionally damaged cloud dataset only
- * after the operator requests it.
+ *
+ * P0 master data (clients, employees, products) is stricter: passive sync is
+ * never allowed to infer deletion from a remote shrink. Changes to these
+ * resources must originate from an explicit manager CRUD action or an
+ * explicitly confirmed recovery operation.
  */
 (function () {
   "use strict";
 
   const RATIO_THRESHOLD = 0.5;
+  const P0_MASTER_RESOURCES = new Set(["clients", "employees", "products"]);
   const WRAPPED_KEY = "__GV_CLOUD_SNAPSHOT_SAFETY_V1";
   const RECOVERY_LOCK = "gotavita_cloud_recovery_lock_v1";
 
@@ -34,6 +37,11 @@
     if (!Array.isArray(localRows) || localRows.length === 0) return false;
     if (!Array.isArray(remoteRows)) return true;
     if (remoteRows.length >= localRows.length) return false;
+
+    // P0 master data is never inferred-deleted by passive sync. Even a
+    // one-record shrink is blocked; manager CRUD or confirmed recovery is the
+    // only legitimate path for clients/employees/products to change size.
+    if (P0_MASTER_RESOURCES.has(resource)) return true;
 
     const localMap = indexRows(localRows);
     const remoteMap = indexRows(remoteRows);
@@ -70,7 +78,7 @@
       const remoteRows = await window.GVData.selectResource(resource);
       if (resource === "orders") deletedOrders = await window.GVData.selectResource("deleted_orders");
       if (unsafeShrink(localRows, remoteRows, resource, deletedOrders)) {
-        blocked.push({ resource, localCount: localRows.length, remoteCount: remoteRows.length, missingCount: localRows.length - remoteRows.length });
+        blocked.push({ resource, localCount: localRows.length, remoteCount: remoteRows.length, missingCount: Math.max(0, localRows.length - remoteRows.length), priority: P0_MASTER_RESOURCES.has(resource) ? "P0" : "standard" });
       }
     }
 
@@ -144,5 +152,5 @@
 
   install();
   window.addEventListener("DOMContentLoaded", install, { once: true });
-  window.GVCloudSnapshotSafety = Object.freeze({ preflight, recoverCloudFromLocal, unsafeShrink });
+  window.GVCloudSnapshotSafety = Object.freeze({ preflight, recoverCloudFromLocal, unsafeShrink, p0Resources: [...P0_MASTER_RESOURCES] });
 })();
