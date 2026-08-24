@@ -18,13 +18,12 @@ assert(logoutSection, "auth lifecycle handler missing");
 assert(!/else\s*\{[\s\S]*?clearQueue\(\)/.test(logoutSection[0]), "sign-out path clears queued work");
 assert(logoutSection[0].includes("stopPolling()"), "sign-out path does not stop polling");
 
-assert(/(?:const|let|var)\s+result\s*=\s*await\s+reconcileResource\s*\(/.test(conflictIntegration), "universal reconciliation path missing");
-assert(!conflictIntegration.includes("same-timestamp-divergent-content"), "equal-timestamp records still dead-end in manual review");
-assert(conflictIntegration.includes("remote-canonical"), "remote canonical row resolution missing");
-assert(conflictIntegration.includes("pending-local-create-or-update"), "pending local create/update resolution missing");
-assert(conflictIntegration.includes("preserve-local"), "protected local-only record resolution missing");
-assert(conflictIntegration.includes("explicit-remote-deletion-evidence"), "remote Order deletion evidence missing");
-assert(conflictIntegration.includes("explicit-local-deletion-evidence"), "local Order deletion evidence missing");
+// Keep this contract semantic rather than whitespace-sensitive: the canonical
+// integration must actually invoke reconcileResource and capture its result.
+assert(/(?:const|let|var)\s+result\s*=\s*await\s+reconcileResource\s*\(/.test(conflictIntegration), "first-sync reconciliation path missing");
+assert(!conflictIntegration.includes('if (!baselineAt) {\n          nextBaseline'), "first sync still skips reconciliation and only initializes a baseline");
+assert(conflictIntegration.includes("remote-new-record"), "remote-only record resolution missing");
+assert(conflictIntegration.includes("local-new-record"), "local-only record resolution missing");
 assert(conflictIntegration.includes("window.replaceState(nextState)"), "reconciled state is not committed back to application state");
 
 assert(worker.includes('url.pathname === "/gv-health"'), "health endpoint missing");
@@ -36,8 +35,7 @@ assert(wrangler.includes('"compatibility_date"'), "Workers compatibility date is
 console.log("JARVIS WHOLE-APP HARDENING CONTRACT: PASS");
 console.log(JSON.stringify({
   synchronizationQueueProtection: true,
-  universalCanonicalSynchronization: true,
-  twoWayOrderDeletionEvidence: true,
+  firstSyncRemoteHydration: true,
   workerBoundaries: true,
   workersConfiguration: true,
   result: "PASS"

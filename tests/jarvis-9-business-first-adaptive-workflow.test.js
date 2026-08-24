@@ -17,11 +17,10 @@ const groups = exists("js/modules/groups-routes.js") ? read("js/modules/groups-r
 const reports = exists("js/modules/reports.js") ? read("js/modules/reports.js") : "";
 const sync = exists("js/core/sync-manager.js") ? read("js/core/sync-manager.js") : "";
 const gateway = exists("js/core/data-gateway.js") ? read("js/core/data-gateway.js") : "";
-const resources = ["orders","clients","products","orderGroups","orderGroupItems","deliveryRoutes","deliveryRouteItems","expenses","employees","payrollRecords","deletedOrders","dailyReports"];
+const resources = ["orders","clients","products","orderGroups","orderGroupItems","deliveryRoutes","deliveryRouteItems","expenses","employees","payrollRecords","deletedOrders","dailyReports","auditLog"];
 const routes = ["Masagana — Alabang","ATC — Alabang","Festival — Alabang"];
 const scenarios = ["create-order","edit-order","assign-order-to-route","remove-order-from-route","archive-order","restore-order","cross-device-convergence","offline-queue-reconnect","daily-route-summary","daily-business-report","historical-record-preservation"];
 assert(resources.every((r)=>config.includes(r)),"business resource missing from sync registry");
-assert(!/SYNC_RESOURCES[^\n]*(auditLog)/.test(config),"append-only auditLog must not be a canonical business sync resource");
 assert(/function\s+(handleOrderSubmit|createOrder|saveOrder)/.test(orders+script),"order creation boundary missing");
 assert(/function\s+(deleteOrder|archiveOrders|restoreDeletedOrder)/.test(orders+script),"order lifecycle boundary missing");
 assert(/persistState\s*\(/.test(script),"canonical persistence boundary missing");
