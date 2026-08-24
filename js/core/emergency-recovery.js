@@ -2,11 +2,15 @@
 (function () {
   "use strict";
 
+  // Only resources backed by real production tables belong in recovery.
+  // Audit history is intentionally excluded from business state recovery.
   const BUSINESS_RESOURCES = [
-    ["clients", "clients"], ["products", "products"], ["services", "services"], ["employees", "employees"],
-    ["orders", "orders"], ["payments", "payments"], ["expenses", "expenses"], ["payroll_records", "payrollRecords"],
-    ["order_groups", "orderGroups"], ["delivery_routes", "deliveryRoutes"], ["order_group_items", "orderGroupItems"],
-    ["delivery_route_items", "deliveryRouteItems"], ["daily_reports", "dailyReports"], ["deleted_orders", "deletedOrders"]
+    ["clients", "clients"], ["products", "products"], ["employees", "employees"],
+    ["orders", "orders"], ["payments", "payments"], ["expenses", "expenses"],
+    ["payroll_records", "payrollRecords"], ["order_groups", "orderGroups"],
+    ["delivery_routes", "deliveryRoutes"], ["order_group_items", "orderGroupItems"],
+    ["delivery_route_items", "deliveryRouteItems"], ["daily_reports", "dailyReports"],
+    ["deleted_orders", "deletedOrders"]
   ];
 
   const RECOVERED_ORDERS = [
@@ -21,10 +25,6 @@
 
   function stateSnapshot() {
     return typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
-  }
-
-  function hasRows(value) {
-    return Array.isArray(value) && value.length > 0;
   }
 
   function rowId(row) {
@@ -66,11 +66,17 @@
 
   async function readCloudCounts() {
     const counts = {};
+    const errors = {};
     for (const [resource] of BUSINESS_RESOURCES) {
-      const rows = await window.GVData.selectResource(resource);
-      counts[resource] = Array.isArray(rows) ? rows.length : 0;
+      try {
+        const rows = await window.GVData.selectResource(resource);
+        counts[resource] = Array.isArray(rows) ? rows.length : 0;
+      } catch (error) {
+        counts[resource] = null;
+        errors[resource] = String(error?.message || error);
+      }
     }
-    return counts;
+    return { counts, errors };
   }
 
   async function loadStaticMasterData(next) {
@@ -78,21 +84,33 @@
     if (!response.ok) throw new Error(`Recovery backup HTTP ${response.status}`);
     const backup = await response.json();
 
-    if (!hasRows(next.clients) && hasRows(backup.clients)) next.clients = backup.clients;
-    if (!hasRows(next.products) && hasRows(backup.products)) next.products = backup.products;
-    if (!hasRows(next.employees) && hasRows(backup.employees)) next.employees = backup.employees;
+    if (!Array.isArray(next.clients) || next.clients.length === 0) {
+      if (Array.isArray(backup.clients) && backup.clients.length) next.clients = backup.clients;
+    }
+    if (!Array.isArray(next.products) || next.products.length === 0) {
+      if (Array.isArray(backup.products) && backup.products.length) next.products = backup.products;
+    }
+    if (!Array.isArray(next.employees) || next.employees.length === 0) {
+      if (Array.isArray(backup.employees) && backup.employees.length) next.employees = backup.employees;
+    }
     next.orders = mergeMissingRows(next.orders, RECOVERED_ORDERS);
     updateOrderCounter(next);
     return backup;
   }
 
-  async function promoteRecoveredState(next) {
-    const counts = await readCloudCounts();
-    const cloudRows = Object.values(counts).reduce((sum, count) => sum + count, 0);
-    if (cloudRows !== 0) return { attempted: false, reason: "cloud-not-empty", counts };
+  async function promoteRecoveredState(next, cloudSnapshot) {
+    const counts = cloudSnapshot.counts;
+    const errors = cloudSnapshot.errors;
+
+    const successfulCounts = Object.values(counts).filter((value) => Number.isFinite(value));
+    const successfulCloudRows = successfulCounts.reduce((sum, count) => sum + count, 0);
+    const hasUnknownCloudResources = Object.values(counts).some((value) => value === null);
+    if (successfulCloudRows !== 0 || hasUnknownCloudResources) {
+      return { attempted: false, reason: hasUnknownCloudResources ? "cloud-read-incomplete" : "cloud-not-empty", counts, errors };
+    }
 
     const localRows = countBusinessRows(next);
-    if (localRows === 0) return { attempted: false, reason: "no-local-recovery-data", counts };
+    if (localRows === 0) return { attempted: false, reason: "no-local-recovery-data", counts, errors };
 
     const pushed = [];
     const failures = {};
@@ -115,11 +133,12 @@
       emergencyRecoveryStatus: Object.keys(failures).length ? "partial" : "complete",
       emergencyRecoveryPushedResources: pushed,
       emergencyRecoveryFailures: failures,
+      emergencyRecoveryReadErrors: errors,
       emergencyRecoveryRecoveredOrders: RECOVERED_ORDERS.length
     });
     replaceAndPersist(next);
 
-    return { attempted: true, pushed, failures, counts };
+    return { attempted: true, pushed, failures, counts, errors };
   }
 
   async function run() {
@@ -131,12 +150,14 @@
       const next = stateSnapshot();
       if (!next) return;
 
-      const counts = await readCloudCounts();
-      const cloudRows = Object.values(counts).reduce((sum, count) => sum + count, 0);
-      if (cloudRows !== 0) return;
+      const cloudSnapshot = await readCloudCounts();
+      const successfulCounts = Object.values(cloudSnapshot.counts).filter((value) => Number.isFinite(value));
+      const successfulCloudRows = successfulCounts.reduce((sum, count) => sum + count, 0);
+      const hasUnknownCloudResources = Object.values(cloudSnapshot.counts).some((value) => value === null);
+      if (successfulCloudRows !== 0 || hasUnknownCloudResources) return;
 
       await loadStaticMasterData(next);
-      await promoteRecoveredState(next);
+      await promoteRecoveredState(next, cloudSnapshot);
     } catch (error) {
       console.warn("GotaVita emergency recovery preserved local state:", error?.message || error);
     } finally {
