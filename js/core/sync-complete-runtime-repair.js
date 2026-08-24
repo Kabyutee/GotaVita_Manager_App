@@ -60,13 +60,20 @@
   async function canonicalSnapshotIsSafe(resource, previous, normalized) {
     if (!Array.isArray(previous) || !previous.length) return true;
     if (normalized.length >= previous.length) return true;
-    if (resource !== "orders") return true;
+
+    // A passive cloud read that suddenly returns an empty or smaller snapshot
+    // is not sufficient evidence that populated local state was deleted.
+    // Never turn a populated application resource into an empty collection.
+    if (normalized.length === 0) return false;
+
+    if (resource !== "orders") return false;
     if (!window.GVData?.selectResource) return false;
 
     try {
       const tombstones = await window.GVData.selectResource("deleted_orders");
       const deletedIds = new Set((Array.isArray(tombstones) ? tombstones : []).map(idOf).filter(Boolean));
-      const missing = previous.map(idOf).filter(Boolean).filter((id) => !mapRows(normalized).has(id));
+      const normalizedMap = mapRows(normalized);
+      const missing = previous.map(idOf).filter(Boolean).filter((id) => !normalizedMap.has(id));
       return missing.length > 0 && missing.every((id) => deletedIds.has(id));
     } catch (_) {
       return false;
