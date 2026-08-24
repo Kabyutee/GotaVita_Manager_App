@@ -143,6 +143,18 @@
     return conflictPromise;
   }
 
+  function ensureEmergencyRecoveryLoaded() {
+    if (typeof document === "undefined") return;
+    if (window.GVEmergencyRecovery) return;
+    if (document.querySelector('script[data-gv-emergency-recovery="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/core/emergency-recovery.js";
+    script.defer = true;
+    script.dataset.gvEmergencyRecovery = "true";
+    script.onerror = () => console.warn("GotaVita emergency recovery failed to load.");
+    (document.head || document.documentElement).appendChild(script);
+  }
+
   async function hydrateFirstBaseline(integration) {
     if (!window.GVData?.supportedResources || typeof window.GVData.selectResource !== "function") return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
@@ -252,6 +264,7 @@
   window.GVSync = Object.freeze({ enqueue, flush, poll, startPolling, stopPolling, queue, meta: getMeta, clear: clearQueue, render: renderRemoteState });
 
   window.addEventListener("DOMContentLoaded", () => {
+    ensureEmergencyRecoveryLoaded();
     if (typeof window.stopSyncReliability === "function") window.stopSyncReliability();
     window.syncChangedResources = () => window.GVSync.flush();
     window.syncNow = () => window.GVSync.flush();
@@ -260,5 +273,8 @@
   }, { once: true });
 
   attachLifecycle();
-  if (window.__GV_APP_READY === true) startPolling();
+  if (window.__GV_APP_READY === true) {
+    ensureEmergencyRecoveryLoaded();
+    startPolling();
+  }
 })();
