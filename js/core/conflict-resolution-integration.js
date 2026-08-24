@@ -108,6 +108,11 @@
   function supportedResources() {
     if (!window.GVData) return [];
     return Object.keys(RESOURCE_MAP).filter((resource) => {
+      // audit_logs is an append-only history stream, not application state.
+      // Never hydrate the full cloud audit table into LocalStorage-backed state
+      // or include it in the canonical whole-state reconciliation transaction.
+      if (resource === "auditLog") return false;
+
       const cloudName = resourceCloudName(resource);
       return typeof window.GVData.selectResource === "function" &&
         typeof window.GVData.upsertResource === "function" &&
@@ -255,7 +260,7 @@
     }
   }
 
-  window.GVConflictIntegration = Object.freeze({ run, buildResolutionPlan, summarize, getBaseline, setBaseline, resourceCloudName, resourceStateName });
+  window.GVConflictIntegration = Object.freeze({ run, buildResolutionPlan, summarize, getBaseline, setBaseline, resourceCloudName, resourceStateName, supportedResources });
   window.addEventListener("gv-auth-state-changed", (event) => {
     if (event?.detail?.authenticated === true) setTimeout(() => run(false).catch((error) => console.warn("GotaVita universal sync:", error?.message || error)), 0);
   });
