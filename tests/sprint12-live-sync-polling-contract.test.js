@@ -29,6 +29,7 @@ const context = {
   setTimeout,
   document: undefined,
   window: {
+    __GV_APP_READY: true,
     GVAuth: { isAuthorized: () => true },
     GVConflictIntegration: {
       getBaseline: () => ({ baseline: { baselineAt: new Date().toISOString(), rows: [] } }),
@@ -54,11 +55,11 @@ context.window.window = context.window;
 vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 
 (async () => {
-  // Authorized startup performs one immediate canonical pull even with an empty queue.
+  // The coordinator now requires the application lifecycle to be ready before polling begins.
   await Promise.resolve();
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
+  assert.equal(syncCalls, 1, "Ready startup must perform an initial remote pull");
 
   const result = await context.window.GVSync.flush();
 
@@ -68,7 +69,7 @@ vm.runInNewContext(source, context, { filename: "sync-manager.js" });
   assert.equal(queue.length, 0, "Polling layer must not mutate an empty queue");
   assert.equal(renderCalls, 0, "Gateway/auth success without remote state change must not rebuild the UI");
 
-  assert.ok(scheduled, "Authorized startup must install polling");
+  assert.ok(scheduled, "Ready startup must install polling");
   assert.equal(scheduled.ms, 5000, "Polling interval must remain bounded at 5 seconds");
 
   await scheduled.handler();
