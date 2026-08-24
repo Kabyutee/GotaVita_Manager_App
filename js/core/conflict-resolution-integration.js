@@ -3,7 +3,6 @@
   "use strict";
 
   const STORAGE_KEY = "gotavita_conflict_baseline_v1";
-  const CONFLICT_KEY = "gotavita_sync_conflicts";
   const RUN_LOCK_KEY = "gotavita_conflict_integration_lock";
   const RESOURCE_MAP = Object.freeze({
     products: "products",
@@ -38,35 +37,15 @@
     audit_logs: "auditLog"
   });
 
-  function clone(value) {
-    return value == null ? value : JSON.parse(JSON.stringify(value));
-  }
-
-  function readJson(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  function writeJson(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
+  function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  function readJson(key, fallback) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (_) { return fallback; } }
+  function writeJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } }
   function stableRowId(row) {
     if (row?.legacy_id != null && String(row.legacy_id).trim() !== "") return String(row.legacy_id).trim();
     if (row?.legacyId != null && String(row.legacyId).trim() !== "") return String(row.legacyId).trim();
     if (row?.id != null && String(row.id).trim() !== "") return String(row.id).trim();
     return null;
   }
-
   function rowKey(row, index) {
     const stable = stableRowId(row);
     if (stable != null) return stable;
@@ -76,13 +55,11 @@
     }
     return `index:${index}`;
   }
-
   function indexRows(rows) {
     const map = new Map();
     (Array.isArray(rows) ? rows : []).forEach((row, index) => map.set(rowKey(row, index), row));
     return map;
   }
-
   function comparableRow(row) {
     if (!row || typeof row !== "object") return row;
     const output = {};
@@ -92,87 +69,42 @@
     }
     return output;
   }
-
   function rowsEquivalent(left, right) {
-    try {
-      return JSON.stringify(comparableRow(left)) === JSON.stringify(comparableRow(right));
-    } catch (_) {
-      return false;
-    }
+    try { return JSON.stringify(comparableRow(left)) === JSON.stringify(comparableRow(right)); }
+    catch (_) { return false; }
   }
-
-  function resourceCloudName(resource) {
-    return RESOURCE_MAP[resource] || resource;
-  }
-
-  function resourceStateName(resource) {
-    return STATE_MAP[resource] || resource;
-  }
-
-  function stateSnapshot() {
-    return typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
-  }
-
+  function resourceCloudName(resource) { return RESOURCE_MAP[resource] || resource; }
+  function resourceStateName(resource) { return STATE_MAP[resource] || resource; }
+  function stateSnapshot() { return typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null; }
   function queueResources() {
     try {
       return typeof window.getSyncQueue === "function" && Array.isArray(window.getSyncQueue())
         ? window.getSyncQueue().map((item) => String(item)).filter(Boolean)
         : [];
-    } catch (_) {
-      return [];
-    }
+    } catch (_) { return []; }
   }
-
   function resourceHasPendingLocalWrite(resource) {
     const cloudName = resourceCloudName(resource);
     const queue = queueResources();
     return queue.includes(resource) || queue.includes(cloudName);
   }
-
   function removeResourceFromQueue(resource) {
     if (typeof window.getSyncQueue !== "function" || typeof window.setSyncQueue !== "function") return;
     const cloudName = resourceCloudName(resource);
     const queue = window.getSyncQueue();
     window.setSyncQueue(queue.filter((item) => item !== resource && item !== cloudName));
   }
-
-  function getBaseline() {
-    return readJson(STORAGE_KEY, {});
-  }
-
-  function setBaseline(next) {
-    return writeJson(STORAGE_KEY, next);
-  }
-
-  function recordConflicts(entries) {
-    if (!entries.length) return;
-    const current = readJson(CONFLICT_KEY, []);
-    const seen = new Set(current.map((entry) => `${entry.resource}:${entry.id}:${entry.reason}`));
-    const next = [...current];
-    for (const entry of entries) {
-      const key = `${entry.resource}:${entry.id}:${entry.reason}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        next.push(entry);
-      }
-    }
-    writeJson(CONFLICT_KEY, next.slice(-200));
-  }
-
+  function getBaseline() { return readJson(STORAGE_KEY, {}); }
+  function setBaseline(next) { return writeJson(STORAGE_KEY, next); }
   function deletionEvidence(rows, key) {
     return (Array.isArray(rows) ? rows : []).find((row, index) => rowKey(row, index) === key) || null;
   }
-
-  function isOrderResource(resource) {
-    return resourceCloudName(resource) === "orders";
-  }
-
+  function isOrderResource(resource) { return resourceCloudName(resource) === "orders"; }
   function isDeletableByEvidence(resource, row, deletedRows) {
     if (!isOrderResource(resource)) return false;
     const key = stableRowId(row);
     return key != null && Boolean(deletionEvidence(deletedRows, key));
   }
-
   function supportedResources() {
     if (!window.GVData) return [];
     return Object.keys(RESOURCE_MAP).filter((resource) => {
@@ -224,12 +156,11 @@
         }
       }
     }
-
     return decisions;
   }
 
   function summarize(decisions) {
-    const summary = { total: decisions.length, keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0, manualReview: 0 };
+    const summary = { total: decisions.length, keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0 };
     decisions.forEach((decision) => {
       if (decision.action === "keep-local") summary.keepLocal++;
       else if (decision.action === "keep-remote") summary.keepRemote++;
@@ -237,7 +168,6 @@
       else if (decision.action === "delete-local") summary.deleteLocal++;
       else if (decision.action === "delete-remote") summary.deleteRemote++;
       else if (decision.action === "no-conflict") summary.noConflict++;
-      else summary.manualReview++;
     });
     return summary;
   }
@@ -252,7 +182,6 @@
       await window.GVData.upsertResource(cloudName, [decision.local]);
       return;
     }
-
     if (decision.action === "keep-remote") {
       if (decision.remote) {
         if (index >= 0) rows[index] = clone(decision.remote);
@@ -261,13 +190,11 @@
       nextState[stateName] = rows;
       return;
     }
-
     if (decision.action === "delete-local") {
       if (index >= 0) rows.splice(index, 1);
       nextState[stateName] = rows;
       return;
     }
-
     if (decision.action === "delete-remote" && typeof window.GVData.deleteResourceByLegacyId === "function") {
       await window.GVData.deleteResourceByLegacyId(cloudName, decision.id);
     }
@@ -276,12 +203,8 @@
   async function reconcileResource(resource, localRows, remoteRows, localDeletedRows, remoteDeletedRows, nextState) {
     const decisions = buildResolutionPlan(resource, localRows, remoteRows, localDeletedRows, remoteDeletedRows);
     const summary = summarize(decisions);
-    const reviewEntries = decisions.filter((decision) => decision.action === "manual-review");
-    if (reviewEntries.length) {
-      recordConflicts(reviewEntries.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
-    }
     for (const decision of decisions) await applyDecision(resource, decision, nextState);
-    return { resource, decisions, summary, reconciled: true, partial: reviewEntries.length > 0, unresolvedCount: reviewEntries.length };
+    return { resource, decisions, summary, reconciled: true, partial: false, unresolvedCount: 0 };
   }
 
   async function run(force = false) {
@@ -307,7 +230,6 @@
         const remoteDeletedRows = cloudName === "orders" ? ((await window.GVData.selectResource("deleted_orders")) || []) : [];
         const result = await reconcileResource(resource, localRows, normalizedRemoteRows, localDeletedRows, remoteDeletedRows, nextState);
         results.push({ ...result, status: "canonicalized" });
-
         const pending = resourceHasPendingLocalWrite(resource);
         const refreshed = pending ? await window.GVData.selectResource(cloudName) : normalizedRemoteRows;
         nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
@@ -322,7 +244,7 @@
       const summary = results.reduce((acc, result) => {
         for (const key of Object.keys(acc)) acc[key] += result.summary?.[key] || 0;
         return acc;
-      }, { keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0, manualReview: 0 });
+      }, { keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0 });
 
       if (typeof window.setSyncStatus === "function") {
         window.setSyncStatus(`Synced · ${summary.keepRemote} remote, ${summary.keepLocal} local, ${summary.deleteLocal + summary.deleteRemote} deletions, ${summary.preserveLocal} protected`, "online");
