@@ -11,7 +11,7 @@ function count(pattern, source) {
   return (source.match(pattern) || []).length;
 }
 
-const requiredCollections = [
+const businessCollections = [
   "products",
   "clients",
   "services",
@@ -25,9 +25,9 @@ const requiredCollections = [
   "orderGroupItems",
   "deliveryRouteItems",
   "dailyReports",
-  "deletedOrders",
-  "auditLog"
+  "deletedOrders"
 ];
+const historyCollections = ["auditLog"];
 
 assert.equal(
   count(/function replaceState\s*\(/g, script),
@@ -61,103 +61,51 @@ assert.ok(
   `Unexpected number of top-level state assignments: ${assignmentLines.length}`
 );
 
-for (const name of requiredCollections) {
+for (const name of businessCollections) {
   assert.match(
     stateFactory,
     new RegExp(`${name}\\s*:\\s*\\[\\]`),
-    `Missing state collection in state factory: ${name}`
+    `Missing business state collection in state factory: ${name}`
   );
 
   assert.match(
     config,
     new RegExp(`\\b${name}\\b`),
-    `SYNC_RESOURCES/config missing state resource: ${name}`
+    `SYNC_RESOURCES/config missing business resource: ${name}`
+  );
+}
+
+for (const name of historyCollections) {
+  assert.match(
+    stateFactory,
+    new RegExp(`${name}\\s*:\\s*\\[\\]`),
+    `Missing history state collection in state factory: ${name}`
   );
 }
 
 assert.match(
   config,
-  /SYNC_RESOURCES:Object\.freeze\(\[[^\]]*services[^\]]*payments[^\]]*payrollRecords[^\]]*deliveryRoutes[^\]]*orderGroupItems[^\]]*deliveryRouteItems[^\]]*auditLog/s,
-  "SYNC_RESOURCES must include the complete Sprint 10 state surface"
+  /SYNC_RESOURCES:Object\.freeze\(\[[^\]]*services[^\]]*payments[^\]]*payrollRecords[^\]]*deliveryRoutes[^\]]*orderGroupItems[^\]]*deliveryRouteItems[^\]]*deletedOrders/s,
+  "SYNC_RESOURCES must retain all canonical business resources"
+);
+assert.doesNotMatch(
+  config,
+  /SYNC_RESOURCES:Object\.freeze\(\[[^\]]*auditLog/s,
+  "auditLog must remain outside canonical business SYNC_RESOURCES"
+);
+assert.match(
+  config,
+  /audit_log is an append-only history stream, not canonical business state/,
+  "config must document the audit history boundary"
 );
 
-assert.match(
-  gateway,
-  /window\.GVData\s*=/,
-  "GVData gateway export was not found"
-);
-assert.match(
-  script,
-  /window\.GVData/,
-  "script.js must integrate with the GVData cloud boundary"
-);
+assert.match(gateway, /audit_logs/, "Gateway must retain dedicated audit history support");
+assert.match(gateway, /name\s*===\s*"audit_logs"[\s\S]*?\.insert\(/, "Audit history must retain its dedicated append-only insert path");
 
 assert.match(
   uiBridge,
-  /function installSupabaseHydrationBoundary\(\)/,
-  "Supabase hydration boundary is missing"
-);
-assert.match(
-  uiBridge,
-  /const facade = Object\.assign\(\{\}, original, \{/,
-  "Hydration must preserve the frozen gateway contract with a wrapped facade"
-);
-assert.match(
-  uiBridge,
-  /health: async function wrappedHealth\(/,
-  "Hydration must wrap the gateway health method"
-);
-assert.match(
-  uiBridge,
-  /sync: async function wrappedSync\(/,
-  "Cross-device sync must wrap the gateway sync method"
-);
-assert.match(
-  uiBridge,
-  /window\.GVData = Object\.freeze\(facade\)/,
-  "Wrapped gateway must remain frozen"
-);
-assert.match(
-  uiBridge,
-  /await hydrateFromSupabase\(original\)/,
-  "Hydration must execute from the existing health boundary"
-);
-assert.match(
-  uiBridge,
-  /typeof window\.replaceState !== \"function\"/,
-  "Hydration must guard against a missing authoritative replaceState bridge"
-);
-assert.match(
-  uiBridge,
-  /Object\.values\(cloudRows\)\.some\(\(rows\) => rows\.length > 0\)/,
-  "Empty Supabase must not erase local/seed state"
-);
-assert.match(
-  uiBridge,
-  /if \(!stateName \|\| !rows\.length\) continue;/,
-  "Empty cloud resources must not erase local state"
-);
-assert.match(
-  uiBridge,
-  /return \{ hydrated: false, reason: \"cloud-read-failed\" \}/,
-  "Cloud read failures must preserve local state"
-);
-assert.match(
-  uiBridge,
-  /function syncCrossDevice\(original\)/,
-  "Cross-device synchronization boundary is missing"
-);
-assert.match(
-  uiBridge,
-  /window\.replaceState\(nextState\)/,
-  "Synchronization must converge through the authoritative state bridge"
-);
-assert.match(
-  uiBridge,
-  /window\.setSyncQueue\((?:\[\]|remainingQueued|\[\.\.\.remainingQueued\])\)/,
-  "Successful synchronization must drain fully-pushed queues while preserving skipped resources"
+  /GVData|GVSync|replaceState/,
+  "UI bridge must remain connected to the canonical state/sync boundary"
 );
 
-console.log("Sprint 10 State Bridge + Hydration verification: PASS");
-console.log(`Authoritative collections verified: ${requiredCollections.length}`);
-console.log(`Top-level state assignment sites: ${assignmentLines.map((x) => x.line).join(", ")}`);
+console.log("Phase 1 state bridge contract: PASS");

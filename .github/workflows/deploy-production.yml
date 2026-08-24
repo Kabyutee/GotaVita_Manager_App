@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -17,12 +20,11 @@ env:
   PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
 
 jobs:
-  deploy-production:
+  verify:
     runs-on: ubuntu-latest
-    name: Verify main and deploy to Cloudflare
-
+    name: Verify synchronization and regression contracts
     steps:
-      - name: Checkout exact main commit
+      - name: Checkout exact commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -30,12 +32,15 @@ jobs:
       - name: Verify JavaScript syntax
         run: |
           node --check script.js
+          node --check js/core/config.js
           node --check js/core/state.js
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
           node --check js/core/conflict-resolution-integration.js
           node --check tests/sprint21-universal-canonical-sync-behavior.test.js
+          node --check tests/sprint21-audit-log-canonical-boundary.test.js
+          node --check tests/sprint21-whole-sync-hardening-contract.test.js
           node --check js/modules/groups-routes.js
           node --check worker.js
 
@@ -68,6 +73,19 @@ jobs:
           node tests/sprint14-order-edit-group-contract.test.js
           node tests/sprint15-production-regression-gate-contract.test.js
           node tests/sprint21-universal-canonical-sync-behavior.test.js
+          node tests/sprint21-audit-log-canonical-boundary.test.js
+          node tests/sprint21-whole-sync-hardening-contract.test.js
+
+  deploy-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    name: Verify main and deploy to Cloudflare
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Deploy exact main commit to Cloudflare
         id: deploy

@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const assert = require("node:assert/strict");
 
+const config = fs.readFileSync("js/core/config.js", "utf8");
 const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
 const conflict = fs.readFileSync("js/core/conflict-resolution-integration.js", "utf8");
 const authority = fs.readFileSync("js/core/sync-authority.js", "utf8");
@@ -17,6 +18,11 @@ assert.match(manager, /__GV_SYNC_TRANSACTION_ACTIVE = true/);
 assert.match(manager, /window\.GVSync = Object\.freeze/);
 assert.match(manager, /startPolling/);
 assert.match(manager, /stopPolling/);
+assert.match(manager, /if \(resource === "audit_logs"\) continue/);
+
+assert.match(config, /SYNC_RESOURCES:Object\.freeze\(\[/);
+assert.doesNotMatch(config, /SYNC_RESOURCES:[^\n]*auditLog/);
+assert.doesNotMatch(config, /SYNC_RESOURCES:[^\n]*audit_logs/);
 
 assert.match(conflict, /remote-canonical/);
 assert.match(conflict, /pending-local-write/);
@@ -24,6 +30,9 @@ assert.match(conflict, /pending-local-create-or-update/);
 assert.match(conflict, /preserve-local/);
 assert.match(conflict, /explicit-remote-deletion-evidence/);
 assert.match(conflict, /explicit-local-deletion-evidence/);
+assert.match(conflict, /audit_logs/);
+assert.match(conflict, /resource === "auditLog"/);
+assert.match(conflict, /return false/);
 assert.match(conflict, /await window\.GVData\.upsertResource/);
 assert.match(conflict, /await window\.GVData\.selectResource/);
 assert.match(conflict, /window\.replaceState\(nextState\)/);
