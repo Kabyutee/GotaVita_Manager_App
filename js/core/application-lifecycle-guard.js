@@ -7,13 +7,18 @@
 
   function safeHealth() {
     return window.GVAuth?.requireManagerSession?.()
-      .then((auth) => ({
-        ok: true,
-        mode: "supabase",
-        configured: true,
-        authenticated: true,
-        companyId: auth?.profile?.company_id || null
-      }))
+      .then((auth) => {
+        const configured = auth?.configured === true;
+        const authenticated = auth?.authenticated === true;
+        return {
+          ok: configured && authenticated,
+          mode: "supabase",
+          configured,
+          authenticated,
+          companyId: auth?.profile?.company_id || null,
+          error: configured && authenticated ? null : "Manager session unavailable."
+        };
+      })
       .catch((error) => ({
         ok: false,
         mode: "supabase",
@@ -53,9 +58,7 @@
       installedAt: new Date().toISOString()
     });
 
-    try {
-      window.GVSync?.stopPolling?.();
-    } catch (_) {}
+    try { window.GVSync?.stopPolling?.(); } catch (_) {}
 
     installed = true;
     return true;

@@ -24,6 +24,8 @@ const assert = require("node:assert/strict");
   assert.match(stateSource, /window\.addEventListener\("gv-auth-state-changed"/);
   assert.match(stateSource, /__GV_APP_READY/);
   assert.match(stateSource, /gateDomReadyListener/);
+  assert.match(stateSource, /pendingDomReadyHandlers/);
+  assert.match(stateSource, /maybeReleaseAppReady/);
   assert.match(stateSource, /scheduleAuthorizedHydration\(\)\s*\{[\s\S]*return false/);
 
   let originalHealthCalled = 0;
@@ -41,7 +43,7 @@ const assert = require("node:assert/strict");
       flush: async () => { syncCalled++; return { ok: true }; }
     },
     GVAuth: {
-      requireManagerSession: async () => ({ profile: { company_id: "company-1" } })
+      requireManagerSession: async () => ({ configured: true, authenticated: true, profile: { company_id: "company-1" } })
     },
     location: { protocol: "https:" },
   };
@@ -61,7 +63,9 @@ const assert = require("node:assert/strict");
   assert.equal(windowObj.GVApplicationLifecycleGuard.install(), true);
   assert.deepEqual(windowObj.GVData.supportedResources(), ["clients", "orders"]);
   assert.equal(pollingStopped, 1);
-  await windowObj.GVData.health();
+  const health = await windowObj.GVData.health();
+  assert.equal(health.ok, true);
+  assert.equal(health.authenticated, true);
   assert.equal(originalHealthCalled, 0, "health boundary must not invoke the old mutating gateway health wrapper");
   const bootSync = await windowObj.GVData.sync();
   assert.equal(bootSync.status, "booting");
