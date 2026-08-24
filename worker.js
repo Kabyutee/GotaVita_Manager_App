@@ -105,11 +105,20 @@ async function serveApplicationAsset(request, env) {
   // paired with an older browser-cached synchronization stack.
   html = bustLocalScriptUrls(html, releaseSha);
 
+  // The cloud snapshot safety gate must execute before sync-manager.js starts
+  // its immediate five-second polling cycle. This is a fail-closed boundary:
+  // a sudden empty/sharply reduced cloud snapshot cannot enter reconciliation.
+  const syncManagerMarker = `<script src="js/core/sync-manager.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const safetyGuardInjected = `<script src="/js/core/sync-cloud-snapshot-safety.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(syncManagerMarker) && !html.includes(safetyGuardInjected)) {
+    html = html.replace(syncManagerMarker, `${safetyGuardInjected}\n${syncManagerMarker}`);
+  }
+
   // The reconciler must be loaded before ui-bridge captures GVData as its
   // immutable original gateway. This makes every subsequent cross-device
   // upsert pass through order-level write reconciliation.
   const bridgeMarker = `<script src="js/core/ui-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
-  const reconcilerInjected = `<script src="js/core/sync-cloud-write-reconciler.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const reconcilerInjected = `<script src="/js/core/sync-cloud-write-reconciler.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(bridgeMarker) && !html.includes(reconcilerInjected)) {
     html = html.replace(bridgeMarker, `${reconcilerInjected}\n${bridgeMarker}`);
   }
