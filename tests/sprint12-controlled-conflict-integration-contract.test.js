@@ -1,11 +1,13 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const source = fs.readFileSync(
-  "js/core/conflict-resolution-integration.js",
-  "utf8"
-);
+const source = fs.readFileSync("js/core/conflict-resolution-integration.js", "utf8");
 
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+const queueState = { items: [] };
 const context = {
   console,
   navigator: { onLine: true },
@@ -14,38 +16,18 @@ const context = {
   localStorage: { getItem() { return null; }, setItem() {} },
   window: {
     addEventListener() {},
+    getSyncQueue: () => queueState.items,
+    setSyncQueue(next) { queueState.items = Array.isArray(next) ? next : []; },
     GVData: {
       isConfigured: () => true,
       supportedResources: () => [],
       selectResource: async () => [],
       upsertResource: async () => [],
+      deleteResourceByLegacyId: async () => [],
       requireAuthenticatedManager: async () => ({ authenticated: true })
     },
     GVConflictDetector: {
-      rowKey: (row) => row?.id == null ? null : String(row.id),
-      resolveConflictPolicy(local, remote, baselineAt) {
-        const baseline = Date.parse(baselineAt);
-        const lu = local?.updatedAt ? Date.parse(local.updatedAt) : null;
-        const ru = remote?.updatedAt ? Date.parse(remote.updatedAt) : null;
-        const ld = local?.deleted === true;
-        const rd = remote?.deleted === true;
-        const ldt = local?.deletedAt ? Date.parse(local.deletedAt) : null;
-        const rdt = remote?.deletedAt ? Date.parse(remote.deletedAt) : null;
-        if (![baseline, lu, ru].every(Number.isFinite)) return { action: "manual-review", reason: "indeterminate", mutation: false };
-        if (ld !== rd) {
-          if (ldt != null && ldt > ru) return { action: "keep-local", reason: "local-deletion-newer", mutation: false };
-          if (rdt != null && rdt > lu) return { action: "keep-remote", reason: "remote-deletion-newer", mutation: false };
-          return { action: "manual-review", reason: "deletion-vs-update-ambiguous", mutation: false };
-        }
-        const lc = lu > baseline;
-        const rc = ru > baseline;
-        if (!lc && !rc) return { action: "no-conflict", reason: "unchanged-since-baseline", mutation: false };
-        if (lc && !rc) return { action: "keep-local", reason: "local-only-change", mutation: false };
-        if (rc && !lc) return { action: "keep-remote", reason: "remote-only-change", mutation: false };
-        if (lu > ru) return { action: "keep-local", reason: "local-newer", mutation: false };
-        if (ru > lu) return { action: "keep-remote", reason: "remote-newer", mutation: false };
-        return { action: "manual-review", reason: "same-timestamp", mutation: false };
-      }
+      rowKey: (row) => row?.legacy_id == null ? String(row?.id ?? "") : String(row.legacy_id)
     }
   }
 };
@@ -53,78 +35,59 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context);
 
-const baselineAt = "2026-08-20T01:00:00.000Z";
-const baselineRows = [
-  { id: "newer-local", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
-  { id: "newer-remote", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
-  { id: "same-time", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 },
-  { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
-];
+const integration = context.window.GVConflictIntegration;
+assert(integration, "Universal sync integration must initialize");
 
-const plan = context.window.GVConflictIntegration.buildResolutionPlan(
-  [
-    { id: "local-only", updatedAt: "2026-08-20T02:00:00.000Z", value: 1 },
-    { id: "newer-local", updatedAt: "2026-08-20T03:00:00.000Z", value: 2 },
-    { id: "newer-remote", updatedAt: "2026-08-20T02:00:00.000Z", value: 3 },
-    { id: "same-time", updatedAt: "2026-08-20T02:00:00.000Z", value: 4 },
-    { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
-  ],
-  [
-    { id: "remote-only", updatedAt: "2026-08-20T02:00:00.000Z", value: 6 },
-    { id: "newer-local", updatedAt: "2026-08-20T02:00:00.000Z", value: 0 },
-    { id: "newer-remote", updatedAt: "2026-08-20T03:00:00.000Z", value: 0 },
-    { id: "same-time", updatedAt: "2026-08-20T02:00:00.000Z", value: 0 },
-    { id: "unchanged", updatedAt: "2026-08-20T00:00:00.000Z", value: 5 }
-  ],
-  baselineAt,
-  [],
-  [],
-  baselineRows
-);
+const local = { legacy_id: "client-1", name: "Alberto", phone: "old" };
+const remote = { ...local, phone: "new" };
 
-function action(id) {
-  return plan.find((x) => x.id === id)?.action;
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-assert(action("local-only") === "keep-local", "Local-only change must keep local");
-assert(action("remote-only") === "keep-remote", "Remote-only change must keep remote");
-assert(action("newer-local") === "keep-local", "Local newer must keep local");
-assert(action("newer-remote") === "keep-remote", "Remote newer must keep remote");
-assert(action("same-time") === "manual-review", "Same timestamp must require manual review");
-assert(action("unchanged") === "no-conflict", "Unchanged records must remain conflict-free");
-
-const deletionPlan = context.window.GVConflictIntegration.buildResolutionPlan(
-  [],
-  [{ id: "delete-local", updatedAt: "2026-08-20T01:30:00.000Z", value: 1 }],
-  baselineAt,
-  [{ id: "delete-local", archivedAt: "2026-08-20T02:00:00.000Z" }],
-  [],
-  [{ id: "delete-local", updatedAt: "2026-08-20T01:00:00.000Z", value: 0 }]
-);
-assert(deletionPlan[0].action === "keep-local", "Newer local deletion must keep local");
-
-const before = JSON.stringify(plan);
-const summary = context.window.GVConflictIntegration.summarize(plan);
-const after = JSON.stringify(plan);
-assert(before === after, "Planning must not mutate decisions or source rows");
-assert(summary.manualReview >= 1, "Ambiguous cases must be preserved for manual review");
-assert(summary.keepLocal >= 2 && summary.keepRemote >= 2, "Plan must contain both unambiguous winner directions");
-
+queueState.items = [];
 assert(
-  /if\s*\(manual\.length\)\s*(?:\{[\s\S]*?recordConflicts\(|recordConflicts\()/.test(source),
-  "Manual conflicts must be recorded without aborting the resource reconciliation"
+  integration.buildResolutionPlan("clients", [local], [remote], [], [])[0].action === "keep-remote",
+  "Remote canonical edit must win when no local write is pending"
+);
+
+queueState.items = ["clients"];
+assert(
+  integration.buildResolutionPlan("clients", [local], [remote], [], [])[0].action === "keep-local",
+  "Pending local edit must retain local authority"
 );
 assert(
-  /for\s*\(const decision of decisions\)/.test(source),
-  "Safe decisions must still be applied when a resource contains manual conflicts"
+  integration.buildResolutionPlan("clients", [{ legacy_id: "client-2", name: "New" }], [], [], [])[0].action === "keep-local",
+  "Pending local create must remain local until uploaded"
 );
+
+queueState.items = [];
 assert(
-  /partial:\s*manual\.length\s*>\s*0/.test(source),
-  "Partially reconciled resources must retain an explicit unresolved marker"
+  integration.buildResolutionPlan("clients", [local], [], [], [])[0].action === "preserve-local",
+  "Missing Client without deletion evidence must be preserved"
+);
+
+assert(
+  integration.buildResolutionPlan("orders", [{ legacy_id: "0000176" }], [], [], [])[0].action === "preserve-local",
+  "Missing Order without tombstone must be preserved"
+);
+
+assert(
+  integration.buildResolutionPlan(
+    "orders",
+    [{ legacy_id: "0000176" }],
+    [],
+    [],
+    [{ legacy_id: "0000176", archivedAt: "2026-08-20T03:00:00.000Z" }]
+  )[0].action === "delete-local",
+  "Order deletion must require explicit remote tombstone evidence"
+);
+
+assert(
+  integration.buildResolutionPlan(
+    "orders",
+    [],
+    [{ legacy_id: "0000176" }],
+    [{ legacy_id: "0000176", archivedAt: "2026-08-20T03:00:00.000Z" }],
+    []
+  )[0].action === "delete-remote",
+  "A local Order tombstone must prevent resurrection on the receiving cloud"
 );
 
 console.log("Sprint 12 controlled conflict integration contract: PASS");
