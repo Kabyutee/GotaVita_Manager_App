@@ -136,4 +136,8 @@
       setTimeout(() => run().catch(() => {}), 0);
     }
   });
+
+  if (window.__GV_APP_READY === true && window.GVAuth?.isAuthorized?.() === true) {
+    setTimeout(() => run().catch(() => {}), 0);
+  }
 })();
