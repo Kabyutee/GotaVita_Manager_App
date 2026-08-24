@@ -25,8 +25,9 @@
   }
 
   function queue() {
-    try { if (typeof window.getSyncQueue === "function") return window.getSyncQueue(); }
-    catch (_) {}
+    try {
+      if (typeof window.getSyncQueue === "function") return window.getSyncQueue();
+    } catch (_) {}
     const legacy = readJson(QUEUE_KEY, []);
     return Array.isArray(legacy) ? legacy : [];
   }
@@ -55,7 +56,6 @@
         return resources[0] || "state";
       }
     } catch (_) {}
-
     const current = queue();
     current.push({ id: createQueueId(), entity, action, payload, createdAt: new Date().toISOString(), attempts: 0 });
     writeJson(QUEUE_KEY, current);
@@ -67,8 +67,10 @@
   function authorized() { try { return window.GVAuth?.isAuthorized?.() === true; } catch (_) { return false; } }
 
   function activeEditableControl() {
-    try { const active = document.activeElement; return active?.closest?.("input:not([type='checkbox']), select, textarea, button") || null; }
-    catch (_) { return null; }
+    try {
+      const active = document.activeElement;
+      return active?.closest?.("input:not([type='checkbox']), select, textarea, button") || null;
+    } catch (_) { return null; }
   }
 
   function interactionProtected() { return Boolean(activeInteraction || activeEditableControl()); }
@@ -85,7 +87,10 @@
       releaseTimer = null;
       if (activeEditableControl()) return;
       activeInteraction = false;
-      if (deferredRender) { deferredRender = false; renderRemoteState(); }
+      if (deferredRender) {
+        deferredRender = false;
+        renderRemoteState();
+      }
     }, INTERACTION_RELEASE_MS);
   }
 
@@ -106,26 +111,42 @@
     const wanted = new Set(snapshot.map((item) => `${item.className}::${item.key}`));
     [...document.querySelectorAll(".order-checkbox, .billing-checkbox, .all-order-checkbox")]
       .filter((control) => control.type === "checkbox")
-      .forEach((control, index) => { if (wanted.has(`${control.className}::${checkboxKey(control, index)}`)) control.checked = true; });
+      .forEach((control, index) => {
+        if (wanted.has(`${control.className}::${checkboxKey(control, index)}`)) control.checked = true;
+      });
   }
 
-  function stateDigest(snapshot) { if (!snapshot || typeof snapshot !== "object") return ""; try { return JSON.stringify(snapshot); } catch (_) { return ""; } }
+  function stateDigest(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return "";
+    try { return JSON.stringify(snapshot); }
+    catch (_) { return ""; }
+  }
 
   function renderRemoteState() {
-    if (interactionProtected()) { deferredRender = true; return; }
+    if (interactionProtected()) {
+      deferredRender = true;
+      return false;
+    }
     const selections = captureBulkSelections();
     try {
       if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll();
       else if (typeof window.renderAll === "function") window.renderAll();
-    } catch (error) { console.warn("GotaVita sync render:", error?.message || error); return; }
+    } catch (error) {
+      console.warn("GotaVita sync render:", error?.message || error);
+      return false;
+    }
     restoreBulkSelections(selections);
+    return true;
   }
 
   async function ensureConflictIntegration() {
     if (window.GVConflictIntegration?.run) return window.GVConflictIntegration;
     if (conflictPromise) return conflictPromise;
     conflictPromise = new Promise((resolve, reject) => {
-      if (typeof document === "undefined") { reject(new Error("Conflict integration requires a browser document.")); return; }
+      if (typeof document === "undefined") {
+        reject(new Error("Conflict integration requires a browser document."));
+        return;
+      }
       const existing = document.querySelector('script[data-gv-conflict-integration="true"]');
       if (existing) {
         existing.addEventListener("load", () => resolve(window.GVConflictIntegration), { once: true });
@@ -150,20 +171,38 @@
     const state = window.getStateSnapshot();
     let changed = false;
     const supported = window.GVData.supportedResources();
+
     for (const resource of supported) {
       if (resource === "audit_logs") continue;
       const stateName = integration.resourceStateName ? integration.resourceStateName(resource) : resource;
       if (!stateName || baseline[resource]) continue;
       const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
       const remoteRows = await window.GVData.selectResource(resource);
-      if (!localRows.length && remoteRows.length) { state[stateName] = remoteRows; changed = true; }
+      if (!localRows.length && remoteRows.length) {
+        state[stateName] = remoteRows;
+        changed = true;
+      }
     }
+
     if (!changed) return false;
     const now = Date.now();
     state._meta = Object.assign({}, state._meta, { lastUpdated: now, lastSynchronizedAt: now });
     window.replaceState(state);
     if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
     return true;
+  }
+
+  function syncSummaryLabel(summary) {
+    const remote = Number(summary?.keepRemote || 0);
+    const local = Number(summary?.keepLocal || 0);
+    const protectedLocal = Number(summary?.preserveLocal || 0);
+    const deleted = Number(summary?.deleteLocal || 0) + Number(summary?.deleteRemote || 0);
+    const parts = [];
+    if (remote) parts.push(`${remote} remote`);
+    if (local) parts.push(`${local} local`);
+    if (protectedLocal) parts.push(`${protectedLocal} protected`);
+    if (deleted) parts.push(`${deleted} deletions`);
+    return parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
   }
 
   async function flush() {
@@ -176,6 +215,7 @@
     const before = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
     const beforeDigest = stateDigest(before);
     const queuedBefore = queue().length;
+
     try {
       const integration = await ensureConflictIntegration();
       if (!integration?.run) throw new Error("Canonical conflict/sync integration is unavailable.");
@@ -191,14 +231,30 @@
         window.syncChangedResources = () => Promise.resolve(false);
         window.syncNow = () => Promise.resolve(false);
         try { result = await integration.run(true); }
-        finally { window.syncChangedResources = originalSyncChanged; window.syncNow = originalSyncNow; }
-      } else result = await integration.run(true);
+        finally {
+          window.syncChangedResources = originalSyncChanged;
+          window.syncNow = originalSyncNow;
+        }
+      } else {
+        result = await integration.run(true);
+      }
 
       const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       const changed = beforeDigest !== stateDigest(after);
       if (result?.ok === true) {
         const manualReview = result.status === "manual-review";
         if (!manualReview) clearQueue();
+
+        const affected = changed || Boolean(
+          result.summary && (
+            Number(result.summary.keepRemote) > 0 ||
+            Number(result.summary.keepLocal) > 0 ||
+            Number(result.summary.preserveLocal) > 0 ||
+            Number(result.summary.deleteLocal) > 0 ||
+            Number(result.summary.deleteRemote) > 0
+          )
+        );
+
         const meta = getMeta();
         setMeta({
           ...meta,
@@ -208,22 +264,33 @@
           lastSyncStateChanged: changed,
           lastSyncResults: result.results || []
         });
-        if (changed) renderRemoteState();
+
+        if (affected || manualReview) renderRemoteState();
+        if (manualReview) {
+          if (typeof window.setSyncStatus === "function") window.setSyncStatus("Sync conflict requires review", "error");
+        } else {
+          const label = syncSummaryLabel(result.summary);
+          if (typeof window.setSyncStatus === "function") window.setSyncStatus(label, "online");
+        }
+
         return {
           ok: !manualReview,
           status: manualReview ? "conflict" : (result.status || "synced"),
           queued: queue().length,
           stateChanged: changed,
-          remoteChanged: changed,
-          renderRequired: changed,
+          remoteChanged: affected,
+          renderRequired: affected,
           result
         };
       }
+
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
+      if (typeof window.setSyncStatus === "function") window.setSyncStatus("Sync pending", "syncing");
       return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
     } catch (error) {
       const message = String(error?.message || error);
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: "sync-error", lastSyncError: message });
+      if (typeof window.setSyncStatus === "function") window.setSyncStatus("Sync pending", "syncing");
       return { ok: false, status: "sync-error", queued: queue().length, error: message };
     } finally {
       window.__GV_SYNC_TRANSACTION_ACTIVE = false;
