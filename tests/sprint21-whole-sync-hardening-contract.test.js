@@ -14,16 +14,22 @@ assert.match(manager, /authorized\(\)/);
 assert.match(manager, /captureBulkSelections/);
 assert.match(manager, /restoreBulkSelections/);
 assert.match(manager, /__GV_SYNC_TRANSACTION_ACTIVE = true/);
-assert.match(manager, /const manualReview = result\.status === "manual-review"/);
-assert.match(manager, /if \(!manualReview\) clearQueue\(\)/);
-assert.match(manager, /lastSyncStatus: manualReview \? "conflict"/);
+assert.match(manager, /window\.GVSync = Object\.freeze/);
+assert.match(manager, /startPolling/);
+assert.match(manager, /stopPolling/);
 
-assert.match(conflict, /manual-review/);
-assert.match(conflict, /recordConflicts/);
+assert.match(conflict, /remote-canonical/);
+assert.match(conflict, /pending-local-write/);
+assert.match(conflict, /pending-local-create-or-update/);
+assert.match(conflict, /preserve-local/);
+assert.match(conflict, /explicit-remote-deletion-evidence/);
+assert.match(conflict, /explicit-local-deletion-evidence/);
 assert.match(conflict, /await window\.GVData\.upsertResource/);
 assert.match(conflict, /await window\.GVData\.selectResource/);
 assert.match(conflict, /window\.replaceState\(nextState\)/);
 assert.match(conflict, /setBaseline\(nextBaseline\)/);
+assert.doesNotMatch(conflict, /manual-review/);
+assert.doesNotMatch(conflict, /same-timestamp/);
 
 assert.match(authority, /__GV_SYNC_TRANSACTION_ACTIVE/);
 assert.match(authority, /queueSyncResources/);
