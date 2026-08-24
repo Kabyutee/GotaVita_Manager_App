@@ -28,7 +28,15 @@ const context = {
     return 1;
   },
   setTimeout,
-  document: undefined,
+  document: {
+    visibilityState: "visible",
+    addEventListener: (event, handler) => {
+      if (event === "visibilitychange") {
+        context.__visibilityHandler = handler;
+      }
+    },
+    activeElement: null
+  },
   window: {
     GVAuth: { isAuthorized: () => true },
     GVConflictIntegration: {
