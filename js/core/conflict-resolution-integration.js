@@ -167,17 +167,15 @@
     return resourceCloudName(resource) === "orders";
   }
 
-  function isDeletableByEvidence(resource, remoteRow, remoteDeletedRows) {
+  function isDeletableByEvidence(resource, row, deletedRows) {
     if (!isOrderResource(resource)) return false;
-    const key = stableRowId(remoteRow);
-    if (key == null) return false;
-    return Boolean(deletionEvidence(remoteDeletedRows, key));
+    const key = stableRowId(row);
+    return key != null && Boolean(deletionEvidence(deletedRows, key));
   }
 
   function supportedResources() {
     if (!window.GVData) return [];
-    const resources = Object.keys(RESOURCE_MAP);
-    return resources.filter((resource) => {
+    return Object.keys(RESOURCE_MAP).filter((resource) => {
       const cloudName = resourceCloudName(resource);
       return typeof window.GVData.selectResource === "function" &&
         typeof window.GVData.upsertResource === "function" &&
@@ -185,7 +183,7 @@
     });
   }
 
-  function buildResolutionPlan(resource, localRows, remoteRows, remoteDeletedRows = []) {
+  function buildResolutionPlan(resource, localRows, remoteRows, localDeletedRows = [], remoteDeletedRows = []) {
     const localMap = indexRows(localRows);
     const remoteMap = indexRows(remoteRows);
     const pendingLocalWrite = resourceHasPendingLocalWrite(resource);
@@ -208,12 +206,18 @@
       }
 
       if (remoteRow && !localRow) {
-        decisions.push({ id, action: "keep-remote", reason: "remote-new-record", mutation: false, local: null, remote: remoteRow });
+        if (isOrderResource(resource) && deletionEvidence(localDeletedRows, id)) {
+          decisions.push({ id, action: "delete-remote", reason: "explicit-local-deletion-evidence", mutation: true, local: null, remote: remoteRow });
+        } else {
+          decisions.push({ id, action: "keep-remote", reason: "remote-new-record", mutation: false, local: null, remote: remoteRow });
+        }
         continue;
       }
 
       if (localRow && !remoteRow) {
-        if (isDeletableByEvidence(resource, localRow, remoteDeletedRows)) {
+        if (pendingLocalWrite) {
+          decisions.push({ id, action: "keep-local", reason: "pending-local-create-or-update", mutation: true, local: localRow, remote: null });
+        } else if (isDeletableByEvidence(resource, localRow, remoteDeletedRows)) {
           decisions.push({ id, action: "delete-local", reason: "explicit-remote-deletion-evidence", mutation: false, local: localRow, remote: null });
         } else {
           decisions.push({ id, action: "preserve-local", reason: "remote-row-missing-without-deletion-evidence", mutation: false, local: localRow, remote: null });
@@ -225,20 +229,13 @@
   }
 
   function summarize(decisions) {
-    const summary = {
-      total: decisions.length,
-      keepLocal: 0,
-      keepRemote: 0,
-      preserveLocal: 0,
-      deleteLocal: 0,
-      noConflict: 0,
-      manualReview: 0
-    };
+    const summary = { total: decisions.length, keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0, manualReview: 0 };
     decisions.forEach((decision) => {
       if (decision.action === "keep-local") summary.keepLocal++;
       else if (decision.action === "keep-remote") summary.keepRemote++;
       else if (decision.action === "preserve-local") summary.preserveLocal++;
       else if (decision.action === "delete-local") summary.deleteLocal++;
+      else if (decision.action === "delete-remote") summary.deleteRemote++;
       else if (decision.action === "no-conflict") summary.noConflict++;
       else summary.manualReview++;
     });
@@ -251,10 +248,8 @@
     const rows = Array.isArray(nextState[stateName]) ? nextState[stateName].slice() : [];
     const index = rows.findIndex((row, rowIndex) => rowKey(row, rowIndex) === decision.id);
 
-    if (decision.action === "keep-local") {
-      if (decision.local) {
-        await window.GVData.upsertResource(cloudName, [decision.local]);
-      }
+    if (decision.action === "keep-local" && decision.local) {
+      await window.GVData.upsertResource(cloudName, [decision.local]);
       return;
     }
 
@@ -262,9 +257,7 @@
       if (decision.remote) {
         if (index >= 0) rows[index] = clone(decision.remote);
         else rows.push(clone(decision.remote));
-      } else if (index >= 0) {
-        rows.splice(index, 1);
-      }
+      } else if (index >= 0) rows.splice(index, 1);
       nextState[stateName] = rows;
       return;
     }
@@ -272,52 +265,37 @@
     if (decision.action === "delete-local") {
       if (index >= 0) rows.splice(index, 1);
       nextState[stateName] = rows;
+      return;
+    }
+
+    if (decision.action === "delete-remote" && typeof window.GVData.deleteResourceByLegacyId === "function") {
+      await window.GVData.deleteResourceByLegacyId(cloudName, decision.id);
     }
   }
 
-  async function reconcileResource(resource, localRows, remoteRows, remoteDeletedRows, nextState) {
-    const decisions = buildResolutionPlan(resource, localRows, remoteRows, remoteDeletedRows);
+  async function reconcileResource(resource, localRows, remoteRows, localDeletedRows, remoteDeletedRows, nextState) {
+    const decisions = buildResolutionPlan(resource, localRows, remoteRows, localDeletedRows, remoteDeletedRows);
     const summary = summarize(decisions);
     const reviewEntries = decisions.filter((decision) => decision.action === "manual-review");
-
     if (reviewEntries.length) {
-      recordConflicts(reviewEntries.map((decision) => ({
-        resource,
-        id: decision.id,
-        reason: decision.reason,
-        detectedAt: new Date().toISOString()
-      })));
+      recordConflicts(reviewEntries.map((decision) => ({ resource, id: decision.id, reason: decision.reason, detectedAt: new Date().toISOString() })));
     }
-
-    for (const decision of decisions) {
-      await applyDecision(resource, decision, nextState);
-    }
-
-    return {
-      resource,
-      decisions,
-      summary,
-      reconciled: true,
-      partial: reviewEntries.length > 0,
-      unresolvedCount: reviewEntries.length
-    };
+    for (const decision of decisions) await applyDecision(resource, decision, nextState);
+    return { resource, decisions, summary, reconciled: true, partial: reviewEntries.length > 0, unresolvedCount: reviewEntries.length };
   }
 
   async function run(force = false) {
     if (!navigator.onLine || window.location.protocol === "file:") return { ok: false, status: "offline-or-local" };
     if (window.GVData?.isConfigured?.() !== true) return { ok: false, status: "not-configured" };
     if (!force && sessionStorage.getItem(RUN_LOCK_KEY) === "1") return { ok: false, status: "locked" };
-
     sessionStorage.setItem(RUN_LOCK_KEY, "1");
     try {
       await window.GVData.requireAuthenticatedManager();
-
-      const baseline = getBaseline();
       const nextState = stateSnapshot();
       if (!nextState) throw new Error("Application state snapshot unavailable.");
-
-      const results = [];
+      const baseline = getBaseline();
       const nextBaseline = { ...baseline };
+      const results = [];
 
       for (const resource of supportedResources()) {
         const stateName = resourceStateName(resource);
@@ -325,74 +303,38 @@
         const localRows = Array.isArray(nextState[stateName]) ? nextState[stateName].slice() : [];
         const remoteRows = await window.GVData.selectResource(cloudName);
         const normalizedRemoteRows = Array.isArray(remoteRows) ? remoteRows : [];
-        const remoteDeletedRows = cloudName === "orders"
-          ? (await window.GVData.selectResource("deleted_orders")) || []
-          : [];
-
-        const result = await reconcileResource(resource, localRows, normalizedRemoteRows, remoteDeletedRows, nextState);
+        const localDeletedRows = cloudName === "orders" ? (nextState.deletedOrders || []) : [];
+        const remoteDeletedRows = cloudName === "orders" ? ((await window.GVData.selectResource("deleted_orders")) || []) : [];
+        const result = await reconcileResource(resource, localRows, normalizedRemoteRows, localDeletedRows, remoteDeletedRows, nextState);
         results.push({ ...result, status: "canonicalized" });
 
         const pending = resourceHasPendingLocalWrite(resource);
-        if (pending) {
-          const refreshed = await window.GVData.selectResource(cloudName);
-          nextBaseline[resource] = {
-            baselineAt: new Date().toISOString(),
-            rows: clone(refreshed)
-          };
-          removeResourceFromQueue(cloudName);
-        } else {
-          nextBaseline[resource] = {
-            baselineAt: new Date().toISOString(),
-            rows: clone(normalizedRemoteRows)
-          };
-          removeResourceFromQueue(cloudName);
-        }
+        const refreshed = pending ? await window.GVData.selectResource(cloudName) : normalizedRemoteRows;
+        nextBaseline[resource] = { baselineAt: new Date().toISOString(), rows: clone(refreshed) };
+        if (pending || !result.partial) removeResourceFromQueue(cloudName);
       }
 
-      if (typeof window.GVGroupMembershipBridge?.reconcileRemoteState === "function") {
-        window.GVGroupMembershipBridge.reconcileRemoteState(nextState);
-      }
-
+      if (typeof window.GVGroupMembershipBridge?.reconcileRemoteState === "function") window.GVGroupMembershipBridge.reconcileRemoteState(nextState);
       if (typeof window.replaceState === "function") window.replaceState(nextState);
       if (typeof window.persistState === "function") window.persistState();
       setBaseline(nextBaseline);
 
       const summary = results.reduce((acc, result) => {
-        acc.keepLocal += result.summary?.keepLocal || 0;
-        acc.keepRemote += result.summary?.keepRemote || 0;
-        acc.preserveLocal += result.summary?.preserveLocal || 0;
-        acc.deleteLocal += result.summary?.deleteLocal || 0;
-        acc.noConflict += result.summary?.noConflict || 0;
-        acc.manualReview += result.summary?.manualReview || 0;
+        for (const key of Object.keys(acc)) acc[key] += result.summary?.[key] || 0;
         return acc;
-      }, { keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, noConflict: 0, manualReview: 0 });
+      }, { keepLocal: 0, keepRemote: 0, preserveLocal: 0, deleteLocal: 0, deleteRemote: 0, noConflict: 0, manualReview: 0 });
 
       if (typeof window.setSyncStatus === "function") {
-        window.setSyncStatus(
-          `Synced · ${summary.keepRemote} remote, ${summary.keepLocal} local, ${summary.deleteLocal} deletions, ${summary.preserveLocal} protected`,
-          "online"
-        );
+        window.setSyncStatus(`Synced · ${summary.keepRemote} remote, ${summary.keepLocal} local, ${summary.deleteLocal + summary.deleteRemote} deletions, ${summary.preserveLocal} protected`, "online");
       }
-
       return { ok: true, status: "reconciled", results, summary };
     } finally {
       sessionStorage.removeItem(RUN_LOCK_KEY);
     }
   }
 
-  window.GVConflictIntegration = Object.freeze({
-    run,
-    buildResolutionPlan,
-    summarize,
-    getBaseline,
-    setBaseline,
-    resourceCloudName,
-    resourceStateName
-  });
-
+  window.GVConflictIntegration = Object.freeze({ run, buildResolutionPlan, summarize, getBaseline, setBaseline, resourceCloudName, resourceStateName });
   window.addEventListener("gv-auth-state-changed", (event) => {
-    if (event?.detail?.authenticated === true) {
-      setTimeout(() => run(false).catch((error) => console.warn("GotaVita universal sync:", error?.message || error)), 0);
-    }
+    if (event?.detail?.authenticated === true) setTimeout(() => run(false).catch((error) => console.warn("GotaVita universal sync:", error?.message || error)), 0);
   });
 })();
