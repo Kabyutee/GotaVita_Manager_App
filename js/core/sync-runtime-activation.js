@@ -7,7 +7,8 @@ deferred application scripts have finished bootstrapping. */
     "/js/core/sync-cloud-write-reconciler.js",
     "/js/core/sync-queue-authority.js",
     "/js/core/sync-authority.js",
-    "/js/core/sync-tombstone-legacy-id-bridge.js"
+    "/js/core/sync-tombstone-legacy-id-bridge.js",
+    "/js/core/canonical-resource-recovery.js"
   ];
 
   function load(src) {
@@ -32,6 +33,9 @@ deferred application scripts have finished bootstrapping. */
       for (const src of MODULES) await load(src);
       if (window.GVSync?.flush) {
         await window.GVSync.flush();
+      }
+      if (window.GVCanonicalResourceRecovery?.recover) {
+        await window.GVCanonicalResourceRecovery.recover();
       }
     } catch (error) {
       console.warn(
