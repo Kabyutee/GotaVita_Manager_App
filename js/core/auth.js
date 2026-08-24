@@ -49,65 +49,45 @@
     );
   }
 
-
   function setApplicationLock(locked, reason = "") {
-  const root = document.documentElement;
-  const modal = document.getElementById("gvAuthModal");
-  const closeButton = document.getElementById("gvAuthCloseBtn");
+    const root = document.documentElement;
+    const modal = document.getElementById("gvAuthModal");
+    const closeButton = document.getElementById("gvAuthCloseBtn");
 
-  root.dataset.gvAuthState = locked ? "locked" : "unlocked";
-  root.setAttribute("aria-busy", locked ? "true" : "false");
+    root.dataset.gvAuthState = locked ? "locked" : "unlocked";
+    root.setAttribute("aria-busy", locked ? "true" : "false");
 
-  if (modal) {
-    if (locked) {
-      modal.classList.add("open");
-      modal.setAttribute("aria-hidden", "false");
-
-      // Move focus into the login form after the modal becomes visible.
-      requestAnimationFrame(() => {
-        const emailInput = document.getElementById("gvAuthEmail");
-        if (emailInput && !modal.hidden) {
-          emailInput.focus();
-        }
-      });
-    } else {
-      // Remove focus from anything inside the modal BEFORE hiding it.
-      if (modal.contains(document.activeElement)) {
-        document.activeElement.blur();
+    if (modal) {
+      if (locked) {
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        requestAnimationFrame(() => {
+          const emailInput = document.getElementById("gvAuthEmail");
+          if (emailInput && !modal.hidden) emailInput.focus();
+        });
+      } else {
+        if (modal.contains(document.activeElement)) document.activeElement.blur();
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
       }
-
-      modal.classList.remove("open");
-      modal.setAttribute("aria-hidden", "true");
     }
+
+    if (closeButton) closeButton.hidden = locked;
+    if (locked && reason) setAuthStatus(reason, "error");
   }
 
-  if (closeButton) closeButton.hidden = locked;
+  function openLogin() { setApplicationLock(true); }
 
-  if (locked && reason) {
-    setAuthStatus(reason, "error");
-  }
-}
-
-function openLogin() {
-  setApplicationLock(true);
-}
-
-function closeLogin() {
-  if (!authorized) return;
-
-  const modal = document.getElementById("gvAuthModal");
-  if (!modal) return;
-
-  // Critical: release focus before aria-hidden is applied.
-  if (modal.contains(document.activeElement)) {
-    document.activeElement.blur();
+  function closeLogin() {
+    if (!authorized) return;
+    const modal = document.getElementById("gvAuthModal");
+    if (!modal) return;
+    if (modal.contains(document.activeElement)) document.activeElement.blur();
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+    setAuthStatus("Manager authenticated ✓", "success");
   }
 
-  modal.classList.remove("open");
-  modal.setAttribute("aria-hidden", "true");
-
-  setAuthStatus("Manager authenticated ✓", "success");
-}
   async function getManagerProfile(session) {
     if (!client || !session?.user?.id) return null;
     const { data, error } = await client
@@ -122,8 +102,6 @@ function closeLogin() {
     }
     if (!data.company_id) throw new Error("This manager is not assigned to a company.");
 
-    // Company verification is deliberately performed after manager verification.
-    // RLS must return only the company identified by the authenticated profile.
     const companyResult = await client
       .from("companies")
       .select("id, name")
@@ -174,7 +152,7 @@ function closeLogin() {
     if (!client) await init();
     const { data, error } = await client.auth.getSession();
     if (error) return { configured: true, authenticated: false, profile: null, session: null, error };
-    const ok = await validateSession(data?.session || null, true);
+    const ok = await validateSession(data?.session || null, false);
     return { configured: true, authenticated: ok, profile: managerProfile, session: ok ? data.session : null };
   }
 
@@ -189,31 +167,26 @@ function closeLogin() {
   }
 
   async function logout() {
-  // Lock the application FIRST.
-  // Never leave protected UI exposed while waiting for Supabase.
-  authorized = false;
-  currentSession = null;
-  managerProfile = null;
+    authorized = false;
+    currentSession = null;
+    managerProfile = null;
 
-  setLoggedInUI(null);
-  setApplicationLock(true);
-  setAuthStatus("Signed out. Login required.", "success");
-  emitAuthState();
+    setLoggedInUI(null);
+    setApplicationLock(true);
+    setAuthStatus("Signed out. Login required.", "success");
+    emitAuthState();
 
-  // Destroy the Supabase session after the UI is already locked.
-  if (client) {
-    const { error } = await client.auth.signOut();
-
-    if (error) {
-      // Keep the application locked even if remote/session cleanup reports an error.
-      console.warn("GotaVita Supabase sign-out:", error.message);
-      setAuthStatus("Signed out locally. Session cleanup will retry.", "error");
-      return false;
+    if (client) {
+      const { error } = await client.auth.signOut();
+      if (error) {
+        console.warn("GotaVita Supabase sign-out:", error.message);
+        setAuthStatus("Signed out locally. Session cleanup will retry.", "error");
+        return false;
+      }
     }
-  }
 
-  return true;
-}
+    return true;
+  }
 
   async function init() {
     if (initialized) return client;
@@ -250,29 +223,27 @@ function closeLogin() {
     });
 
     const { data, error } = await client.auth.getSession();
-    if (error) await validateSession(null);
-    else await validateSession(data?.session || null, true);
+    if (error) await validateSession(null, false);
+    else await validateSession(data?.session || null, false);
 
     client.auth.onAuthStateChange(async (_event, session) => {
-  if (_event === "SIGNED_OUT") {
-    authorized = false;
-    managerProfile = null;
-    currentSession = null;
+      if (_event === "SIGNED_OUT") {
+        authorized = false;
+        managerProfile = null;
+        currentSession = null;
+        setLoggedInUI(null);
+        setApplicationLock(true);
+        setAuthStatus("Signed out. Login required.", "success");
+        emitAuthState();
+        return;
+      }
 
-    setLoggedInUI(null);
-    setApplicationLock(true);
-    setAuthStatus("Signed out. Login required.", "success");
-    emitAuthState();
-
-    return;
-  }
-
-  if (session) {
-    await validateSession(session, true);
-  } else {
-    await validateSession(null);
-  }
-});
+      if (session) {
+        await validateSession(session, false);
+      } else {
+        await validateSession(null, false);
+      }
+    });
   }
 
   window.GVAuth = Object.freeze({
