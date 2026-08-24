@@ -1,4 +1,4 @@
-name: Deploy Production
+name: GotaVita Production Deployment
 
 on:
   push:
@@ -6,11 +6,20 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: gotavita-production
+  cancel-in-progress: false
+
+env:
+  PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
+
 jobs:
-  deploy:
+  deploy-production:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    name: Verify main and deploy to Cloudflare
 
     steps:
       - name: Checkout exact main commit
@@ -18,14 +27,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Verify JavaScript syntax
         run: |
           node --check script.js
+          node --check js/core/config.js
           node --check js/core/state.js
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
@@ -81,9 +86,21 @@ jobs:
           GV_RELEASE_SHA: ${{ github.sha }}
 
       - name: Verify production release SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          expected="${GITHUB_SHA}"
-          actual="$(curl -fsS https://gotavita-manager.pages.dev/gv-health | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const x=JSON.parse(s);process.stdout.write(x.releaseSha||"")})')"
-          test "$actual" = "$expected"
-          echo "Production release verified: $actual"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            response="$(curl -fsS "$PRODUCTION_URL/gv-health" || true)"
+            echo "$response"
+            if [ -n "$response" ]; then
+              deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
+              if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then
+                echo "Production deployment verified: $deployed_sha"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Production Worker did not report expected release SHA $EXPECTED_SHA"
+          exit 1
