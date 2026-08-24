@@ -146,10 +146,19 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(groupMembershipMarker, `${groupMembershipMarker}\n${groupMembershipInjected}`);
   }
 
-  const repairMarker = `<script src="/js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const repairMarker = `<script src="js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   const repairInjected = `<script src="/js/core/sync-complete-runtime-repair.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(repairMarker) && !html.includes(repairInjected)) {
     html = html.replace(repairMarker, `${repairMarker}\n${repairInjected}`);
+  }
+
+  // Final P0 canonical boundary: this must execute after every earlier sync
+  // repair so a conflict/manual-review decision cannot leave a receiving
+  // browser showing a stale Client/Employee/Product row.
+  const p0Marker = `<script src="/js/core/sync-complete-runtime-repair.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  const p0Injected = `<script src="/js/core/sync-p0-final-canonicalizer.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(p0Marker) && !html.includes(p0Injected)) {
+    html = html.replace(p0Marker, `${p0Marker}\n${p0Injected}`);
   }
 
   return withNoStore(response, html);
