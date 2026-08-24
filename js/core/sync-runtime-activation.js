@@ -30,9 +30,8 @@ deferred application scripts have finished bootstrapping. */
   async function activate() {
     try {
       for (const src of MODULES) await load(src);
-      if (window.GVSync?.flush) {
-        await window.GVSync.flush();
-      }
+      if (window.__GV_APP_READY !== true) return;
+      if (window.GVSync?.flush) await window.GVSync.flush();
     } catch (error) {
       console.warn(
         "GotaVita canonical sync runtime activation:",
