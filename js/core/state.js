@@ -146,7 +146,7 @@
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
-    document.addEventListener("gv-auth-state-changed", function(event) {
+    window.addEventListener("gv-auth-state-changed", function(event) {
       if (event?.detail?.authenticated === true) scheduleAuthorizedHydration();
     });
     document.addEventListener("DOMContentLoaded", function () {
@@ -158,15 +158,10 @@
     }, { once: true });
   }
 
-  /* Application lifecycle boundary.
-   * The pre-existing page contains several independent listeners for auth and
-   * DOMContentLoaded. Hold the auth listeners until the application has restored
-   * local state and completed its controlled startup sequence. */
   const originalAddEventListener = window.addEventListener.bind(window);
   const originalRemoveEventListener = window.removeEventListener.bind(window);
   const deferredAuthListeners = [];
   let appReady = false;
-  let lifecycleInstalled = false;
   let releasePromise = null;
 
   window.__GV_APP_READY = false;
@@ -225,17 +220,14 @@
   }
 
   function gateDomReadyListener(listener, options) {
-    if (lifecycleInstalled || typeof listener !== "function") return;
     originalAddEventListener("DOMContentLoaded", async function gatedDomReady(event) {
-      if (!releasePromise) {
-        releasePromise = injectLifecycleGuard();
-      }
+      if (!releasePromise) releasePromise = injectLifecycleGuard();
       try {
         await releasePromise;
         const result = listener.call(window, event);
-        if (result && typeof result.then === "function") {
-          await result;
-        }
+        if (result && typeof result.then === "function") await result;
+      } catch (error) {
+        console.warn("GotaVita gated DOMContentLoaded listener:", error?.message || error);
       } finally {
         releaseAppReady();
       }
@@ -248,9 +240,8 @@
         rememberAuthListener(listener, options);
         return;
       }
-      if (type === "DOMContentLoaded" && typeof listener === "function" && !lifecycleInstalled) {
+      if (type === "DOMContentLoaded" && typeof listener === "function" && !appReady) {
         gateDomReadyListener(listener, options);
-        lifecycleInstalled = true;
         return;
       }
       return originalAddEventListener(type, listener, options);
