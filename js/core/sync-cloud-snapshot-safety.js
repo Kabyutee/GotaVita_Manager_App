@@ -1,10 +1,10 @@
-/* GotaVita Manager — JARVIS cloud snapshot safety + P0 pull bridge. */
+/* GotaVita Manager — JARVIS cloud snapshot safety + P0 canonical pull bridge. */
 (function () {
   "use strict";
 
   const RATIO_THRESHOLD = 0.5;
   const P0_MASTER_RESOURCES = new Set(["clients", "employees", "products"]);
-  const WRAPPED_KEY = "__GV_CLOUD_SNAPSHOT_SAFETY_V2";
+  const WRAPPED_KEY = "__GV_CLOUD_SNAPSHOT_SAFETY_V3";
   const RECOVERY_LOCK = "gotavita_cloud_recovery_lock_v1";
   const PULL_MS = 5000;
   let pullTimer = null;
@@ -24,12 +24,6 @@
     const map = new Map();
     (Array.isArray(rows) ? rows : []).forEach((row, index) => map.set(keyOf(row, index), row));
     return map;
-  }
-
-  function timeOf(row) {
-    const raw = row?.updatedAt ?? row?.updated_at ?? row?.createdAt ?? row?.created_at ?? null;
-    const time = Date.parse(raw || "");
-    return Number.isFinite(time) ? time : 0;
   }
 
   function rowChanged(localRow, remoteRow) {
@@ -69,6 +63,16 @@
       if (missing.length > 0 && missing.every((id) => deleted.has(id))) return false;
     }
     return remoteRows.length === 0 || remoteRows.length < localRows.length * RATIO_THRESHOLD;
+  }
+
+  function hasPendingLocalP0Write(resource) {
+    try {
+      const queue = typeof window.getSyncQueue === "function" ? window.getSyncQueue() : [];
+      if (!Array.isArray(queue) || !queue.length) return false;
+      return queue.some((item) => String(item?.resource ?? item?.name ?? item ?? "").trim() === resource);
+    } catch (_) {
+      return false;
+    }
   }
 
   async function preflight() {
@@ -117,28 +121,34 @@
         const localMap = rowsMap(localRows);
         const remoteMap = rowsMap(remoteRows);
         const nextRows = localRows.slice();
+        const protectLocalEdits = hasPendingLocalP0Write(resource);
+
         for (const [id, remoteRow] of remoteMap.entries()) {
           const index = nextRows.findIndex((row, rowIndex) => keyOf(row, rowIndex) === id);
           const localRow = index >= 0 ? nextRows[index] : null;
-          const remoteNewer = !localRow || timeOf(remoteRow) > timeOf(localRow);
-          if (remoteNewer && rowChanged(localRow, remoteRow)) {
-            if (index >= 0) nextRows[index] = remoteRow;
-            else nextRows.push(remoteRow);
-            changed = true;
-          }
+          if (!rowChanged(localRow, remoteRow)) continue;
+
+          // A receiving browser with no pending local write adopts the remote
+          // canonical master row. This deliberately does not depend on local
+          // timestamps, because restored/cached timestamps may be synthetic.
+          // A browser with an explicit pending write keeps its local mutation
+          // until the normal queue write reaches Supabase.
+          if (protectLocalEdits) continue;
+
+          if (index >= 0) nextRows[index] = remoteRow;
+          else nextRows.push(remoteRow);
+          changed = true;
         }
-        if (changed && JSON.stringify(nextRows) !== JSON.stringify(localRows)) current[stateName] = nextRows;
+
+        if (JSON.stringify(nextRows) !== JSON.stringify(localRows)) current[stateName] = nextRows;
       }
 
       if (!changed) return { changed: false, blocked: false };
       current._meta = Object.assign({}, current._meta, { lastUpdated: Date.now(), lastSynchronizedAt: Date.now() });
       window.replaceState(current);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(current);
-      if (typeof window.persistLocalState === "function") window.persistLocalState();
-      try {
-        if (typeof window.GVUI?.renderAll === "function") window.GVUI.renderAll();
-        else if (typeof window.renderAll === "function") window.renderAll();
-      } catch (_) {}
+      if (typeof window.renderAll === "function") window.renderAll();
+      else if (typeof window.GVUI?.renderAll === "function") window.GVUI.renderAll();
       if (typeof window.setSyncStatus === "function") window.setSyncStatus("P0 master data synchronized", "online");
       return { changed: true, blocked: false };
     } finally {
