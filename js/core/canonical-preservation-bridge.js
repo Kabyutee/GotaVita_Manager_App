@@ -125,9 +125,15 @@
     }
   });
 
-  window.addEventListener("DOMContentLoaded", () => {
+  const runWhenReady = () => {
     setTimeout(() => {
       if (window.GVAuth?.isAuthorized?.() === true) runAfterCanonicalSync();
     }, 500);
-  }, { once: true });
+  };
+
+  if (document.readyState === "loading") {
+    window.addEventListener("DOMContentLoaded", runWhenReady, { once: true });
+  } else {
+    runWhenReady();
+  }
 })();
