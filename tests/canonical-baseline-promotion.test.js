@@ -16,4 +16,8 @@ assert(status.includes("canonical-preservation-bridge.js"), "status boundary mus
 assert(status.includes("?v=${Date.now()}"), "preservation bridge must be cache-busted for stale browser protection");
 assert(/preserve-local[\s\S]*remote-row-missing-without-deletion-evidence/.test(integration), "canonical integration must retain preserve-local decision semantics");
 
+const promotePos = bridge.indexOf("await promotePreservedRows()");
+const canonicalRunPos = bridge.indexOf("await window.GVConflictIntegration.run(true)");
+assert(promotePos !== -1 && canonicalRunPos !== -1 && promotePos < canonicalRunPos, "baseline promotion must occur before canonical pull");
+
 console.log("CANONICAL BASELINE PROMOTION: PASS");
