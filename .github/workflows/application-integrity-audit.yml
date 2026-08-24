@@ -1,0 +1,32 @@
+name: Application Integrity Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check core JavaScript syntax
+        run: |
+          node --check js/core/auth.js
+          node --check js/core/state.js
+          node --check js/core/data-gateway.js
+          node --check js/core/ui-bridge.js
+          node --check js/core/sync-manager.js
+          node --check js/core/conflict-resolution-integration.js
+          node --check js/core/application-lifecycle-guard.js
+          node --check js/core/sync-runtime-activation.js
+
+      - name: Check application lifecycle and sync registry
+        run: node tests/application-lifecycle-and-registry.test.js
+
+      - name: Check whole-application UI action wiring
+        run: node tests/ui-action-wiring-contract.test.js
