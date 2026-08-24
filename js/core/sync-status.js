@@ -59,4 +59,19 @@
       return "Sync pending";
     }
   });
+
+  function loadCanonicalPreservationBridge() {
+    if (document.querySelector('script[data-gv-canonical-preservation="true"]')) return;
+    const script = document.createElement("script");
+    script.src = `/js/core/canonical-preservation-bridge.js?v=${Date.now()}`;
+    script.defer = true;
+    script.dataset.gvCanonicalPreservation = "true";
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadCanonicalPreservationBridge, { once: true });
+  } else {
+    loadCanonicalPreservationBridge();
+  }
 })();
