@@ -80,6 +80,43 @@
     }
   }
 
+  function applyRemoteOrderTombstones(state, tombstones) {
+    if (!state || !Array.isArray(state.orders) || !Array.isArray(tombstones) || !tombstones.length) return false;
+
+    const tombstoneById = new Map();
+    for (const tombstone of tombstones) {
+      const id = idOf(tombstone);
+      if (!id) continue;
+      tombstoneById.set(id, tombstone);
+    }
+    if (!tombstoneById.size) return false;
+
+    const remaining = [];
+    let changed = false;
+
+    for (const order of state.orders) {
+      const id = idOf(order);
+      const tombstone = tombstoneById.get(id);
+      if (!tombstone) {
+        remaining.push(order);
+        continue;
+      }
+
+      // A deletion tombstone only wins when it is at least as recent as the
+      // live order. This prevents a stale archive record from deleting a newer
+      // legitimate edit that happens to share the same legacy ID.
+      if (timeOf(tombstone) >= timeOf(order)) {
+        changed = true;
+        continue;
+      }
+
+      remaining.push(order);
+    }
+
+    if (changed) state.orders = remaining;
+    return changed;
+  }
+
   async function reconcile() {
     if (inRepair) return { ok: false, status: "repair-busy" };
     if (!navigator.onLine || !window.GVAuth?.isAuthorized?.()) return { ok: false, status: "not-ready" };
@@ -91,6 +128,7 @@
       const state = window.getStateSnapshot();
       let stateChanged = false, writes = 0, remoteMerges = 0;
       const failures = [];
+      let remoteDeletedOrders = [];
 
       for (const resource of RESOURCE_ORDER) {
         const stateName = STATE_MAP[resource];
@@ -104,6 +142,8 @@
           failures.push({ resource, error: String(error?.message || error) });
           continue;
         }
+
+        if (resource === "deleted_orders") remoteDeletedOrders = remoteRows.map(clone);
 
         const localRows = Array.isArray(state[stateName]) ? state[stateName] : [];
         const localMap = mapRows(localRows);
@@ -149,6 +189,14 @@
         } catch (error) {
           failures.push({ resource, error: String(error?.message || error) });
         }
+      }
+
+      // Explicitly apply remote order tombstones after canonical reads. This
+      // closes the cross-device deletion path: Browser B must remove a live
+      // order when Browser A has already archived it remotely, even when the
+      // primary order reconciliation did not produce a diff by itself.
+      if (applyRemoteOrderTombstones(state, remoteDeletedOrders)) {
+        stateChanged = true;
       }
 
       if (stateChanged) {
