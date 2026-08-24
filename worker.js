@@ -140,6 +140,15 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(authBridgeMarker, `${authBridgeMarker}\n${authBridgeInjected}`);
   }
 
+  // P0 authentication hydration: fetch canonical Clients/Employees/Products
+  // immediately after manager authorization, before later sync layers can
+  // reassert the cached/seeded master snapshot.
+  const p0AuthMarker = authBridgeMarker;
+  const p0AuthInjected = `<script src="/js/core/sync-p0-auth-hydration.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(p0AuthMarker) && !html.includes(p0AuthInjected)) {
+    html = html.replace(p0AuthMarker, `${p0AuthMarker}\n${p0AuthInjected}`);
+  }
+
   const groupMembershipMarker = `<script src="/js/core/sync-auth-startup-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   const groupMembershipInjected = `<script src="/js/core/group-membership-sync-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(groupMembershipMarker) && !html.includes(groupMembershipInjected)) {
