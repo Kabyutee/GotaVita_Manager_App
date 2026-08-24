@@ -1,4 +1,4 @@
-name: GotaVita Production Deployment
+name: Deploy Production
 
 on:
   push:
@@ -6,26 +6,22 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-concurrency:
-  group: gotavita-production
-  cancel-in-progress: false
-
-env:
-  PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
-
 jobs:
-  deploy-production:
+  deploy:
     runs-on: ubuntu-latest
-    name: Verify main and deploy to Cloudflare
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout exact main commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Verify JavaScript syntax
         run: |
@@ -36,6 +32,7 @@ jobs:
           node --check js/core/sync-manager.js
           node --check js/core/conflict-resolution-integration.js
           node --check tests/sprint21-universal-canonical-sync-behavior.test.js
+          node --check tests/sprint21-whole-sync-hardening-contract.test.js
           node --check js/modules/groups-routes.js
           node --check worker.js
 
@@ -68,6 +65,7 @@ jobs:
           node tests/sprint14-order-edit-group-contract.test.js
           node tests/sprint15-production-regression-gate-contract.test.js
           node tests/sprint21-universal-canonical-sync-behavior.test.js
+          node tests/sprint21-whole-sync-hardening-contract.test.js
 
       - name: Deploy exact main commit to Cloudflare
         id: deploy
@@ -83,21 +81,9 @@ jobs:
           GV_RELEASE_SHA: ${{ github.sha }}
 
       - name: Verify production release SHA
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            response="$(curl -fsS "$PRODUCTION_URL/gv-health" || true)"
-            echo "$response"
-            if [ -n "$response" ]; then
-              deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
-              if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then
-                echo "Production deployment verified: $deployed_sha"
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          echo "Production Worker did not report expected release SHA $EXPECTED_SHA"
-          exit 1
+          expected="${GITHUB_SHA}"
+          actual="$(curl -fsS https://gotavita-manager.pages.dev/gv-health | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const x=JSON.parse(s);process.stdout.write(x.releaseSha||"")})')"
+          test "$actual" = "$expected"
+          echo "Production release verified: $actual"
