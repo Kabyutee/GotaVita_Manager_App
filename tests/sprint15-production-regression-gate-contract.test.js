@@ -24,5 +24,12 @@ for (const syntaxTarget of [
   assert.match(source, new RegExp(syntaxTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
 
-assert.match(source, /GV_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
+assert.match(
+  source,
+  /GV_RELEASE_SHA: \$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}/
+);
+assert.match(
+  source,
+  /ref: \$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}/
+);
 assert.match(source, /Production deployment verified:/);
