@@ -299,7 +299,7 @@
   }
 
   async function poll() { return flush(); }
-  function startPolling() { if (timer) return; timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS); flush().catch(() => {}); }
+  function startPolling() { if (timer) return; timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS); }
   function stopPolling() { if (!timer) return; clearInterval(timer); timer = null; }
 
   function attachLifecycle() {
@@ -313,8 +313,10 @@
     window.addEventListener("focus", () => flush().catch(() => {}));
     window.addEventListener("pageshow", () => flush().catch(() => {}));
     window.addEventListener("gv-auth-state-changed", (event) => {
-      if (event?.detail?.authenticated === true) { startPolling(); flush().catch(() => {}); }
-      else stopPolling();
+      if (event?.detail?.authenticated === true) {
+        startPolling();
+        setTimeout(() => flush().catch(() => {}), 0);
+      } else stopPolling();
     });
   }
 
