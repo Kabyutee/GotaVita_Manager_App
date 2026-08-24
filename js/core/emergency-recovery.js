@@ -27,6 +27,23 @@
     return Array.isArray(value) && value.length > 0;
   }
 
+  function rowId(row) {
+    return row?.id != null ? String(row.id) : row?.legacyId != null ? String(row.legacyId) : row?.legacy_id != null ? String(row.legacy_id) : null;
+  }
+
+  function mergeMissingRows(existing, recovered) {
+    const rows = Array.isArray(existing) ? existing.slice() : [];
+    const seen = new Set(rows.map(rowId).filter(Boolean));
+    for (const row of Array.isArray(recovered) ? recovered : []) {
+      const id = rowId(row);
+      if (!id || !seen.has(id)) {
+        rows.push({ ...row });
+        if (id) seen.add(id);
+      }
+    }
+    return rows;
+  }
+
   function countBusinessRows(next) {
     return BUSINESS_RESOURCES.reduce((sum, [, stateName]) => sum + (Array.isArray(next?.[stateName]) ? next[stateName].length : 0), 0);
   }
@@ -64,8 +81,7 @@
     if (!hasRows(next.clients) && hasRows(backup.clients)) next.clients = backup.clients;
     if (!hasRows(next.products) && hasRows(backup.products)) next.products = backup.products;
     if (!hasRows(next.employees) && hasRows(backup.employees)) next.employees = backup.employees;
-    if (!hasRows(next.orders)) next.orders = RECOVERED_ORDERS.map((row) => ({ ...row }));
-
+    next.orders = mergeMissingRows(next.orders, RECOVERED_ORDERS);
     updateOrderCounter(next);
     return backup;
   }
@@ -132,12 +148,7 @@
 
   window.addEventListener("gv-app-ready", () => setTimeout(() => run().catch(() => {}), 0), { once: true });
   window.addEventListener("gv-auth-state-changed", (event) => {
-    if (event?.detail?.authenticated === true && window.__GV_APP_READY === true) {
-      setTimeout(() => run().catch(() => {}), 0);
-    }
+    if (event?.detail?.authenticated === true && window.__GV_APP_READY === true) setTimeout(() => run().catch(() => {}), 0);
   });
-
-  if (window.__GV_APP_READY === true && window.GVAuth?.isAuthorized?.() === true) {
-    setTimeout(() => run().catch(() => {}), 0);
-  }
+  if (window.__GV_APP_READY === true && window.GVAuth?.isAuthorized?.()) setTimeout(() => run().catch(() => {}), 0);
 })();
