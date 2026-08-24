@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
   const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
   const lifecycleSource = read("js/core/application-lifecycle-guard.js");
+  const recoverySource = read("js/core/emergency-recovery.js");
   const configSource = read("js/core/config.js");
   const runtimeSource = read("js/core/sync-runtime-activation.js");
   const authSource = read("js/core/auth.js");
@@ -16,9 +17,16 @@ const assert = require("node:assert/strict");
   assert.match(lifecycleSource, /audit_logs/);
   assert.match(lifecycleSource, /supportedResources\(\)\s*\{[\s\S]*filter/);
   assert.match(lifecycleSource, /health:\s*safeHealth/);
+  assert.match(lifecycleSource, /fenceLegacySyncEntryPoints/);
+  assert.match(lifecycleSource, /__GV_CANONICAL_SYNC_ONLY/);
+  assert.match(lifecycleSource, /ensureRecoveryModule/);
   assert.match(runtimeSource, /__GV_APP_READY\s*!==\s*true/);
   assert.match(configSource, /SYNC_RESOURCES:[\s\S]*auditLog/);
   assert.match(lifecycleSource, /AUDIT_ONLY_RESOURCES/);
+  assert.match(recoverySource, /RECOVERED_ORDERS/);
+  assert.match(recoverySource, /cloudRows !== 0/);
+  assert.match(recoverySource, /upsertResource/);
+  assert.match(recoverySource, /GVEmergencyRecovery/);
   assert.match(authSource, /requireManagerSession[\s\S]*validateSession\(data\?\.session \|\| null, false\)/);
   assert.match(authSource, /onAuthStateChange[\s\S]*validateSession\(session, false\)/);
   assert.match(stateSource, /window\.addEventListener\("gv-auth-state-changed"/);
@@ -57,12 +65,16 @@ const assert = require("node:assert/strict");
     setTimeout,
     clearTimeout,
     performance,
+    document: { querySelector: () => null, head: { appendChild: () => {} } }
   });
 
   vm.runInContext(lifecycleSource, context, { filename: "application-lifecycle-guard.js" });
   assert.equal(windowObj.GVApplicationLifecycleGuard.install(), true);
   assert.deepEqual(windowObj.GVData.supportedResources(), ["clients", "orders"]);
   assert.equal(pollingStopped, 1);
+  assert.equal(windowObj.__GV_CANONICAL_SYNC_ONLY, true);
+  assert.equal(typeof windowObj.syncNow, "function");
+  assert.equal(typeof windowObj.syncChangedResources, "function");
   const health = await windowObj.GVData.health();
   assert.equal(health.ok, true);
   assert.equal(health.authenticated, true);
@@ -71,7 +83,7 @@ const assert = require("node:assert/strict");
   assert.equal(bootSync.status, "booting");
   assert.equal(syncCalled, 0);
 
-  console.log("Application lifecycle and sync registry contract: PASS");
+  console.log("Application lifecycle, recovery, and sync registry contract: PASS");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
