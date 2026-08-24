@@ -1,50 +1,20 @@
 // GotaVita Manager — Phase 4.5 Sprint M2
 // Business-module extraction. Functions remain global for backward compatibility.
 
-const GV_AUTO_BACKUP_RETENTION = 3;
 
-function compactAutoBackupRetention({ force = false } = {}) {
-  try {
-    const list = readAutoBackupList();
-    if (!Array.isArray(list) || list.length <= GV_AUTO_BACKUP_RETENTION) return true;
-
-    const compacted = list.slice(-GV_AUTO_BACKUP_RETENTION);
-    const serialized = JSON.stringify(compacted);
-
-    // The auto-backup index is a generated recovery artifact, not canonical
-    // business state. Removing older generated copies is safe storage GC.
-    localStorage.removeItem(KEYS.autobackup);
-
-    if (safeLocalStorageSet(KEYS.autobackup, serialized)) {
-      audit("backup-prune", "system", new Date().toISOString(), {
-        removed: list.length - compacted.length,
-        retained: compacted.length,
-        reason: force ? "storage-pressure" : "retention"
-      });
-      return true;
-    }
-  } catch (e) {
-    console.warn("GotaVita backup retention compaction skipped:", e.message);
-  }
-
-  return false;
-}
 
 function makeAutoBackup(manual) {
   try {
-    // Compact older generated copies before allocating another full-state copy.
-    compactAutoBackupRetention({ force: true });
-
     const list = readAutoBackupList();
     const payload = createBackupPayload();
     const entry = { timestamp: new Date().toISOString(), manual: !!manual, schemaVersion: payload.schemaVersion, checksum: payload.integrityChecksum, data: payload };
     list.push(entry);
-    while (list.length > GV_AUTO_BACKUP_RETENTION) list.shift();
+    while (list.length > 10) list.shift();
     const serialized = JSON.stringify(list);
     if (!safeLocalStorageSet(KEYS.autobackup, serialized)) throw new Error("Storage quota or write verification failed.");
     audit("backup", "system", entry.timestamp, { manual: !!manual, summary: datasetSummary(state), integrity: payload.integrity });
     renderAutoBackups();
-    renderAuditLog();
+  renderAuditLog();
     if (manual) showToast("Verified system backup created.");
     return true;
   } catch (e) {
@@ -52,6 +22,7 @@ function makeAutoBackup(manual) {
     return false;
   }
 }
+
 
 function createBackupPayload() {
   normalizeState();
@@ -69,12 +40,14 @@ function createBackupPayload() {
   return payload;
 }
 
+
 function describeBackup(b) {
   if (!b) return null;
   const raw = b.data?.data ? b.data : b.data;
   const data = raw?.data && raw.app ? raw.data : raw;
   return datasetSummary(data || {});
 }
+
 
 function validateBackupPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Backup must be a JSON object.");
@@ -97,6 +70,7 @@ function validateBackupPayload(payload) {
   }
 }
 
+
 function exportData() {
   try {
     const payload = createBackupPayload();
@@ -108,9 +82,11 @@ function exportData() {
   }
 }
 
+
 function triggerImport() {
   $("importFile").click();
 }
+
 
 function importData(e) {
   const file = e.target.files[0];
@@ -122,7 +98,7 @@ function importData(e) {
       const payload = raw?.app === "GotaVita Managers Web Application" && raw?.data ? raw.data : raw;
       const checked = validateBackupPayload(payload);
       const s = checked.summary;
-      const message = `Validated backup\n\nClients: ${s.clients}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nOverwrite current data? A safety backup will be created first.`;
+      const message = `Validated backup\n\nClients: ${s.clients}\nProducts: ${s.products}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nOverwrite current data? A safety backup will be created first.`;
       if (await requestConfirmation({title:"Import validated data", message:"Overwrite the current data with this validated backup?", details:`Clients: ${s.clients}\nProducts: ${s.products}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nA safety backup will be created first.`, confirmLabel:"Import Data", tone:"warning"})) {
         saveStateForUndo();
         makeAutoBackup(false);
@@ -139,6 +115,7 @@ function importData(e) {
   };
   reader.readAsText(file);
 }
+
 
 function exportCSV(type) {
   const rows = [];
@@ -158,19 +135,19 @@ function exportCSV(type) {
   showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} CSV exported.`);
 }
 
+
 function download(name, content, mime) {
   const blob = new Blob([content], { type: mime });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
 
 function stamp() { return new Date().toISOString().slice(0, 10); }
 
 function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
-
-// Run storage GC after deferred scripts have initialized the shared storage helpers.
-setTimeout(() => compactAutoBackupRetention(), 0);
 
 /* L300 dashboard modules are loaded after the existing deferred application
  * boot completes. This preserves the existing script order while keeping the

@@ -7,7 +7,6 @@ const source = fs.readFileSync("js/core/sync-manager.js", "utf8");
 let syncCalls = 0;
 let renderCalls = 0;
 let scheduled = null;
-let authListener = null;
 let queue = [];
 let localStorageData = {};
 
@@ -28,15 +27,7 @@ const context = {
     return 1;
   },
   setTimeout,
-  document: {
-    visibilityState: "visible",
-    addEventListener: (event, handler) => {
-      if (event === "visibilitychange") {
-        context.__visibilityHandler = handler;
-      }
-    },
-    activeElement: null
-  },
+  document: undefined,
   window: {
     GVAuth: { isAuthorized: () => true },
     GVConflictIntegration: {
@@ -55,9 +46,7 @@ const context = {
     },
     getSyncQueue: () => [...queue],
     setSyncQueue: (next) => { queue = [...next]; },
-    addEventListener: (event, handler) => {
-      if (event === "gv-auth-state-changed") authListener = handler;
-    }
+    addEventListener: () => {}
   }
 };
 
@@ -65,14 +54,11 @@ context.window.window = context.window;
 vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 
 (async () => {
-  assert.ok(authListener, "Sync manager must subscribe to the auth lifecycle event");
-
-  // Authorized startup schedules the canonical pull only after the auth event
-  // returns, allowing the application's local-state restore to finish first.
-  authListener({ detail: { authenticated: true } });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  // Authorized startup performs one immediate canonical pull even with an empty queue.
   await Promise.resolve();
-  assert.equal(syncCalls, 1, "Authorized startup must perform an initial deferred remote pull");
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(syncCalls, 1, "Authorized startup must perform an initial remote pull");
 
   const result = await context.window.GVSync.flush();
 

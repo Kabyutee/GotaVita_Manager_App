@@ -60,9 +60,10 @@
           const localRows = Array.isArray(next?.[stateName]) ? next[stateName] : [];
           counts[resource] = rows.length;
 
-          // Retained only as an explicit utility for diagnostics/compatibility.
-          // Automatic startup hydration is owned by GVSync.flush() so local state
-          // is restored before the canonical Supabase reconciliation runs.
+          // Startup recovery is deliberately additive: never erase a populated
+          // local collection just because cloud returned an empty snapshot.
+          // When cloud has more records than local state, remote canonical data
+          // is authoritative for recovery and cross-device hydration.
           if (rows.length > 0 && (localRows.length === 0 || rows.length > localRows.length)) {
             next[stateName] = rows;
             changed = true;
@@ -96,9 +97,8 @@
   }
 
   function scheduleAuthorizedHydration() {
-    // Intentionally not automatic. GVSync.flush() is the sole startup
-    // synchronization authority after local state has been restored.
-    return false;
+    const delays = [0, 250, 1000, 2000];
+    delays.forEach((delay) => setTimeout(() => hydrateAuthorizedStateAfterAuth(), delay));
   }
 
   function ensureDailyL300Host() {
@@ -149,10 +149,14 @@
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
+    document.addEventListener("gv-auth-state-changed", function(event) {
+      if (event?.detail?.authenticated === true) scheduleAuthorizedHydration();
+    });
     document.addEventListener("DOMContentLoaded", function () {
       ensureDailyL300Host();
       loadDailyL300Module();
       loadCanonicalSyncRuntime();
+      scheduleAuthorizedHydration();
     }, { once: true });
   }
 })();

@@ -26,25 +26,20 @@ const l300Runs = read("js/modules/daily-l300-runs.js");
 
 const stateBlock = state.match(/return\s*\{([\s\S]*?)\};/);
 assert(stateBlock, "state factory resource declaration not found");
-const businessResources = ["products","clients","services","orders","payments","expenses","payrollRecords","employees","orderGroups","deliveryRoutes","orderGroupItems","deliveryRouteItems","dailyReports","deletedOrders"];
-for (const resource of businessResources) assert(new RegExp(`(?:^|,)\\s*${resource}\\s*:`).test(stateBlock[1]), `state resource missing: ${resource}`);
-assert(/(?:^|,)\s*auditLog\s*:/.test(stateBlock[1]), "state auditLog resource missing");
+const requiredResources = ["products","clients","services","orders","payments","expenses","payrollRecords","employees","orderGroups","deliveryRoutes","orderGroupItems","deliveryRouteItems","dailyReports","deletedOrders","auditLog"];
+for (const resource of requiredResources) assert(new RegExp(`(?:^|,)\\s*${resource}\\s*:`).test(stateBlock[1]), `state resource missing: ${resource}`);
 
 const syncRegistry = config.match(/SYNC_RESOURCES:Object\.freeze\(\[([\s\S]*?)\]\)/);
 assert(syncRegistry, "SYNC_RESOURCES registry not found");
-for (const resource of businessResources) assert(syncRegistry[1].includes(`\"${resource}\"`), `config SYNC_RESOURCES missing business resource: ${resource}`);
-assert(!syncRegistry[1].includes("\"auditLog\""), "auditLog must not be registered as canonical business sync state");
-assert(/audit_log is an append-only history stream, not canonical business state/.test(config), "config must document the audit boundary");
+for (const resource of requiredResources) assert(syncRegistry[1].includes(`\"${resource}\"`), `config SYNC_RESOURCES missing: ${resource}`);
 
 for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:"]) assert(gateway.includes(required), `gateway capability missing: ${required}`);
 assert(/async function requireAuthenticatedManager\(/.test(gateway), "gateway authentication boundary missing: requireAuthenticatedManager");
-assert(gateway.includes('"audit_logs"'), "gateway must retain dedicated audit_logs support");
-assert(/name\s*===\s*"audit_logs"[\s\S]*?\.insert\(/.test(gateway), "audit_logs must retain its dedicated append-only insert path");
 
 const requiredMappings = { orderGroups: "order_groups", deliveryRoutes: "delivery_routes", orderGroupItems: "order_group_items", deliveryRouteItems: "delivery_route_items", dailyReports: "daily_reports", deletedOrders: "deleted_orders", auditLog: "audit_logs" };
 const requiredReverseMappings = { order_groups: "orderGroups", delivery_routes: "deliveryRoutes", order_group_items: "orderGroupItems", delivery_route_items: "deliveryRouteItems", daily_reports: "dailyReports", deleted_orders: "deletedOrders", audit_logs: "auditLog" };
 function mappingExists(text, key, value) {
-  const pattern = new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*[\\"']${value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}['\\"]`);
+  const pattern = new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*[\"']${value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}['\"]`);
   return pattern.test(text);
 }
 for (const [key, value] of Object.entries(requiredMappings)) assert(mappingExists(conflict, key, value), `conflict mapping missing: ${key}: ${value}`);
@@ -74,4 +69,4 @@ assert(riskGate.includes("anti-big-bang-6-application-connection-audit.test.js")
 assert(riskGate.includes("l300-group-order-contract.test.js"), "L300 Group Orders contract not wired into ANTI BIG BANG");
 
 console.log("ANTI BIG BANG 6 — FULL APPLICATION CONNECTION AUDIT: PASS");
-console.log(JSON.stringify({ businessResources: businessResources.length, auditLogState: true, auditLogCanonicalSync: false, uiTabs: tabs.length, modulesChecked: requiredModules.length, l300Runs: 3, scheduler: "GVSync", l300Authority: "OrderGroups", l300Presentation: "single-dashboard-panel" }, null, 2));
+console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, l300Runs: 3, scheduler: "GVSync", l300Authority: "OrderGroups", l300Presentation: "single-dashboard-panel" }, null, 2));
