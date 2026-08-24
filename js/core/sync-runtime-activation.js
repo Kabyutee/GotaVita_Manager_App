@@ -1,12 +1,13 @@
 /* JARVIS runtime activation: load canonical sync boundaries only after the
- * deferred application scripts have finished bootstrapping. */
+deferred application scripts have finished bootstrapping. */
 (function () {
   "use strict";
 
   const MODULES = [
     "/js/core/sync-cloud-write-reconciler.js",
     "/js/core/sync-queue-authority.js",
-    "/js/core/sync-authority.js"
+    "/js/core/sync-authority.js",
+    "/js/core/sync-tombstone-legacy-id-bridge.js"
   ];
 
   function load(src) {
