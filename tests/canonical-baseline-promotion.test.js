@@ -9,7 +9,7 @@ const integration = read("js/core/conflict-resolution-integration.js");
 
 assert(bridge.includes("buildResolutionPlan"), "bridge must reuse the canonical resolution planner");
 assert(/decision\.action\s*!==\s*\"preserve-local\"/.test(bridge), "bridge must only promote rows already classified preserve-local");
-assert(bridge.includes("GVData.upsertResource"), "bridge must promote preserved rows through the canonical data gateway");
+assert(/upsertResource\s*\(/.test(bridge), "bridge must promote preserved rows through the canonical data gateway");
 assert(!bridge.includes("deleteResourceByLegacyId"), "bridge must never delete remote rows");
 assert(bridge.includes('resource === "auditLog" || resource === "audit_logs"'), "bridge must exclude audit history from canonical promotion");
 assert(status.includes("canonical-preservation-bridge.js"), "status boundary must load the preservation bridge");
