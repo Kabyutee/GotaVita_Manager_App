@@ -167,6 +167,7 @@
   }
 
   async function flush() {
+    if (window.__GV_APP_READY !== true) return { ok: false, status: "booting", queued: queue().length };
     if (inFlight) return { ok: false, status: "busy", queued: queue().length };
     if (typeof window === "undefined" || typeof navigator === "undefined") return { ok: false, status: "unavailable", queued: queue().length };
     if (navigator.onLine === false) return { ok: false, status: "offline", queued: queue().length };
@@ -209,15 +210,7 @@
           lastSyncResults: result.results || []
         });
         if (changed) renderRemoteState();
-        return {
-          ok: !manualReview,
-          status: manualReview ? "conflict" : (result.status || "synced"),
-          queued: queue().length,
-          stateChanged: changed,
-          remoteChanged: changed,
-          renderRequired: changed,
-          result
-        };
+        return { ok: !manualReview, status: manualReview ? "conflict" : (result.status || "synced"), queued: queue().length, stateChanged: changed, remoteChanged: changed, renderRequired: changed, result };
       }
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
       return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
@@ -232,7 +225,12 @@
   }
 
   async function poll() { return flush(); }
-  function startPolling() { if (timer) return; timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS); flush().catch(() => {}); }
+  function startPolling() {
+    if (window.__GV_APP_READY !== true) return;
+    if (timer) return;
+    timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS);
+    flush().catch(() => {});
+  }
   function stopPolling() { if (!timer) return; clearInterval(timer); timer = null; }
 
   function attachLifecycle() {
@@ -241,10 +239,10 @@
     document.addEventListener("keydown", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true);
     document.addEventListener("focusin", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true);
     document.addEventListener("focusout", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) endInteractionSoon(); }, true);
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flush().catch(() => {}); });
-    window.addEventListener("online", () => flush().catch(() => {}));
-    window.addEventListener("focus", () => flush().catch(() => {}));
-    window.addEventListener("pageshow", () => flush().catch(() => {}));
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && window.__GV_APP_READY === true) flush().catch(() => {}); });
+    window.addEventListener("online", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
+    window.addEventListener("focus", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
+    window.addEventListener("pageshow", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
     window.addEventListener("gv-auth-state-changed", (event) => {
       if (event?.detail?.authenticated === true) { startPolling(); flush().catch(() => {}); }
       else stopPolling();
@@ -262,5 +260,5 @@
   }, { once: true });
 
   attachLifecycle();
-  startPolling();
+  if (window.__GV_APP_READY === true) startPolling();
 })();
