@@ -104,9 +104,18 @@
     if (!window.GVConflictIntegration?.run) return;
 
     try {
-      await window.GVConflictIntegration.run(true);
+      // IMPORTANT: baseline promotion must happen before canonical pull.
+      // The canonical pull may replace the working state with remote-canonical
+      // data. If local-only rows are promoted afterward, they are no longer
+      // available to classify as preserve-local. We therefore snapshot/preserve
+      // local business state first, promote it, then let the existing canonical
+      // read/merge/render path converge from the now-populated remote baseline.
       const result = await promotePreservedRows();
       if (result.ok && typeof window.GVSync?.flush === "function") {
+        await window.GVSync.flush();
+      }
+      await window.GVConflictIntegration.run(true);
+      if (typeof window.GVSync?.flush === "function") {
         await window.GVSync.flush();
       }
       if (result.promoted?.length && typeof window.renderAll === "function") {
