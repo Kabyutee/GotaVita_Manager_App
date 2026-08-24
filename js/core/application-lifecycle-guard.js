@@ -44,6 +44,7 @@
 
   function ensureRecoveryModule() {
     if (window.GVEmergencyRecovery?.run) return;
+    if (typeof document?.createElement !== "function") return;
     if (document.querySelector('script[data-gv-emergency-recovery="true"]')) return;
     const script = document.createElement("script");
     script.src = "/js/core/emergency-recovery.js?gv_recovery=1";
