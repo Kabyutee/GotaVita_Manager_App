@@ -42,7 +42,19 @@
       return true;
     } catch (error) { console.warn("GotaVita post-auth canonical hydration skipped:", error?.message || error); return false; }
   }
-  function scheduleAuthorizedHydration() { return false; }
+  function scheduleAuthorizedHydration() {
+    if (window.GVAuth?.isAuthorized?.() !== true) return Promise.resolve(false);
+    if (window.__GV_AUTH_HYDRATION_PROMISE) return window.__GV_AUTH_HYDRATION_PROMISE;
+    const run = () => hydrateAuthorizedStateAfterAuth().finally(() => { window.__GV_AUTH_HYDRATION_PROMISE = null; });
+    if (window.__GV_APP_READY === true) {
+      window.__GV_AUTH_HYDRATION_PROMISE = run();
+      return window.__GV_AUTH_HYDRATION_PROMISE;
+    }
+    window.__GV_AUTH_HYDRATION_PROMISE = new Promise(resolve => {
+      window.addEventListener("gv-app-ready", () => resolve(run()), { once: true });
+    });
+    return window.__GV_AUTH_HYDRATION_PROMISE;
+  }
   function ensureDailyL300Host() {
     if (typeof document === "undefined") return null;
     const existing = document.getElementById("dailyL300Runs"); if (existing) return existing;
