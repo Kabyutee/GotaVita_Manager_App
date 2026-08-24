@@ -21,7 +21,9 @@ const window = {
   replaceState: () => {},
   persistState: () => true,
   getSyncQueue: () => [],
-  setSyncQueue: () => {}
+  setSyncQueue: () => {},
+  addEventListener: () => {},
+  removeEventListener: () => {}
 };
 
 const context = {
