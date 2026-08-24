@@ -149,9 +149,13 @@
       const target = event?.target;
       if (target?.id === "orderForm") reconcileOrderCounterBeforeCreate();
     }, { capture: true });
-    document.addEventListener("gv-auth-state-changed", function(event) {
+    const onAuthStateChanged = function(event) {
       if (event?.detail?.authenticated === true) scheduleAuthorizedHydration();
-    });
+    };
+    // Auth dispatches the lifecycle event on window; keep document support for
+    // compatibility with older integrations that may dispatch on document.
+    window.addEventListener("gv-auth-state-changed", onAuthStateChanged);
+    document.addEventListener("gv-auth-state-changed", onAuthStateChanged);
     document.addEventListener("DOMContentLoaded", function () {
       ensureDailyL300Host();
       loadDailyL300Module();
