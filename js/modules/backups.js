@@ -10,11 +10,43 @@ function makeAutoBackup(manual) {
     const entry = { timestamp: new Date().toISOString(), manual: !!manual, schemaVersion: payload.schemaVersion, checksum: payload.integrityChecksum, data: payload };
     list.push(entry);
     while (list.length > 10) list.shift();
-    const serialized = JSON.stringify(list);
-    if (!safeLocalStorageSet(KEYS.autobackup, serialized)) throw new Error("Storage quota or write verification failed.");
-    audit("backup", "system", entry.timestamp, { manual: !!manual, summary: datasetSummary(state), integrity: payload.integrity });
+
+    // Auto-backups are full-state snapshots. localStorage has a finite quota,
+    // so retry from newest to oldest until the retained history fits. A failed
+    // setItem leaves the existing value untouched; only after that failure do
+    // we drop the oldest backup and retry. This preserves the newest recovery
+    // point without allowing backup growth to block normal state persistence.
+    let trimmed = 0;
+    let saved = false;
+
+    while (list.length) {
+      const serialized = JSON.stringify(list);
+
+      if (safeLocalStorageSet(KEYS.autobackup, serialized)) {
+        saved = true;
+        break;
+      }
+
+      if (list.length === 1) {
+        break;
+      }
+
+      list.shift();
+      trimmed += 1;
+    }
+
+    if (!saved) {
+      throw new Error("Storage quota or write verification failed.");
+    }
+
+    audit("backup", "system", entry.timestamp, {
+      manual: !!manual,
+      summary: datasetSummary(state),
+      integrity: payload.integrity,
+      trimmedOldBackups: trimmed
+    });
     renderAutoBackups();
-  renderAuditLog();
+    renderAuditLog();
     if (manual) showToast("Verified system backup created.");
     return true;
   } catch (e) {
