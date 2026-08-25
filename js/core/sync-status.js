@@ -49,9 +49,11 @@
     if (window.__GV_ORDER_DELETE_BRIDGE_LOADING__) return;
     window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = true;
     const script = document.createElement("script");
-    script.src = "/js/core/order-delete-reconciliation-bridge.js";
-    script.defer = true;
-    script.onload = () => { window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false; };
+    script.src = `/js/core/order-delete-reconciliation-bridge.js?v=${encodeURIComponent(window.GV_RELEASE_SHA || Date.now())}`;
+    script.onload = () => {
+      window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false;
+      try { window.GVSync?.flush?.().catch?.(() => {}); } catch (_) {}
+    };
     script.onerror = () => {
       window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false;
       setTimeout(ensureOrderDeleteBridge, 250);
