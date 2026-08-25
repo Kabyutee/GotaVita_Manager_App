@@ -186,11 +186,14 @@ function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); 
     });
   }
   function start() {
-    // Load the archive bridge independently from optional L300 modules.
-    // A failure in an auxiliary dashboard module must never prevent the
-    // production Client archive reconciliation bridge from loading.
+    // Load mutation sync bridges independently from optional L300 modules.
+    // Auxiliary dashboard failures must never prevent production data
+    // reconciliation from loading.
     load("js/core/client-archive-sync-bridge.js").catch(error => {
       console.warn("GotaVita Client archive bridge initialization skipped:", error?.message || error);
+    });
+    load("js/core/employee-status-sync-bridge.js").catch(error => {
+      console.warn("GotaVita Employee status sync bridge initialization skipped:", error?.message || error);
     });
 
     load("js/modules/l300-reporting-adapter.js")
