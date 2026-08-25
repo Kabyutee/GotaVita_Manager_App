@@ -228,6 +228,15 @@
         console.warn("GotaVita order tombstone apply:", error?.message || error);
       }
 
+      let canonicalResourcesApplied = false;
+      try {
+        if (typeof window.GVRemoteCanonicalState?.reconcile === "function") {
+          canonicalResourcesApplied = await window.GVRemoteCanonicalState.reconcile();
+        }
+      } catch (error) {
+        console.warn("GotaVita canonical resource finalization:", error?.message || error);
+      }
+
       const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       const changed = beforeDigest !== stateDigest(after);
       if (result?.ok === true) {
@@ -241,13 +250,14 @@
           lastSyncQueuedBefore: queuedBefore,
           lastSyncStateChanged: changed,
           lastSyncResults: result.results || [],
-          lastDeletionApplied: deletionApplied
+          lastDeletionApplied: deletionApplied,
+          lastCanonicalResourcesApplied: canonicalResourcesApplied
         });
         if (changed) renderRemoteState();
-        return { ok: !manualReview, status: manualReview ? "conflict" : (result.status || "synced"), queued: queue().length, stateChanged: changed, remoteChanged: changed, renderRequired: changed, deletionApplied, result };
+        return { ok: !manualReview, status: manualReview ? "conflict" : (result.status || "synced"), queued: queue().length, stateChanged: changed, remoteChanged: changed, renderRequired: changed, deletionApplied, canonicalResourcesApplied, result };
       }
-      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error", lastDeletionApplied: deletionApplied });
-      return { ok: false, status: result?.status || "sync-error", queued: queue().length, deletionApplied, result };
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error", lastDeletionApplied: deletionApplied, lastCanonicalResourcesApplied: canonicalResourcesApplied });
+      return { ok: false, status: result?.status || "sync-error", queued: queue().length, deletionApplied, canonicalResourcesApplied, result };
     } catch (error) {
       const message = String(error?.message || error);
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: "sync-error", lastSyncError: message });
