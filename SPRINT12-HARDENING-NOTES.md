@@ -1,1 +1,0 @@
-Checkpoint note: the only application behavior change in this checkpoint is retryability after a transient Supabase hydration read failure. No state schema, resource mapping, UI behavior, or sync write policy is changed.
