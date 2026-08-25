@@ -40,9 +40,9 @@
 
       window.showToast?.("Client archived. Historical records preserved.");
 
-      // Let the canonical application startup/sync path rehydrate the updated
-      // remote client state rather than mutating private module state here.
-      window.location.reload();
+      // Do not reload the page here. The client archive sync bridge performs
+      // the canonical remote reconciliation after this handler resolves, so
+      // forcing a reload would unnecessarily reset the active tab to Dashboard.
     } catch (error) {
       console.error("GotaVita client archive:", error);
       window.showToast?.("Client could not be archived. No cloud change was applied.", "error");
