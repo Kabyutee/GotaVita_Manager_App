@@ -66,6 +66,10 @@
   function setMeta(next) { writeJson(META_KEY, next || {}); }
   function authorized() { try { return window.GVAuth?.isAuthorized?.() === true; } catch (_) { return false; } }
 
+  // script.js currently does not publish __GV_APP_READY. Treat a rendered,
+  // authenticated application as ready while retaining the explicit sentinel
+  // for future callers. This prevents the canonical sync loop from remaining
+  // permanently in "booting" after authentication.
   function appReady() {
     return window.__GV_APP_READY === true || (
       authorized() &&
