@@ -44,6 +44,23 @@
     return `${first}: ${String(errors[first] || "cloud synchronization failed")}`;
   }
 
+  function ensureOrderDeleteBridge(){
+    if (window.__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__) return;
+    if (window.__GV_ORDER_DELETE_BRIDGE_LOADING__) return;
+    window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = true;
+    const script = document.createElement("script");
+    script.src = "/js/core/order-delete-reconciliation-bridge.js";
+    script.defer = true;
+    script.onload = () => { window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false; };
+    script.onerror = () => {
+      window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false;
+      setTimeout(ensureOrderDeleteBridge, 250);
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  ensureOrderDeleteBridge();
+
   window.GVSyncStatus = Object.freeze({
     get: status,
     detail: failureDetail,
