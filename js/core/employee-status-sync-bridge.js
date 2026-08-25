@@ -3,9 +3,9 @@
  * Employee status changes already mutate local state and call persistState().
  * When local persistence is blocked by browser storage quota, the normal
  * persistence path may never reach the cloud reconciliation trigger. This
- * narrow bridge invokes the existing conflict resolver immediately after a
- * successful Active <-> Inactive mutation so the canonical cloud path still
- * receives the changed employee.
+ * narrow bridge writes the changed Employee through the canonical GVData
+ * upsert path without invoking the unrelated whole-resource reconciliation
+ * pass, which includes append-only audit logs that do not support deletes.
  */
 (function () {
   "use strict";
@@ -36,9 +36,13 @@
         if (
           row &&
           typeof row.status === "string" &&
-          typeof window.GVConflictIntegration?.run === "function"
+          typeof window.GVData?.upsertResource === "function"
         ) {
-          await window.GVConflictIntegration.run(true);
+          if (typeof window.GVData.requireAuthenticatedManager === "function") {
+            await window.GVData.requireAuthenticatedManager();
+          }
+
+          await window.GVData.upsertResource("employees", [row]);
         }
       } catch (error) {
         console.warn(
