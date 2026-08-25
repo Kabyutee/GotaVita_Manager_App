@@ -9,6 +9,9 @@
   let initialized = false;
   let managerProfile = null;
   let authorized = false;
+  let lastEmittedAuthState = null;
+  let validationPromise = null;
+  let validationUserId = "";
 
   function config() { return window.GV_SUPABASE_CONFIG || {}; }
   function isConfigured() {
@@ -39,12 +42,13 @@
     }
   }
 
-  function emitAuthState() {
+  function emitAuthState(force = false) {
+    const authenticated = authorized === true;
+    if (!force && lastEmittedAuthState === authenticated) return;
+    lastEmittedAuthState = authenticated;
     window.dispatchEvent(
       new CustomEvent("gv-auth-state-changed", {
-        detail: {
-          authenticated: authorized === true
-        }
+        detail: { authenticated }
       })
     );
   }
@@ -114,34 +118,54 @@
   }
 
   async function validateSession(session, signOutInvalid = false) {
+    const userId = String(session?.user?.id || "");
+
     if (!session) {
+      if (validationPromise) {
+        try { await validationPromise; } catch (_) {}
+      }
       authorized = false;
       managerProfile = null;
+      validationUserId = "";
       setLoggedInUI(null);
       setApplicationLock(true, "Login required.");
       emitAuthState();
       return false;
     }
-    try {
-      const profile = await getManagerProfile(session);
-      managerProfile = profile;
-      currentSession = session;
-      authorized = true;
-      setLoggedInUI(session);
-      setAuthStatus("Manager + company verified ✓", "success");
-      setApplicationLock(false);
-      emitAuthState();
-      return true;
-    } catch (error) {
-      authorized = false;
-      managerProfile = null;
-      currentSession = null;
-      setLoggedInUI(null);
-      setApplicationLock(true, error?.message || "Authorization failed.");
-      if (signOutInvalid && client) { try { await client.auth.signOut(); } catch (_) {} }
-      emitAuthState();
-      return false;
+
+    if (validationPromise && validationUserId === userId) {
+      return validationPromise;
     }
+
+    validationUserId = userId;
+    validationPromise = (async () => {
+      try {
+        const profile = await getManagerProfile(session);
+        managerProfile = profile;
+        currentSession = session;
+        authorized = true;
+        setLoggedInUI(session);
+        setAuthStatus("Manager + company verified ✓", "success");
+        setApplicationLock(false);
+        emitAuthState();
+        return true;
+      } catch (error) {
+        authorized = false;
+        managerProfile = null;
+        currentSession = null;
+        setLoggedInUI(null);
+        setApplicationLock(true, error?.message || "Authorization failed.");
+        if (signOutInvalid && client) {
+          try { await client.auth.signOut(); } catch (_) {}
+        }
+        emitAuthState();
+        return false;
+      } finally {
+        validationPromise = null;
+      }
+    })();
+
+    return validationPromise;
   }
 
   async function requireManagerSession() {
@@ -170,11 +194,12 @@
     authorized = false;
     currentSession = null;
     managerProfile = null;
+    validationUserId = "";
 
     setLoggedInUI(null);
     setApplicationLock(true);
     setAuthStatus("Signed out. Login required.", "success");
-    emitAuthState();
+    emitAuthState(true);
 
     if (client) {
       const { error } = await client.auth.signOut();
@@ -231,10 +256,17 @@
         authorized = false;
         managerProfile = null;
         currentSession = null;
+        validationUserId = "";
         setLoggedInUI(null);
         setApplicationLock(true);
         setAuthStatus("Signed out. Login required.", "success");
-        emitAuthState();
+        emitAuthState(true);
+        return;
+      }
+
+      if (_event === "TOKEN_REFRESHED" && session && authorized && currentSession?.user?.id === session.user?.id) {
+        currentSession = session;
+        setLoggedInUI(session);
         return;
       }
 
