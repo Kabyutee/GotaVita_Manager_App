@@ -113,6 +113,7 @@
   }
   function maybeReleaseAppReady(){
     if(appReady || pendingDomReadyHandlers !== 0) return;
+    if(typeof document !== "undefined" && document.readyState === "loading") return;
     appReady = true; window.__GV_APP_READY = true;
     window.dispatchEvent(new CustomEvent("gv-app-ready")); dispatchCurrentAuthState();
     try{window.GVSync?.startPolling?.();}catch(_){}
@@ -137,5 +138,9 @@
       return originalRemoveEventListener(type,listener,options);
     };
     window.__GV_APPLICATION_LIFECYCLE_PATCHED = true;
+  }
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("DOMContentLoaded", maybeReleaseAppReady, {once:true});
+    if (document.readyState !== "loading") maybeReleaseAppReady();
   }
 })();
