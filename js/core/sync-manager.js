@@ -66,10 +66,6 @@
   function setMeta(next) { writeJson(META_KEY, next || {}); }
   function authorized() { try { return window.GVAuth?.isAuthorized?.() === true; } catch (_) { return false; } }
 
-  // script.js currently does not publish __GV_APP_READY. Treat a rendered,
-  // authenticated application as ready while retaining the explicit sentinel
-  // for future callers. This prevents the canonical sync loop from remaining
-  // permanently in "booting" after authentication.
   function appReady() {
     return window.__GV_APP_READY === true || (
       authorized() &&
@@ -219,6 +215,15 @@
         finally { window.syncChangedResources = originalSyncChanged; window.syncNow = originalSyncNow; }
       } else result = await integration.run(true);
 
+      let deletionApplied = false;
+      try {
+        if (typeof window.GVOrderDeleteReconciliation?.apply === "function") {
+          deletionApplied = await window.GVOrderDeleteReconciliation.apply();
+        }
+      } catch (error) {
+        console.warn("GotaVita order tombstone apply:", error?.message || error);
+      }
+
       const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       const changed = beforeDigest !== stateDigest(after);
       if (result?.ok === true) {
@@ -231,13 +236,14 @@
           lastSyncStatus: manualReview ? "conflict" : (result.status || "synced"),
           lastSyncQueuedBefore: queuedBefore,
           lastSyncStateChanged: changed,
-          lastSyncResults: result.results || []
+          lastSyncResults: result.results || [],
+          lastDeletionApplied: deletionApplied
         });
         if (changed) renderRemoteState();
-        return { ok: !manualReview, status: manualReview ? "conflict" : (result.status || "synced"), queued: queue().length, stateChanged: changed, remoteChanged: changed, renderRequired: changed, result };
+        return { ok: !manualReview, status: manualReview ? "conflict" : (result.status || "synced"), queued: queue().length, stateChanged: changed, remoteChanged: changed, renderRequired: changed, deletionApplied, result };
       }
-      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error" });
-      return { ok: false, status: result?.status || "sync-error", queued: queue().length, result };
+      setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: result?.status || "sync-error", lastDeletionApplied: deletionApplied });
+      return { ok: false, status: result?.status || "sync-error", queued: queue().length, deletionApplied, result };
     } catch (error) {
       const message = String(error?.message || error);
       setMeta({ ...getMeta(), lastSyncAt: new Date().toISOString(), lastSyncStatus: "sync-error", lastSyncError: message });
