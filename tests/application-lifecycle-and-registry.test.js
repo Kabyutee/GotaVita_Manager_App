@@ -36,7 +36,9 @@ const assert = require("node:assert/strict");
   assert.match(stateSource, /gateDomReadyListener/);
   assert.match(stateSource, /pendingDomReadyHandlers/);
   assert.match(stateSource, /maybeReleaseAppReady/);
-  assert.match(stateSource, /scheduleAuthorizedHydration\(\)\s*\{[\s\S]*return false/);
+  assert.match(stateSource, /function\s+scheduleAuthorizedHydration\s*\(/);
+  assert.doesNotMatch(stateSource, /function\s+scheduleAuthorizedHydration\s*\(\)\s*\{\s*return false\s*;?\s*\}/);
+  assert.match(stateSource, /hydrateAuthorizedStateAfterAuth\(\)/);
 
   let originalHealthCalled = 0;
   let syncCalled = 0;
