@@ -11,10 +11,12 @@
   "use strict";
 
   let installed = false;
+  let attempts = 0;
+  let timer = null;
 
   function install() {
     if (installed || typeof window.toggleEmployeeStatus !== "function") {
-      return;
+      return false;
     }
 
     const original = window.toggleEmployeeStatus;
@@ -49,24 +51,31 @@
     };
 
     installed = true;
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    return true;
   }
 
-  try {
-    install();
-  } catch (error) {
-    console.warn(
-      "GotaVita Employee status sync bridge initialization skipped:",
-      error?.message || error
-    );
+  function tryInstall() {
+    try {
+      if (install()) return;
+      attempts += 1;
+      if (attempts >= 120 && timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    } catch (error) {
+      console.warn(
+        "GotaVita Employee status sync bridge initialization skipped:",
+        error?.message || error
+      );
+    }
   }
 
-  window.addEventListener(
-    "DOMContentLoaded",
-    () => {
-      try {
-        install();
-      } catch (_) {}
-    },
-    { once: true }
-  );
+  tryInstall();
+  if (!installed) {
+    timer = setInterval(tryInstall, 50);
+  }
 })();
