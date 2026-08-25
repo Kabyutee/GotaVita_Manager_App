@@ -1,8 +1,6 @@
 // GotaVita Manager — Phase 4.5 Sprint M2
 // Business-module extraction. Functions remain global for backward compatibility.
 
-
-
 function makeAutoBackup(manual) {
   try {
     const list = readAutoBackupList();
@@ -55,7 +53,6 @@ function makeAutoBackup(manual) {
   }
 }
 
-
 function createBackupPayload() {
   normalizeState();
   const copy = clone(state);
@@ -72,14 +69,12 @@ function createBackupPayload() {
   return payload;
 }
 
-
 function describeBackup(b) {
   if (!b) return null;
   const raw = b.data?.data ? b.data : b.data;
   const data = raw?.data && raw.app ? raw.data : raw;
   return datasetSummary(data || {});
 }
-
 
 function validateBackupPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Backup must be a JSON object.");
@@ -102,7 +97,6 @@ function validateBackupPayload(payload) {
   }
 }
 
-
 function exportData() {
   try {
     const payload = createBackupPayload();
@@ -114,11 +108,9 @@ function exportData() {
   }
 }
 
-
 function triggerImport() {
   $("importFile").click();
 }
-
 
 function importData(e) {
   const file = e.target.files[0];
@@ -130,7 +122,6 @@ function importData(e) {
       const payload = raw?.app === "GotaVita Managers Web Application" && raw?.data ? raw.data : raw;
       const checked = validateBackupPayload(payload);
       const s = checked.summary;
-      const message = `Validated backup\n\nClients: ${s.clients}\nProducts: ${s.products}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nOverwrite current data? A safety backup will be created first.`;
       if (await requestConfirmation({title:"Import validated data", message:"Overwrite the current data with this validated backup?", details:`Clients: ${s.clients}\nProducts: ${s.products}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nA safety backup will be created first.`, confirmLabel:"Import Data", tone:"warning"})) {
         saveStateForUndo();
         makeAutoBackup(false);
@@ -147,7 +138,6 @@ function importData(e) {
   };
   reader.readAsText(file);
 }
-
 
 function exportCSV(type) {
   const rows = [];
@@ -167,7 +157,6 @@ function exportCSV(type) {
   showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} CSV exported.`);
 }
 
-
 function download(name, content, mime) {
   const blob = new Blob([content], { type: mime });
   const a = document.createElement("a");
@@ -176,9 +165,7 @@ function download(name, content, mime) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-
 function stamp() { return new Date().toISOString().slice(0, 10); }
-
 function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
 
 /* L300 dashboard modules are loaded after the existing deferred application
@@ -202,6 +189,7 @@ function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); 
     load("js/modules/l300-reporting-adapter.js")
       .then(() => load("js/modules/daily-l300-runs.js"))
       .then(() => load("js/modules/l300-operations-dashboard.js"))
+      .then(() => load("js/core/client-archive-sync-bridge.js"))
       .catch(error => console.warn("L300 dashboard modules initialization skipped:", error?.message || error));
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
