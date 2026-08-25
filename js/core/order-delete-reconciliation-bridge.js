@@ -58,6 +58,10 @@
     return true;
   }
 
+  window.GVOrderDeleteReconciliation = Object.freeze({
+    apply: removeRemoteDeletedOrders
+  });
+
   function install() {
     if (window.__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__) return true;
     if (!window.GVConflictIntegration?.run) return false;
