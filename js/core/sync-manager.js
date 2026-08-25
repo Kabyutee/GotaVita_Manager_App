@@ -66,6 +66,18 @@
   function setMeta(next) { writeJson(META_KEY, next || {}); }
   function authorized() { try { return window.GVAuth?.isAuthorized?.() === true; } catch (_) { return false; } }
 
+  // script.js currently does not publish __GV_APP_READY. Treat a rendered,
+  // authenticated application as ready while retaining the explicit sentinel
+  // for future callers. This prevents the canonical sync loop from remaining
+  // permanently in "booting" after authentication.
+  function appReady() {
+    return window.__GV_APP_READY === true || (
+      authorized() &&
+      window.GVPerformance &&
+      Number.isFinite(Number(window.GVPerformance.lastRenderMs))
+    );
+  }
+
   function activeEditableControl() {
     try { const active = document.activeElement; return active?.closest?.("input:not([type='checkbox']), select, textarea, button") || null; }
     catch (_) { return null; }
@@ -179,7 +191,7 @@
   }
 
   async function flush() {
-    if (window.__GV_APP_READY !== true) return { ok: false, status: "booting", queued: queue().length };
+    if (!appReady()) return { ok: false, status: "booting", queued: queue().length };
     if (inFlight) return { ok: false, status: "busy", queued: queue().length };
     if (typeof window === "undefined" || typeof navigator === "undefined") return { ok: false, status: "unavailable", queued: queue().length };
     if (navigator.onLine === false) return { ok: false, status: "offline", queued: queue().length };
@@ -238,7 +250,7 @@
 
   async function poll() { return flush(); }
   function startPolling() {
-    if (window.__GV_APP_READY !== true) return;
+    if (!authorized() && window.__GV_APP_READY !== true) return;
     if (timer) return;
     timer = setInterval(() => { flush().catch(() => {}); }, POLL_MS);
     flush().catch(() => {});
@@ -251,10 +263,10 @@
     document.addEventListener("keydown", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true);
     document.addEventListener("focusin", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true);
     document.addEventListener("focusout", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) endInteractionSoon(); }, true);
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && window.__GV_APP_READY === true) flush().catch(() => {}); });
-    window.addEventListener("online", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
-    window.addEventListener("focus", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
-    window.addEventListener("pageshow", () => { if (window.__GV_APP_READY === true) flush().catch(() => {}); });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (appReady() || authorized())) flush().catch(() => {}); });
+    window.addEventListener("online", () => { if (appReady() || authorized()) flush().catch(() => {}); });
+    window.addEventListener("focus", () => { if (appReady() || authorized()) flush().catch(() => {}); });
+    window.addEventListener("pageshow", () => { if (appReady() || authorized()) flush().catch(() => {}); });
     window.addEventListener("gv-auth-state-changed", (event) => {
       if (event?.detail?.authenticated === true) { startPolling(); flush().catch(() => {}); }
       else stopPolling();
