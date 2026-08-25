@@ -4,16 +4,10 @@
   if (window.__GV_CLIENT_DELETE_BRIDGE__) return;
 
   async function deleteClient(id) {
-    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return;
+    const legacyId = String(id ?? "").trim();
+    if (!legacyId) return;
 
-    const state = window.getStateSnapshot();
-    const client = Array.isArray(state.clients)
-      ? state.clients.find((row) => String(row.id) === String(id))
-      : null;
-    if (!client) return;
-
-    const name = String(client.name || "this client").trim();
-    const before = window.clone?.(client) || { ...client };
+    const name = `client ${legacyId}`;
 
     if (!(await window.requestConfirmation?.({
       title: "Archive client",
@@ -29,21 +23,30 @@
       return;
     }
 
-    client.active = false;
-    client.updatedAt = new Date().toISOString();
+    try {
+      const supabase = window.GVData?.getClient?.();
+      if (!supabase) throw new Error("Authenticated Supabase client is unavailable.");
 
-    if (typeof window.audit === "function") {
-      window.audit("update", "client", client.id, {
-        before,
-        after: window.clone?.(client) || { ...client },
-        reason: "archive"
-      });
+      const updatedAt = new Date().toISOString();
+      const { error } = await supabase
+        .from("clients")
+        .update({
+          active: false,
+          updated_at: updatedAt
+        })
+        .eq("legacy_id", legacyId);
+
+      if (error) throw error;
+
+      window.showToast?.("Client archived. Historical records preserved.");
+
+      // Let the canonical application startup/sync path rehydrate the updated
+      // remote client state rather than mutating private module state here.
+      window.location.reload();
+    } catch (error) {
+      console.error("GotaVita client archive:", error);
+      window.showToast?.("Client could not be archived. No cloud change was applied.", "error");
     }
-
-    window.replaceState(state);
-    if (typeof window.persistState === "function") window.persistState();
-    if (typeof window.renderAll === "function") window.renderAll();
-    window.showToast?.("Client archived. Safety backup created.");
   }
 
   window.deleteClient = deleteClient;
