@@ -175,21 +175,27 @@ function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); 
 (function loadL300DashboardModules() {
   function load(src) {
     return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[data-gv-l300-src="${src}"]`)) return resolve();
+      if (document.querySelector(`script[data-gv-module-src="${src}"]`)) return resolve();
       const script = document.createElement("script");
       script.src = src;
       script.defer = false;
-      script.dataset.gvL300Src = src;
+      script.dataset.gvModuleSrc = src;
       script.onload = resolve;
       script.onerror = () => reject(new Error(`Unable to load ${src}`));
       document.head.appendChild(script);
     });
   }
   function start() {
+    // Load the archive bridge independently from optional L300 modules.
+    // A failure in an auxiliary dashboard module must never prevent the
+    // production Client archive reconciliation bridge from loading.
+    load("js/core/client-archive-sync-bridge.js").catch(error => {
+      console.warn("GotaVita Client archive bridge initialization skipped:", error?.message || error);
+    });
+
     load("js/modules/l300-reporting-adapter.js")
       .then(() => load("js/modules/daily-l300-runs.js"))
       .then(() => load("js/modules/l300-operations-dashboard.js"))
-      .then(() => load("js/core/client-archive-sync-bridge.js"))
       .catch(error => console.warn("L300 dashboard modules initialization skipped:", error?.message || error));
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
