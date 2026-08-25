@@ -8,4 +8,10 @@ wrangler.jsonc
 functions
 supabase
 docs
+.github
+tests
 *.md
+*.txt
+package.json
+package-lock.json
+GotaVita_Backup_*.json
