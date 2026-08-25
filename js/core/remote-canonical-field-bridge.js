@@ -4,11 +4,7 @@
 
   if (window.__GV_REMOTE_CANONICAL_FIELD_BRIDGE__) return;
 
-  const TARGETS = Object.freeze({
-    clients: "clients",
-    products: "products",
-    employees: "employees"
-  });
+  const TARGETS = Object.freeze(["clients", "products", "employees"]);
   const POLL_MS = 5000;
   let inFlight = false;
 
@@ -17,14 +13,24 @@
     catch (_) { return value; }
   }
 
+  function rowId(row) {
+    return String(row?.id ?? "").trim();
+  }
+
   async function reconcile() {
     if (inFlight) return false;
-    if (!window.GVAuth?.isAuthorized?.()) return false;
-    const gateway = window.GVData;
-    if (!gateway || typeof gateway.getClient !== "function") return false;
+    if (!window.GVData?.getClient || !window.GVData?.requireAuthenticatedManager) return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
 
-    const supabase = gateway.getClient();
+    let auth;
+    try {
+      auth = await window.GVData.requireAuthenticatedManager();
+    } catch (_) {
+      return false;
+    }
+    if (!auth?.authenticated) return false;
+
+    const supabase = window.GVData.getClient();
     if (!supabase) return false;
 
     inFlight = true;
@@ -32,8 +38,8 @@
       const state = window.getStateSnapshot();
       let changed = false;
 
-      for (const resource of Object.keys(TARGETS)) {
-        const stateRows = Array.isArray(state[resource]) ? state[resource] : [];
+      for (const resource of TARGETS) {
+        const localRows = Array.isArray(state[resource]) ? state[resource] : [];
         const { data, error } = await supabase.from(resource).select("*");
         if (error || !Array.isArray(data)) continue;
 
@@ -43,62 +49,72 @@
             .map((row) => [String(row.legacy_id), row])
         );
 
-        const nextRows = stateRows.map((localRow) => {
-          const remoteRow = remoteByLegacyId.get(String(localRow?.id ?? ""));
+        const seen = new Set();
+        const nextRows = localRows.map((localRow) => {
+          const id = rowId(localRow);
+          const remoteRow = remoteByLegacyId.get(id);
           if (!remoteRow) return localRow;
 
-          const next = { ...localRow };
+          seen.add(id);
+          const mapped = typeof window.GVData.fromSupabaseRow === "function"
+            ? window.GVData.fromSupabaseRow(resource, remoteRow)
+            : { ...localRow };
+
+          const next = { ...localRow, ...mapped };
+
           if (resource === "clients" || resource === "products") {
-            const active = remoteRow.active !== false;
-            if (next.active !== active) {
-              next.active = active;
-              changed = true;
-            }
+            next.active = remoteRow.active !== false;
           }
-
           if (resource === "employees") {
-            const status = remoteRow.status || "Active";
-            if (next.status !== status) {
-              next.status = status;
-              changed = true;
-            }
+            next.status = remoteRow.status || "Active";
           }
+          if (remoteRow.updated_at) next.updatedAt = remoteRow.updated_at;
+          if (remoteRow.created_at) next.createdAt = remoteRow.created_at;
+          if (remoteRow.id) next.supabaseId = remoteRow.id;
 
-          if (remoteRow.updated_at && next.updatedAt !== remoteRow.updated_at) {
-            next.updatedAt = remoteRow.updated_at;
-            changed = true;
-          }
-          if (remoteRow.created_at && next.createdAt !== remoteRow.created_at) {
-            next.createdAt = remoteRow.created_at;
-            changed = true;
-          }
-          if (remoteRow.id && next.supabaseId !== remoteRow.id) {
-            next.supabaseId = remoteRow.id;
-            changed = true;
-          }
-
+          if (JSON.stringify(localRow) !== JSON.stringify(next)) changed = true;
           return next;
         });
+
+        // Add any remote rows that are not currently present locally.
+        for (const remoteRow of data) {
+          const id = String(remoteRow?.legacy_id ?? "").trim();
+          if (!id || seen.has(id)) continue;
+
+          const mapped = typeof window.GVData.fromSupabaseRow === "function"
+            ? window.GVData.fromSupabaseRow(resource, remoteRow)
+            : null;
+          if (!mapped) continue;
+
+          if (resource === "clients" || resource === "products") {
+            mapped.active = remoteRow.active !== false;
+          }
+          if (resource === "employees") {
+            mapped.status = remoteRow.status || "Active";
+          }
+          if (remoteRow.updated_at) mapped.updatedAt = remoteRow.updated_at;
+          if (remoteRow.created_at) mapped.createdAt = remoteRow.created_at;
+          if (remoteRow.id) mapped.supabaseId = remoteRow.id;
+
+          nextRows.push(mapped);
+          changed = true;
+        }
 
         state[resource] = nextRows;
       }
 
       if (!changed) return false;
 
+      const now = Date.now();
       state._meta = {
         ...(state._meta || {}),
-        lastUpdated: Date.now(),
-        lastSynchronizedAt: Date.now()
+        lastUpdated: now,
+        lastSynchronizedAt: now
       };
 
       window.replaceState(state);
       if (typeof window.writeLocalStateSnapshot === "function") {
         window.writeLocalStateSnapshot(clone(state));
-      }
-      if (typeof window.renderAll === "function") {
-        window.renderAll();
-      } else if (window.GVUI?.renderAll) {
-        window.GVUI.renderAll();
       }
 
       return true;
