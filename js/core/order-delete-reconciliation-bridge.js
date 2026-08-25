@@ -1,7 +1,4 @@
-/* GotaVita Manager — remote order tombstones are deletion evidence, not rows.
- * Keep canonical conflict reconciliation from resurrecting an order that has
- * already been deleted on another device.
- */
+/* GotaVita Manager — remote order tombstones are authoritative deletion evidence. */
 (function () {
   "use strict";
 
@@ -17,34 +14,63 @@
     return Number.isFinite(time) ? time : 0;
   }
 
+  async function removeRemoteDeletedOrders() {
+    if (!window.GVData?.selectResource || !window.getStateSnapshot || !window.replaceState) return false;
+    if (!window.GVAuth?.isAuthorized?.()) return false;
+
+    const state = window.getStateSnapshot();
+    if (!Array.isArray(state?.orders) || !state.orders.length) return false;
+
+    const tombstones = await window.GVData.selectResource("deleted_orders");
+    if (!Array.isArray(tombstones) || !tombstones.length) return false;
+
+    const tombstoneById = new Map();
+    for (const tombstone of tombstones) {
+      const id = stableId(tombstone);
+      if (id) tombstoneById.set(id, tombstone);
+    }
+
+    const remaining = [];
+    let changed = false;
+    for (const order of state.orders) {
+      const tombstone = tombstoneById.get(stableId(order));
+      if (!tombstone || timeOf(tombstone) < timeOf(order)) {
+        remaining.push(order);
+        continue;
+      }
+      changed = true;
+    }
+
+    if (!changed) return false;
+
+    state.orders = remaining;
+    state._meta = Object.assign({}, state._meta, {
+      lastUpdated: Date.now(),
+      lastSynchronizedAt: Date.now(),
+      lastRemoteChangedResources: ["orders", "deleted_orders"]
+    });
+    window.replaceState(state);
+    if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+    try {
+      if (window.GVUI?.renderAll) window.GVUI.renderAll();
+      else if (typeof window.renderAll === "function") window.renderAll();
+    } catch (_) {}
+    return true;
+  }
+
   function install() {
     if (window.__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__) return true;
-    if (!window.GVConflictIntegration?.buildResolutionPlan) return false;
+    if (!window.GVConflictIntegration?.run) return false;
 
-    const originalBuild = window.GVConflictIntegration.buildResolutionPlan;
+    const originalRun = window.GVConflictIntegration.run;
     window.GVConflictIntegration = Object.freeze({
       ...window.GVConflictIntegration,
-      buildResolutionPlan: function (localRows, remoteRows, baselineAt, localDeletedRows = [], remoteDeletedRows = [], baselineRows = []) {
-        const decisions = originalBuild(localRows, remoteRows, baselineAt, localDeletedRows, remoteDeletedRows, baselineRows);
-        const remoteTombstones = new Map(
-          (Array.isArray(remoteDeletedRows) ? remoteDeletedRows : [])
-            .map((row) => [stableId(row), row])
-            .filter(([id]) => id)
-        );
-
-        for (const decision of decisions) {
-          const tombstone = remoteTombstones.get(decision.id);
-          if (!tombstone || !decision.local) continue;
-
-          if (timeOf(tombstone) >= timeOf(decision.local)) {
-            decision.action = "remove-local";
-            decision.reason = "remote-delete-tombstone-authoritative";
-            decision.mutation = false;
-            decision.remote = null;
-          }
-        }
-
-        return decisions;
+      run: async function (...args) {
+        const result = await originalRun.apply(window.GVConflictIntegration, args);
+        let deletionApplied = false;
+        try { deletionApplied = await removeRemoteDeletedOrders(); }
+        catch (error) { console.warn("GotaVita remote order tombstone apply:", error?.message || error); }
+        return Object.assign({}, result, { deletionApplied });
       }
     });
 
@@ -52,11 +78,10 @@
     return true;
   }
 
-  try { install(); } catch (error) {
-    console.warn("GotaVita order-delete reconciliation bridge:", error?.message || error);
+  function ensureInstalled() {
+    if (install()) return;
+    setTimeout(ensureInstalled, 100);
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
-    try { install(); } catch (_) {}
-  }, { once: true });
+  ensureInstalled();
 })();
