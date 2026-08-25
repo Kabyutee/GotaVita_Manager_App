@@ -44,8 +44,7 @@
     const localIds = new Set(localOrders.map(stableId).filter(Boolean));
     const alreadyDeleted = new Set((Array.isArray(state?.deletedOrders) ? state.deletedOrders : []).map(stableId).filter(Boolean));
     const remoteOrders = await window.GVData.selectResource("orders");
-    if (!Array.isArray(remoteOrders) || !remoteOrders.length) return false;
-    const remoteById = new Map(remoteOrders.map((row) => [stableId(row), row]).filter(([id]) => id));
+    const remoteById = new Map((Array.isArray(remoteOrders) ? remoteOrders : []).map((row) => [stableId(row), row]).filter(([id]) => id));
 
     const now = new Date().toISOString();
     let changed = false;
@@ -54,8 +53,11 @@
     for (const baselineOrder of baseline) {
       const id = stableId(baselineOrder);
       if (!id || localIds.has(id) || alreadyDeleted.has(id)) continue;
-      if (!remoteById.has(id)) continue;
 
+      // The local order existed in the baseline but is now absent locally.
+      // The remote row may still exist OR may already have been physically
+      // deleted by canonical reconciliation. Either way, persist durable
+      // deletion evidence so another device can remove its stale local row.
       const tombstone = {
         id,
         legacy_id: id,
@@ -68,7 +70,12 @@
       };
 
       await window.GVData.upsertResource("deleted_orders", [tombstone]);
-      await window.GVData.deleteResourceByLegacyId("orders", id);
+
+      // If the remote order is still present, remove it. If canonical
+      // reconciliation already removed it, this is intentionally a no-op.
+      if (remoteById.has(id)) {
+        await window.GVData.deleteResourceByLegacyId("orders", id);
+      }
 
       nextDeleted.push(tombstone);
       changed = true;
