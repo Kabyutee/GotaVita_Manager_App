@@ -44,22 +44,24 @@
     return `${first}: ${String(errors[first] || "cloud synchronization failed")}`;
   }
 
-  function ensureOrderDeleteBridge(){
-    if (window.__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__) return;
-    if (window.__GV_ORDER_DELETE_BRIDGE_LOADING__) return;
-    window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = true;
+  function loadScript(src, flagName){
+    if (window[flagName]) return;
+    const loading = `${flagName}_LOADING`;
+    if (window[loading]) return;
+    window[loading] = true;
     const script = document.createElement("script");
-    script.src = "/js/core/order-delete-reconciliation-bridge.js";
+    script.src = src;
     script.defer = true;
-    script.onload = () => { window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false; };
+    script.onload = () => { window[loading] = false; };
     script.onerror = () => {
-      window.__GV_ORDER_DELETE_BRIDGE_LOADING__ = false;
-      setTimeout(ensureOrderDeleteBridge, 250);
+      window[loading] = false;
+      setTimeout(() => loadScript(src, flagName), 250);
     };
     (document.head || document.documentElement).appendChild(script);
   }
 
-  ensureOrderDeleteBridge();
+  loadScript("/js/core/order-delete-reconciliation-bridge.js", "__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__");
+  loadScript("/js/core/client-delete-bridge.js", "__GV_CLIENT_DELETE_BRIDGE__");
 
   window.GVSyncStatus = Object.freeze({
     get: status,
