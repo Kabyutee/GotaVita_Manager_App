@@ -65,9 +65,15 @@
   loadScript("/js/core/remote-canonical-field-bridge.js", "__GV_REMOTE_CANONICAL_FIELD_BRIDGE__");
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => setTimeout(() => loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__"), 0), { once: true });
+    document.addEventListener("DOMContentLoaded", () => setTimeout(() => {
+      loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__");
+      loadScript("/js/core/persist-resource-queue-bridge.js", "__GV_PERSIST_RESOURCE_QUEUE_BRIDGE__");
+    }, 0), { once: true });
   } else {
-    setTimeout(() => loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__"), 0);
+    setTimeout(() => {
+      loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__");
+      loadScript("/js/core/persist-resource-queue-bridge.js", "__GV_PERSIST_RESOURCE_QUEUE_BRIDGE__");
+    }, 0);
   }
 
   window.GVSyncStatus = Object.freeze({
