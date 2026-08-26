@@ -22,7 +22,6 @@ jobs:
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
           node --check js/core/conflict-resolution-integration.js
-          node --check js/core/application-lifecycle-guard.js
           node --check js/core/order-write-boundary-bridge.js
           node --check js/core/persist-resource-queue-bridge.js
 

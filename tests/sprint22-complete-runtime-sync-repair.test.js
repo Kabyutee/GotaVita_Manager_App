@@ -24,7 +24,15 @@ assert.match(manager, /ensureConflictIntegration\(\)/);
 assert.match(bridge, /channel\.on\(/);
 assert.match(bridge, /channel\.subscribe\(/);
 assert.match(bridge, /removeChannel/);
+assert.match(bridge, /realtimeStartingChannel/);
+assert.match(bridge, /scheduleRealtimeRetry\(channel, client\)/);
+assert.match(bridge, /void removeRealtimeChannel\(channel, client\)/);
 assert.match(bridge, /upsertResource\("orders"/);
+assert.equal((bridge.match(/client\.channel\("gotavita-canonical-sync"\)/g) || []).length, 1);
+assert.doesNotMatch(
+  bridge,
+  /if \(realtimeChannel === channel\) realtimeChannel = null;\s*realtimeStarting = false;\s*setTimeout\(\(\) => startRealtime\(\)/
+);
 assert.match(gateway, /async function selectResource/);
 assert.match(gateway, /async function upsertResource/);
 assert.match(gateway, /supportedResources/);
