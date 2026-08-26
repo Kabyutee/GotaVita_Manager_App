@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    types:
-      - closed
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -16,8 +11,7 @@ permissions:
 
 concurrency:
   group: gotavita-production
-  # Deployments are release artifacts; a newer main commit must replace a stale
-  # queued deployment rather than waiting behind an obsolete run.
+  # A newer main commit supersedes an older queued deployment.
   cancel-in-progress: true
 
 env:
@@ -25,7 +19,7 @@ env:
 
 jobs:
   deploy-production:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     name: Verify main and deploy to Cloudflare
 
@@ -33,7 +27,7 @@ jobs:
       - name: Checkout exact main commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Verify JavaScript syntax
         run: |
@@ -48,8 +42,8 @@ jobs:
 
       - name: JARVIS 9.0 business-first adaptive workflow
         env:
-          BASE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          BASE_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
 
       - name: Run full regression contracts
@@ -87,11 +81,11 @@ jobs:
             GV_RELEASE_SHA
           command: deploy
         env:
-          GV_RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          GV_RELEASE_SHA: ${{ github.sha }}
 
       - name: Verify production release SHA
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
