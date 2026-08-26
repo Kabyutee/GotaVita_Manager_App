@@ -50,6 +50,11 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
         run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
 
+      - name: Run application integrity gates
+        run: |
+          node tests/application-lifecycle-and-registry.test.js
+          node tests/ui-action-wiring-contract.test.js
+
       - name: Run full regression contracts
         run: |
           node tests/phase1-state-bridge.test.js
