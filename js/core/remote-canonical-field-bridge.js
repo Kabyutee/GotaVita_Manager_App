@@ -7,6 +7,7 @@
   const TARGETS = Object.freeze(["clients", "products", "employees"]);
   const POLL_MS = 5000;
   let inFlight = false;
+  let mutationActive = false;
 
   function clone(value) {
     try { return JSON.parse(JSON.stringify(value)); }
@@ -17,7 +18,39 @@
     return String(row?.id ?? "").trim();
   }
 
+  function setMutationActive(active) {
+    mutationActive = Boolean(active);
+    window.__GV_SYNC_TRANSACTION_ACTIVE = mutationActive;
+  }
+
+  function trackOrderMutation(event) {
+    const form = event?.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!["orderForm", "orderEditForm"].includes(form.id)) return;
+
+    setMutationActive(true);
+
+    queueMicrotask(() => {
+      if (!form.matches(":valid")) {
+        setMutationActive(false);
+      }
+    });
+  }
+
+  function releaseOrderMutation() {
+    if (!mutationActive) return;
+    queueMicrotask(() => {
+      setMutationActive(false);
+    });
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("submit", trackOrderMutation, true);
+    document.addEventListener("reset", releaseOrderMutation, true);
+  }
+
   async function reconcile() {
+    if (mutationActive || window.__GV_SYNC_TRANSACTION_ACTIVE === true) return false;
     if (inFlight) return false;
     if (!window.GVData?.getClient || !window.GVData?.requireAuthenticatedManager) return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
@@ -39,6 +72,8 @@
       let changed = false;
 
       for (const resource of TARGETS) {
+        if (mutationActive || window.__GV_SYNC_TRANSACTION_ACTIVE === true) return false;
+
         const localRows = Array.isArray(state[resource]) ? state[resource] : [];
         const { data, error } = await supabase.from(resource).select("*");
         if (error || !Array.isArray(data)) continue;
@@ -76,7 +111,6 @@
           return next;
         });
 
-        // Add any remote rows that are not currently present locally.
         for (const remoteRow of data) {
           const id = String(remoteRow?.legacy_id ?? "").trim();
           if (!id || seen.has(id)) continue;
