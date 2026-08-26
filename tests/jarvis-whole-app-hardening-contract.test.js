@@ -13,7 +13,7 @@ assert(syncManager.includes("crypto?.randomUUID") || syncManager.includes("crypt
 assert(syncManager.includes("crypto?.getRandomValues") || syncManager.includes("crypto.getRandomValues"), "queue IDs lack a Web Crypto fallback");
 assert(!syncManager.includes("Math.random()"), "non-cryptographic Math.random() remains in synchronization queue identity");
 
-const logoutSection = syncManager.match(/window\.addEventListener\("gv-auth-state-changed"[\s\S]*?stopPolling\(\);[\s\S]*?\}\);/);
+const logoutSection = syncManager.match(/window\.addEventListener\("gv-auth-state-changed"[\s\S]*?\n\s*\}\);/);
 assert(logoutSection, "auth lifecycle handler missing");
 assert(!/else\s*\{[\s\S]*?clearQueue\(\)/.test(logoutSection[0]), "sign-out path clears queued work");
 assert(logoutSection[0].includes("stopPolling()"), "sign-out path does not stop polling");
