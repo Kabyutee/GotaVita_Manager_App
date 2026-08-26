@@ -98,14 +98,21 @@
     if (renderPreservationInstalled) return;
     if (!window.GVUI || typeof window.GVUI.renderAll !== "function") return;
 
-    const originalRenderAll = window.GVUI.renderAll;
+    const currentUI = window.GVUI;
+    const originalRenderAll = currentUI.renderAll;
 
-    window.GVUI.renderAll = function guardedBulkSelectionRender(...args) {
+    const guardedRenderAll = function guardedBulkSelectionRender(...args) {
       const selection = captureBulkSelectionState();
       const result = originalRenderAll.apply(this, args);
       restoreBulkSelectionState(selection);
       return result;
     };
+
+    // GVUI is intentionally frozen by the UI bridge. Never mutate the frozen
+    // object in place; replace it with an equivalent frozen facade instead.
+    window.GVUI = Object.freeze(Object.assign({}, currentUI, {
+      renderAll: guardedRenderAll
+    }));
 
     renderPreservationInstalled = true;
   }
