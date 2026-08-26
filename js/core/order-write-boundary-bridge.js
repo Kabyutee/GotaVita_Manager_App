@@ -3,6 +3,19 @@
   "use strict";
 
   let installed = false;
+  let realtimeChannel = null;
+  let realtimeStarting = false;
+  const realtimeRetryMs = 500;
+  const REALTIME_RESOURCES = Object.freeze({
+    orders: "orders",
+    clients: "clients",
+    products: "products",
+    employees: "employees",
+    expenses: "expenses",
+    order_groups: "orderGroups",
+    delivery_routes: "deliveryRoutes",
+    deleted_orders: "deletedOrders"
+  });
 
   function cloneRows(rows) {
     return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
@@ -41,57 +54,181 @@
       .filter((id) => !before.has(id));
   }
 
-  async function mergeCanonicalOrdersIntoLocalState() {
+  function renderSafely() {
+    try {
+      if (window.GVSync?.render) {
+        window.GVSync.render();
+        return;
+      }
+      if (window.GVUI?.renderAll) window.GVUI.renderAll();
+      else if (typeof window.renderAll === "function") window.renderAll();
+    } catch (_) {}
+  }
+
+  async function mergeCanonicalResource(resource, targetId = null) {
     const data = window.GVData;
     if (!data || typeof data.selectResource !== "function") return false;
     if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
 
+    const stateName = REALTIME_RESOURCES[resource] || resource;
     try {
-      const remoteOrders = await data.selectResource("orders");
-      if (!Array.isArray(remoteOrders) || !remoteOrders.length) return false;
+      const remoteRows = await data.selectResource(resource);
+      if (!Array.isArray(remoteRows) || !remoteRows.length) return false;
 
       const state = window.getStateSnapshot();
-      const localOrders = Array.isArray(state.orders) ? state.orders.slice() : [];
-      const byId = new Map(localOrders.map((row) => [rowId(row), row]).filter(([id]) => id));
+      const localRows = Array.isArray(state[stateName]) ? state[stateName].slice() : [];
+      const byId = new Map(localRows.map((row) => [rowId(row), row]).filter(([id]) => id));
       let changed = false;
 
-      for (const remote of remoteOrders) {
+      const rowsToApply = targetId
+        ? remoteRows.filter((row) => rowId(row) === String(targetId))
+        : remoteRows;
+
+      for (const remote of rowsToApply) {
         const id = rowId(remote);
         if (!id) continue;
         const existing = byId.get(id);
         if (!existing) {
-          localOrders.push({ ...remote });
+          localRows.push({ ...remote });
           byId.set(id, remote);
           changed = true;
           continue;
         }
         try {
           if (JSON.stringify(existing) !== JSON.stringify(remote)) {
-            const index = localOrders.findIndex((row) => rowId(row) === id);
-            if (index >= 0) localOrders[index] = { ...remote };
+            const index = localRows.findIndex((row) => rowId(row) === id);
+            if (index >= 0) localRows[index] = { ...remote };
             changed = true;
           }
         } catch (_) {}
       }
 
       if (!changed) return false;
-      state.orders = localOrders;
+      state[stateName] = localRows;
       state._meta = Object.assign({}, state._meta, {
         lastUpdated: Date.now(),
         lastSynchronizedAt: Date.now(),
-        lastRemoteChangedResources: ["orders"]
+        lastRemoteChangedResources: [resource],
+        lastRealtimeSyncAt: new Date().toISOString()
       });
       window.replaceState(state);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
-      try {
-        if (window.GVUI?.renderAll) window.GVUI.renderAll();
-        else if (typeof window.renderAll === "function") window.renderAll();
-      } catch (_) {}
+      renderSafely();
       return true;
     } catch (error) {
-      console.warn("GotaVita Order originating-browser canonical merge:", error?.message || error);
+      console.warn(`GotaVita Realtime canonical merge [${resource}]:`, error?.message || error);
       return false;
     }
+  }
+
+  async function applyRealtimeDelete(resource, oldRow) {
+    if (resource === "orders" || resource === "deleted_orders") {
+      try {
+        if (typeof window.GVOrderDeleteReconciliation?.apply === "function") {
+          await window.GVOrderDeleteReconciliation.apply();
+          return;
+        }
+      } catch (_) {}
+      return;
+    }
+
+    const stateName = REALTIME_RESOURCES[resource] || resource;
+    const deletedId = rowId(oldRow);
+    if (!deletedId || typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return;
+
+    try {
+      const state = window.getStateSnapshot();
+      const rows = Array.isArray(state[stateName]) ? state[stateName] : [];
+      const next = rows.filter((row) => rowId(row) !== deletedId);
+      if (next.length === rows.length) return;
+      state[stateName] = next;
+      state._meta = Object.assign({}, state._meta, {
+        lastUpdated: Date.now(),
+        lastSynchronizedAt: Date.now(),
+        lastRemoteChangedResources: [resource],
+        lastRealtimeSyncAt: new Date().toISOString()
+      });
+      window.replaceState(state);
+      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+      renderSafely();
+    } catch (_) {}
+  }
+
+  const realtimePending = new Map();
+  let realtimeProcessTimer = null;
+
+  function queueRealtimeWork(resource, eventType, payload) {
+    realtimePending.set(resource, { eventType, payload });
+    if (realtimeProcessTimer) return;
+    realtimeProcessTimer = setTimeout(async () => {
+      realtimeProcessTimer = null;
+      if (window.__GV_ORDER_DIRECT_WRITE_ACTIVE === true || window.__GV_SYNC_TRANSACTION_ACTIVE === true) {
+        for (const [key, value] of realtimePending) queueRealtimeWork(key, value.eventType, value.payload);
+        return;
+      }
+      const pending = [...realtimePending.entries()];
+      realtimePending.clear();
+      for (const [resource, item] of pending) {
+        if (item.eventType === "DELETE") {
+          await applyRealtimeDelete(resource, item.payload?.old || {});
+          continue;
+        }
+        const targetId = rowId(item.payload?.new);
+        let applied = await mergeCanonicalResource(resource, targetId);
+        if (!applied && targetId) {
+          setTimeout(() => queueRealtimeWork(resource, item.eventType, item.payload), realtimeRetryMs);
+        }
+      }
+    }, 125);
+  }
+
+  async function stopRealtime() {
+    const authClient = window.GVAuth?.getClient?.();
+    if (authClient && realtimeChannel) {
+      try { await authClient.removeChannel(realtimeChannel); } catch (_) {}
+    }
+    realtimeChannel = null;
+    realtimeStarting = false;
+  }
+
+  async function startRealtime() {
+    if (realtimeChannel || realtimeStarting) return;
+    const auth = window.GVAuth;
+    const client = auth?.getClient?.();
+    if (!client || auth?.isAuthorized?.() !== true) return;
+
+    realtimeStarting = true;
+    try {
+      const channel = client.channel("gotavita-canonical-sync");
+      Object.keys(REALTIME_RESOURCES).forEach((resource) => {
+        channel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: resource },
+          (payload) => queueRealtimeWork(resource, payload?.eventType || "*", payload)
+        );
+      });
+
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          realtimeChannel = channel;
+          realtimeStarting = false;
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (realtimeChannel === channel) realtimeChannel = null;
+          realtimeStarting = false;
+          setTimeout(() => startRealtime().catch(() => {}), realtimeRetryMs);
+        }
+      });
+    } catch (error) {
+      realtimeStarting = false;
+      console.warn("GotaVita Realtime startup:", error?.message || error);
+      setTimeout(() => startRealtime().catch(() => {}), realtimeRetryMs);
+    }
+  }
+
+  async function mergeCanonicalOrdersIntoLocalState() {
+    return mergeCanonicalResource("orders");
   }
 
   async function refreshOrderBaseline() {
@@ -146,19 +283,10 @@
     }
 
     const explicitDeletes = explicitDeletedIds(beforeDeleted, afterDeleted);
-    if (
-      explicitDeletes.length &&
-      typeof data.deleteResourceByLegacyId === "function"
-    ) {
-      for (const id of explicitDeletes) {
-        await data.deleteResourceByLegacyId("orders", id);
-      }
+    if (explicitDeletes.length && typeof data.deleteResourceByLegacyId === "function") {
+      for (const id of explicitDeletes) await data.deleteResourceByLegacyId("orders", id);
     }
 
-    // The originating handler can successfully persist the Order remotely
-    // without exposing the new row in its immediate local snapshot. Always
-    // merge the canonical remote Order collection back into local state after
-    // a direct Order mutation, without deleting any local Orders.
     await mergeCanonicalOrdersIntoLocalState();
     await refreshOrderBaseline();
   }
@@ -169,18 +297,11 @@
     if (original.__GV_ORDER_WRITE_THROUGH__) return true;
 
     async function wrapped(...args) {
-      const before =
-        typeof window.getStateSnapshot === "function"
-          ? window.getStateSnapshot()
-          : null;
-
+      const before = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
       window.__GV_ORDER_DIRECT_WRITE_ACTIVE = true;
       try {
         const result = await Promise.resolve(original.apply(this, args));
-        const after =
-          typeof window.getStateSnapshot === "function"
-            ? window.getStateSnapshot()
-            : null;
+        const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
         await writeDelta(before, after);
         return result;
       } finally {
@@ -201,11 +322,7 @@
 
   function install() {
     if (installed) return;
-    installed = [
-      "handleOrderSubmit",
-      "handleOrderEditSubmit",
-      "archiveOrders"
-    ].map(wrap).some(Boolean);
+    installed = ["handleOrderSubmit", "handleOrderEditSubmit", "archiveOrders"].map(wrap).some(Boolean);
     if (installed) window.__GV_ORDER_WRITE_BOUNDARY_BRIDGE__ = true;
   }
 
@@ -215,11 +332,13 @@
       install();
       if (!installed) setTimeout(retry, 50);
     };
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", retry, { once: true });
-    } else {
-      retry();
-    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", retry, { once: true });
+    else retry();
+    window.addEventListener("gv-auth-state-changed", (event) => {
+      if (event?.detail?.authenticated === true) startRealtime().catch(() => {});
+      else stopRealtime().catch(() => {});
+    });
+    if (window.GVAuth?.isAuthorized?.()) startRealtime().catch(() => {});
   }
 
   boot();
