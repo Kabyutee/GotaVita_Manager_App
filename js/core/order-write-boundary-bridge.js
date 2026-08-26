@@ -51,7 +51,13 @@
         return result;
       } finally {
         window.__GV_ORDER_DIRECT_WRITE_ACTIVE = false;
-        try { if (typeof window.GVSync?.flush === "function") await window.GVSync.flush(); } catch (_) {}
+        // The write-through boundary above is already authoritative for this
+        // mutation. Do not immediately run a full canonical reconciliation
+        // against the just-written row: that creates a read-after-write race
+        // where a transiently stale remote snapshot can overwrite the local
+        // mutation before the next normal sync poll confirms convergence.
+        // GVSync polling remains responsible for ordinary post-write
+        // reconciliation.
       }
     }
     Object.defineProperty(wrapped, "__GV_ORDER_WRITE_THROUGH__", { value: true, configurable: false, enumerable: false, writable: false });
