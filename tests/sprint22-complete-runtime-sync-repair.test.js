@@ -15,7 +15,7 @@ assert.match(repair, /localTime > remoteTime/);
 assert.match(repair, /canonicalSnapshotIsSafe/);
 assert.match(repair, /deleted_orders/);
 assert.match(repair, /canonical-snapshot-incomplete/);
-assert.match(repair, /replaceState\(state\)/);
+assert.match(repair, /replaceState\((?:state|protectedState)\)/);
 assert.match(repair, /writeLocalStateSnapshot/);
 assert.match(repair, /GVSync = Object\.freeze/);
 assert.match(worker, /sync-complete-runtime-repair\.js/);
