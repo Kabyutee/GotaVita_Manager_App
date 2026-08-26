@@ -1,0 +1,43 @@
+name: GotaVita Production Recovery Smoke
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOTAVITA_PRODUCTION_URL: https://gotavita-manager-app.carleugenetolentino22.workers.dev
+      E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+      E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save --no-package-lock @playwright/test@latest
+          npx playwright install --with-deps chromium
+
+      - name: Run recovery production smoke
+        run: npx playwright test tests/e2e/production-recovery-smoke.spec.js --reporter=line
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-recovery-smoke-report
+          path: test-results/
+          if-no-files-found: ignore
