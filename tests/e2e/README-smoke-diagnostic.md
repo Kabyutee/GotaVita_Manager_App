@@ -1,1 +1,0 @@
-This branch updates the production smoke to wait for post-auth hydration before interacting with the New Order form and logs selected client/product, native form validity, toast messages, and hydration state on create failures. This file is intentionally minimal and documents the diagnostic change.
