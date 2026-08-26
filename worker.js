@@ -63,13 +63,14 @@ function bustLocalScriptUrls(html, releaseSha) {
     }
   );
 
-  // The realtime lifecycle compatibility module already exists in the
-  // application but was not wired into index.html. Inject it immediately
-  // before sync-manager so its Supabase channel patch is installed first.
-  if (!/realtime-channel-lifecycle-fix\.js(?:[?"'])/i.test(output)) {
-    const marker = /<script\s+src=["'][^"']*js\/core\/sync-manager\.js[^"']*["'][^>]*><\/script>/i;
-    const fixTag = `<script src="js/core/realtime-channel-lifecycle-fix.js?gv_release=${version}" defer></script>`;
-    output = output.replace(marker, `${fixTag}\n$&`);
+  // Install the order write boundary before script.js registers its form
+  // listeners. This makes the durable Supabase write wrapper deterministic.
+  // Realtime itself remains optional; canonical synchronization uses the
+  // authenticated polling/reconciliation coordinator.
+  const marker = /<script\s+src=["'][^"']*js\/core\/sync-manager\.js[^"']*["'][^>]*><\/script>/i;
+  if (!/order-write-boundary-bridge\.js(?:[?"'])/i.test(output)) {
+    const bridgeTag = `<script src="js/core/order-write-boundary-bridge.js?gv_release=${version}" defer></script>`;
+    output = output.replace(marker, `${bridgeTag}\n$&`);
   }
 
   return output;
@@ -108,16 +109,9 @@ export default {
 
     if (url.pathname === "/gv-config") {
       if (request.method !== "GET" && request.method !== "HEAD") {
-        return new Response("Method Not Allowed", { status: 405 });
+        return jsonResponse({ error: "Method not allowed" }, 405);
       }
       return configResponse(env);
-    }
-
-    if (url.pathname === "/api/data" || url.pathname.startsWith("/api/")) {
-      return jsonResponse({
-        error: "Legacy server API is not part of the production Worker.",
-        code: "LEGACY_API_RETIRED"
-      }, 410);
     }
 
     return serveApplicationAsset(request, env);
