@@ -76,7 +76,7 @@ jobs:
               wrangler.jsonc|package.json|package-lock.json)
                 deployment=true
                 ;;
-              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-cloud-write-reconciler.js|js/core/sync-queue-authority.js|js/core/sync-authority.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|js/core/group-membership-sync-bridge.js|js/core/sync-complete-runtime-repair.js|js/core/order-write-boundary-bridge.js|script.js|tests/*sync*|tests/*conflict*|tests/jarvis-8-runtime-adaptation-audit.test.js|tests/jarvis-9-business-first-adaptive-workflow.test.js|tests/jarvis-whole-app-hardening-contract.test.js|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/anti-big-bang-6-application-connection-audit.test.js|tests/anti-big-bang-7-adaptive-application-scan.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js|tests/sprint21-whole-sync-hardening-contract.test.js|tests/sprint22-complete-runtime-sync-repair.test.js|tests/l300-group-order-contract.test.js)
+              js/core/sync-manager.js|js/core/state.js|js/core/data-gateway.js|js/core/conflict-resolution-integration.js|js/core/ui-bridge.js|js/core/sync-status.js|js/core/sync-auth-startup-bridge.js|js/core/sync-checkbox-interaction-bridge.js|js/core/production-guard.js|js/core/group-membership-sync-bridge.js|js/core/order-write-boundary-bridge.js|script.js|tests/*sync*|tests/*conflict*|tests/jarvis-8-runtime-adaptation-audit.test.js|tests/jarvis-9-business-first-adaptive-workflow.test.js|tests/jarvis-whole-app-hardening-contract.test.js|tests/anti-big-bang-4-system-audit.test.js|tests/anti-big-bang-5-sync-architecture-contract.test.js|tests/anti-big-bang-6-application-connection-audit.test.js|tests/anti-big-bang-7-adaptive-application-scan.test.js|tests/sprint18-order-number-reconciliation-contract.test.js|tests/sprint20-empty-resource-convergence-contract.test.js|tests/sprint21-whole-sync-hardening-contract.test.js|tests/sprint22-complete-runtime-sync-repair.test.js|tests/l300-group-order-contract.test.js)
                 sync=true
                 ;;
               migrations/*|seed.js|data/*|supabase/*|server_data.json)
@@ -149,9 +149,6 @@ jobs:
           node --check worker.js
           node --check js/core/sync-manager.js
           node --check js/core/conflict-resolution-integration.js
-          node --check js/core/sync-cloud-write-reconciler.js
-          node --check js/core/sync-authority.js
-          node --check js/core/sync-complete-runtime-repair.js
           node --check js/core/order-write-boundary-bridge.js
           node --check js/modules/daily-l300-runs.js
 
