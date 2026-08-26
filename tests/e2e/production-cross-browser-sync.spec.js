@@ -16,6 +16,10 @@ async function login(page, name = 'browser') {
   });
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await expect.poll(
+    () => page.evaluate(() => Boolean(window.GVAuth?.getClient?.())),
+    { timeout: 30000, intervals: [250, 500, 1000] }
+  ).toBeTruthy();
   await page.locator('#gvAuthEmail').fill(EMAIL);
   await page.locator('#gvAuthPassword').fill(PASSWORD);
   await page.locator('#gvAuthForm button[type="submit"]').click();
@@ -30,7 +34,8 @@ async function login(page, name = 'browser') {
       locked: document.documentElement.dataset.gvAuthState,
       authorized: window.GVAuth?.isAuthorized?.() === true,
       status: document.querySelector('#gvAuthStatus')?.textContent?.trim() || '',
-      identity: document.querySelector('#gvAuthIdentity')?.textContent?.trim() || ''
+      identity: document.querySelector('#gvAuthIdentity')?.textContent?.trim() || '',
+      authClientReady: Boolean(window.GVAuth?.getClient?.())
     })).catch(() => null));
     throw error;
   }
@@ -52,6 +57,7 @@ async function runtimeSnapshot(page) {
       appReady: window.__GV_APP_READY === true,
       authorized: window.GVAuth?.isAuthorized?.() === true,
       hydrationActive: Boolean(window.__GV_AUTH_HYDRATION_PROMISE),
+      authClientReady: Boolean(window.GVAuth?.getClient?.()),
       clientValue: document.querySelector('#clientSelect')?.value || '',
       productValue: document.querySelector('#custTypeSelect')?.value || '',
       formValid: document.querySelector('#orderForm')?.checkValidity?.() ?? null,
