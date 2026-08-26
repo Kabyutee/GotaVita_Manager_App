@@ -3,6 +3,8 @@
   "name": "gotavita-manager-app",
   "main": "worker.js",
   "compatibility_date": "2026-08-18",
+  "workers_dev": true,
+  "preview_urls": true,
   "observability": {
     "enabled": true
   },
