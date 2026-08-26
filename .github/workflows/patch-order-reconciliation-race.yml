@@ -1,0 +1,157 @@
+name: Patch Order reconciliation race
+
+on:
+  push:
+    branches:
+      - fix/order-reconciliation-race-v2
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch transaction protocol
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          integration_path = Path('js/core/conflict-resolution-integration.js')
+          text = integration_path.read_text()
+
+          old = 'async function reconcileResource(resource,localRows,remoteRows,baselineAt,localDeletedRows,remoteDeletedRows,baselineRows,nextState){const decisions='
+          new = 'async function reconcileResource(resource,localRows,remoteRows,baselineAt,localDeletedRows,remoteDeletedRows,baselineRows,nextState,mutationEpochAtStart=null){const decisions='
+          if old not in text:
+              raise SystemExit('reconcileResource signature not found')
+          text = text.replace(old, new, 1)
+
+          old = 'for(const decision of decisions){if(decision.action==="keep-local"||decision.action==="keep-remote")await applyDecision(resource,decision,nextState);}'
+          new = 'for(const decision of decisions){if(mutationEpochAtStart!==null&&mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0))return{resource,decisions,summary,reconciled:false,partial:false,unresolvedCount:manual.length,aborted:true};if(decision.action==="keep-local"||decision.action==="keep-remote")await applyDecision(resource,decision,nextState);}'
+          if old not in text:
+              raise SystemExit('decision loop not found')
+          text = text.replace(old, new, 1)
+
+          old = 'const results=[],nextBaseline={...baseline};for(const resource of supportedResources()){'
+          new = 'const results=[],nextBaseline={...baseline},mutationEpochAtStart=Number(window.__GV_ORDER_MUTATION_EPOCH||0);for(const resource of supportedResources()){if(mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0))return{ok:false,status:"state-changed-during-run",results};'
+          if old not in text:
+              raise SystemExit('run setup not found')
+          text = text.replace(old, new, 1)
+
+          old = 'const result=await reconcileResource(resource,localRows,remoteRows,baselineAt,localDeletedRows,remoteDeletedRows,baselineRows,nextState);results.push({...result,status:baselineAt?undefined:"baseline-initialized"});'
+          new = 'const result=await reconcileResource(resource,localRows,remoteRows,baselineAt,localDeletedRows,remoteDeletedRows,baselineRows,nextState,mutationEpochAtStart);if(result.aborted)return{ok:false,status:"state-changed-during-run",results};results.push({...result,status:baselineAt?undefined:"baseline-initialized"});'
+          if old not in text:
+              raise SystemExit('reconcile call not found')
+          text = text.replace(old, new, 1)
+
+          old = 'if(typeof window.GVGroupMembershipBridge?.reconcileRemoteState==="function")window.GVGroupMembershipBridge.reconcileRemoteState(nextState);if(typeof window.replaceState==="function")window.replaceState(nextState);'
+          new = 'if(mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0))return{ok:false,status:"state-changed-during-run",results};if(typeof window.GVGroupMembershipBridge?.reconcileRemoteState==="function")window.GVGroupMembershipBridge.reconcileRemoteState(nextState);if(mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0))return{ok:false,status:"state-changed-during-run",results};if(typeof window.replaceState==="function")window.replaceState(nextState);'
+          if old not in text:
+              raise SystemExit('final replaceState boundary not found')
+          text = text.replace(old, new, 1)
+
+          integration_path.write_text(text)
+
+          epoch_path = Path('js/core/order-mutation-epoch.js')
+          epoch_path.write_text(r'''/* GotaVita Manager — order mutation epoch for stale sync protection. */
+(function () {
+  "use strict";
+
+  const MARKER = "__GV_ORDER_MUTATION_EPOCH_WRAPPED__";
+  const NAMES = Object.freeze(["handleOrderSubmit", "handleOrderEditSubmit", "archiveOrders"]);
+
+  function bump() {
+    window.__GV_ORDER_MUTATION_EPOCH = Number(window.__GV_ORDER_MUTATION_EPOCH || 0) + 1;
+  }
+
+  function wrap(name) {
+    const original = window[name];
+    if (typeof original !== "function" || original[MARKER]) return typeof original === "function";
+
+    async function wrapped(...args) {
+      bump();
+      return original.apply(this, args);
+    }
+
+    Object.defineProperty(wrapped, MARKER, {
+      value: true,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+    window[name] = wrapped;
+    return true;
+  }
+
+  function install() {
+    if (window.__GV_ORDER_MUTATION_EPOCH_READY__) return true;
+    if (window.__GV_ORDER_WRITE_BOUNDARY_BRIDGE__ !== true) return false;
+    const ready = NAMES.every(wrap);
+    if (ready) {
+      window.__GV_ORDER_MUTATION_EPOCH = Number(window.__GV_ORDER_MUTATION_EPOCH || 0);
+      window.__GV_ORDER_MUTATION_EPOCH_READY__ = true;
+    }
+    return ready;
+  }
+
+  function activate() {
+    if (!install()) setTimeout(activate, 25);
+  }
+
+  activate();
+})();
+''')
+
+          runtime_path = Path('js/core/sync-runtime-activation.js')
+          runtime = runtime_path.read_text()
+          old = '"/js/core/sync-tombstone-legacy-id-bridge.js"\n  ];'
+          new = '"/js/core/sync-tombstone-legacy-id-bridge.js",\n    "/js/core/order-mutation-epoch.js"\n  ];'
+          if old not in runtime:
+              raise SystemExit('runtime module list not found')
+          runtime_path.write_text(runtime.replace(old, new, 1))
+
+          contract = Path('tests/sprint25-order-sync-race-contract.test.js')
+          contract.write_text(r'''const fs = require("node:fs");
+const assert = require("node:assert/strict");
+
+const integration = fs.readFileSync("js/core/conflict-resolution-integration.js", "utf8");
+const epoch = fs.readFileSync("js/core/order-mutation-epoch.js", "utf8");
+const runtime = fs.readFileSync("js/core/sync-runtime-activation.js", "utf8");
+
+assert(integration.includes("__GV_ORDER_MUTATION_EPOCH"), "conflict integration must observe the Order mutation epoch");
+assert(integration.includes("state-changed-during-run"), "stale reconciliation must abort before replacing newer Order state");
+assert(integration.includes("mutationEpochAtStart"), "reconciliation must capture mutation epoch at start");
+assert(integration.includes("mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0)"), "reconciliation must detect an Order mutation that started during the run");
+assert(epoch.includes("__GV_ORDER_MUTATION_EPOCH"), "Order mutations must advance the epoch");
+assert(epoch.includes("handleOrderSubmit"), "create Order must advance the epoch");
+assert(epoch.includes("handleOrderEditSubmit"), "edit Order must advance the epoch");
+assert(epoch.includes("archiveOrders"), "archive/delete Order must advance the epoch");
+assert(runtime.includes("/js/core/order-mutation-epoch.js"), "runtime activation must load the mutation epoch boundary");
+
+console.log("Sprint 25 Order reconciliation race contract: PASS");
+''')
+          PY
+
+      - name: Validate patch
+        run: |
+          node --check js/core/conflict-resolution-integration.js
+          node --check js/core/order-mutation-epoch.js
+          node --check js/core/sync-runtime-activation.js
+          node tests/sprint25-order-sync-race-contract.test.js
+
+      - name: Commit patch and remove one-off workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-order-reconciliation-race.yml
+          git add js/core/conflict-resolution-integration.js js/core/order-mutation-epoch.js js/core/sync-runtime-activation.js tests/sprint25-order-sync-race-contract.test.js
+          git commit -m "fix: abort stale Order reconciliation after concurrent mutation"
+          git push origin HEAD:${GITHUB_REF_NAME}
