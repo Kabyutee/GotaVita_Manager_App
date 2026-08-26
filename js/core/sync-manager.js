@@ -37,7 +37,8 @@
   function ensureEmergencyRecoveryLoaded() { if (typeof document === "undefined") return; if (window.GVEmergencyRecovery) return; if (document.querySelector('script[data-gv-emergency-recovery="true"]')) return; const script = document.createElement("script"); script.src = "/js/core/emergency-recovery.js"; script.defer = true; script.dataset.gvEmergencyRecovery = "true"; script.onerror = () => console.warn("GotaVita emergency recovery failed to load."); (document.head || document.documentElement).appendChild(script); }
   function ensureRealtimeChannelLifecycleFixLoaded() {
     if (typeof document === "undefined") return;
-    if (window.GVAuth?.getClient?.().__GV_REALTIME_CHANNEL_PATCH__) return;
+    const client = window.GVAuth?.getClient?.();
+    if (client?.__GV_REALTIME_CHANNEL_PATCH__) return;
     if (document.querySelector('script[data-gv-realtime-channel-lifecycle-fix="true"]')) return;
     const script = document.createElement("script");
     script.src = "/js/core/realtime-channel-lifecycle-fix.js";
