@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release/realtime-sync-verified
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
