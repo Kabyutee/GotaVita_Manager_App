@@ -61,9 +61,6 @@
     if (!Array.isArray(previous) || !previous.length) return true;
     if (normalized.length >= previous.length) return true;
 
-    // A passive cloud read that suddenly returns an empty or smaller snapshot
-    // is not sufficient evidence that populated local state was deleted.
-    // Never turn a populated application resource into an empty collection.
     if (normalized.length === 0) return false;
 
     if (resource !== "orders") return false;
@@ -102,9 +99,6 @@
         continue;
       }
 
-      // A deletion tombstone only wins when it is at least as recent as the
-      // live order. This prevents a stale archive record from deleting a newer
-      // legitimate edit that happens to share the same legacy ID.
       if (timeOf(tombstone) >= timeOf(order)) {
         changed = true;
         continue;
@@ -191,10 +185,6 @@
         }
       }
 
-      // Explicitly apply remote order tombstones after canonical reads. This
-      // closes the cross-device deletion path: Browser B must remove a live
-      // order when Browser A has already archived it remotely, even when the
-      // primary order reconciliation did not produce a diff by itself.
       if (applyRemoteOrderTombstones(state, remoteDeletedOrders)) {
         stateChanged = true;
       }
@@ -205,8 +195,13 @@
           lastUpdated: now,
           lastSynchronizedAt: now
         });
-        window.replaceState(state);
-        if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+
+        const protectedState = window.GVRecentOrderStateProtection?.protectState
+          ? window.GVRecentOrderStateProtection.protectState(window.getStateSnapshot(), state)
+          : state;
+
+        window.replaceState(protectedState);
+        if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(protectedState);
         try {
           if (window.GVUI?.renderAll) window.GVUI.renderAll();
           else if (typeof window.renderAll === "function") window.renderAll();

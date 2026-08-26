@@ -7,7 +7,8 @@ deferred application scripts have finished bootstrapping. */
     "/js/core/sync-cloud-write-reconciler.js",
     "/js/core/sync-queue-authority.js",
     "/js/core/sync-authority.js",
-    "/js/core/sync-tombstone-legacy-id-bridge.js"
+    "/js/core/sync-tombstone-legacy-id-bridge.js",
+    "/js/core/order-mutation-transaction-guard.js"
   ];
 
   function load(src) {

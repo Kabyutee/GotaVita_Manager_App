@@ -289,14 +289,17 @@
     original,
     payload
   ) {
+    // legacy_payload is historical compatibility data only.
+    // Canonical Supabase columns MUST win over stale legacy fields; otherwise
+    // a successful remote edit can be read back as an older browser value.
     return {
-      ...(payload || {}),
       ...(
         original &&
         typeof original === "object"
           ? original
           : {}
-      )
+      ),
+      ...(payload || {})
     };
   }
 

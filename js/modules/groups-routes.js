@@ -15,7 +15,9 @@ function ensureGroupLegacyIds() {
   });
 }
 
-ensureGroupLegacyIds();
+if (typeof window !== "undefined") {
+  window.addEventListener("gv-app-ready", ensureGroupLegacyIds, { once: true });
+}
 
 function groupOf(orderId) {
   const g = state.orderGroups.find((g) => (g.orderIds || []).some((x) => idsEqual(x, orderId)));
