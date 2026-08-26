@@ -60,7 +60,7 @@ function updateEditOrderTotal() {
 
 
 function openOrderEditor(id) {
-  const o = state.orders.find(x => idsEqual(x.id, id)); if (!o) return;
+  const o = state.orders.find(x => toId(x.id) === toId(id)); if (!o) return;
   renderOrderEditorDropdowns();
   $("editOrderId").value = o.id;
   $("editOrderClient").value = o.clientName || "";
@@ -80,7 +80,7 @@ function openOrderEditor(id) {
 function handleOrderEditSubmit(e) {
   e.preventDefault();
   const id = $("editOrderId").value;
-  const o = state.orders.find(x => idsEqual(x.id, id));
+  const o = state.orders.find(x => toId(x.id) === toId(id));
   if (!o) return;
 
   const clientName = $("editOrderClient").value;
@@ -215,8 +215,8 @@ function clearNewOrderForm({ preserveClient = false } = {}) {
 function repeatLastOrder() {
   const last = state.orders.slice().sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0))[0];
   if (!last) { showToast("There is no previous order to repeat.", "error"); return; }
-  const client = state.clients.find(c => (last.clientId && idsEqual(c.id, last.clientId)) || c.name === last.clientName);
-  const product = state.products.find(p => (last.productId && idsEqual(p.id, last.productId)) || p.name === last.custType);
+  const client = state.clients.find(c => (last.clientId && toId(c.id) === toId(last.clientId)) || c.name === last.clientName);
+  const product = state.products.find(p => (last.productId && toId(p.id) === toId(last.productId)) || p.name === last.custType);
   if (!client || !product) {
     showToast("The previous order references a client or product that no longer exists.", "error");
     return;
@@ -393,7 +393,7 @@ function renderAllOrders() {
 
 
 function updateOrderInline(id, field, val) {
-  const o = state.orders.find((x) => idsEqual(x.id, id)); if (!o) return;
+  const o = state.orders.find((x) => toId(x.id) === toId(id)); if (!o) return;
   saveStateForUndo();
   const before = clone(o);
   if (["gallons","price","emptyGallonsCollected"].includes(field)) o[field] = Math.max(parseFloat(val) || 0, 0);
@@ -406,7 +406,7 @@ function updateOrderInline(id, field, val) {
 
 
 function updateOrderStatus(id, status) {
-  const o = state.orders.find((x) => idsEqual(x.id, id)); if (!o) return;
+  const o = state.orders.find((x) => toId(x.id) === toId(id)); if (!o) return;
   if (!['Paid','Unpaid','Pending','Cancelled'].includes(status)) return;
   saveStateForUndo();
   const before = clone(o);
