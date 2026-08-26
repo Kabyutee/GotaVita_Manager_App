@@ -123,7 +123,7 @@
       return {
         products: [], clients: [], services: [], orders: [], payments: [], expenses: [],
         payrollRecords: [], employees: [], orderGroups: [], deliveryRoutes: [],
-        orderGroupItems: [], deliveryRouteItems: [], dailyReports: [], dailyRuns: [],
+        orderGroupItems: [], deliveryRouteItems: [], dailyReports: [], dailyRuns:[],
         deletedOrders: [], auditLog: [], orderCounter: 138,
         _meta: { schemaVersion: 3, lastUpdated: 0, deviceId: "" }
       };
@@ -165,9 +165,7 @@
   let pendingDomReadyHandlers = 0;
   window.__GV_APP_READY = false;
 
-  function rememberAuthListener(listener, options) {
-    deferredAuthListeners.push({ listener, options });
-  }
+  function rememberAuthListener(listener, options) { deferredAuthListeners.push({ listener, options }); }
 
   function dispatchCurrentAuthState() {
     const authenticated = window.GVAuth?.isAuthorized?.() === true;
@@ -187,7 +185,6 @@
       window.GVApplicationLifecycleGuard.install();
       return Promise.resolve();
     }
-
     return new Promise((resolve, reject) => {
       const src = "/js/core/application-lifecycle-guard.js?gv_lifecycle=1";
       const existing = document.querySelector('script[data-gv-app-lifecycle="true"]');
@@ -199,7 +196,6 @@
         existing.addEventListener("error", reject, { once: true });
         return;
       }
-
       const script = document.createElement("script");
       script.src = src;
       script.defer = false;
@@ -252,7 +248,6 @@
       }
       return originalAddEventListener(type, listener, options);
     };
-
     window.removeEventListener = function (type, listener, options) {
       if (type === "gv-auth-state-changed" && !appReady) {
         for (let i = deferredAuthListeners.length - 1; i >= 0; i -= 1) {
@@ -262,7 +257,6 @@
       }
       return originalRemoveEventListener(type, listener, options);
     };
-
     window.__GV_APPLICATION_LIFECYCLE_PATCHED = true;
   }
 
