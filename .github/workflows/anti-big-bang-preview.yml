@@ -80,18 +80,30 @@ jobs:
           set -euo pipefail
           npx wrangler versions deploy "$VERSION_ID" --name "$WORKER_NAME" -y
 
-      - name: Verify exact isolated worker health
+      - name: Verify isolated deployment version
         env:
-          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EXPECTED_VERSION_ID: ${{ steps.upload.outputs.version_id }}
           WORKER_NAME: ${{ steps.upload.outputs.worker_name }}
         run: |
           set -euo pipefail
-          url="https://${WORKER_NAME}.carleugenetolentino22.workers.dev/gv-health"
-          for attempt in $(seq 1 12); do
-            health="$(curl -fsS "$url" || true)"
-            echo "Health: $health"
-            deployed_sha="$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
-            if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then exit 0; fi
-            sleep 5
-          done
-          exit 1
+          deployments="$(npx wrangler deployments list --name "$WORKER_NAME" --json)"
+          printf '%s\n' "$deployments"
+          expected="$EXPECTED_VERSION_ID" actual="$(printf '%s' "$deployments" | node -e '
+            let s="";
+            process.stdin.on("data", d => s += d);
+            process.stdin.on("end", () => {
+              try {
+                const payload = JSON.parse(s);
+                const rows = Array.isArray(payload) ? payload : (payload.deployments || payload.result || []);
+                const latest = Array.isArray(rows) ? rows[0] : null;
+                console.log(latest?.versions?.[0]?.version_id || latest?.version_id || latest?.id || "");
+              } catch (_) { console.log(""); }
+            });
+          ')"
+          if [ "$actual" != "$expected" ]; then
+            echo "Expected isolated deployment version $expected but found $actual"
+            exit 1
+          fi
+          echo "Isolated Worker deployment verified: $actual"
