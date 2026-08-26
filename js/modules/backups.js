@@ -167,3 +167,40 @@ function download(name, content, mime) {
 
 function stamp() { return new Date().toISOString().slice(0, 10); }
 function exportStamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
+
+/* L300 dashboard modules are loaded after the existing deferred application
+ * boot completes. This preserves the existing script order while keeping the
+ * new operating layer isolated from core business logic.
+ */
+(function loadL300DashboardModules() {
+  function load(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[data-gv-module-src="${src}"]`)) return resolve();
+      const script = document.createElement("script");
+      script.src = src;
+      script.defer = false;
+      script.dataset.gvModuleSrc = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Unable to load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+  function start() {
+    // Load mutation sync bridges independently from optional L300 modules.
+    // Auxiliary dashboard failures must never prevent production data
+    // reconciliation from loading.
+    load("js/core/client-archive-sync-bridge.js").catch(error => {
+      console.warn("GotaVita Client archive bridge initialization skipped:", error?.message || error);
+    });
+    load("js/core/employee-status-sync-bridge.js").catch(error => {
+      console.warn("GotaVita Employee status sync bridge initialization skipped:", error?.message || error);
+    });
+
+    load("js/modules/l300-reporting-adapter.js")
+      .then(() => load("js/modules/daily-l300-runs.js"))
+      .then(() => load("js/modules/l300-operations-dashboard.js"))
+      .catch(error => console.warn("L300 dashboard modules initialization skipped:", error?.message || error));
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();

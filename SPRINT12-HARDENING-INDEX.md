@@ -1,0 +1,1 @@
+Sprint 12 hardening checkpoint is intentionally incremental. Application behavior is limited to releasing the hydration single-flight promise after a cloud-read failure so an authorized later health call can retry.
