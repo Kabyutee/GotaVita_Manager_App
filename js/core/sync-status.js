@@ -64,6 +64,12 @@
   loadScript("/js/core/client-delete-bridge.js", "__GV_CLIENT_DELETE_BRIDGE__");
   loadScript("/js/core/remote-canonical-field-bridge.js", "__GV_REMOTE_CANONICAL_FIELD_BRIDGE__");
 
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => setTimeout(() => loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__"), 0), { once: true });
+  } else {
+    setTimeout(() => loadScript("/js/core/form-submit-delegation.js", "__GV_FORM_SUBMIT_DELEGATION__"), 0);
+  }
+
   window.GVSyncStatus = Object.freeze({
     get: status,
     detail: failureDetail,
