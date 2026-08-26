@@ -61,24 +61,32 @@ jobs:
             --name "gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}" \
             --preview-alias "pr-${{ github.event.pull_request.number || 'manual' }}" \
             --var "GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}" 2>&1 | tee "$deploy_log"
-          preview_url="$(sed -n 's/^Version Preview URL: \(https:\/\/.*\)$/\1/p' "$deploy_log" | tail -1)"
-          if [ -z "$preview_url" ]; then
-            preview_url="$(sed -n 's/^Version Preview Alias URL: \(https:\/\/.*\)$/\1/p' "$deploy_log" | tail -1)"
-          fi
-          if [ -z "$preview_url" ]; then
-            echo "Wrangler did not emit a Version Preview URL"
+          version_id="$(sed -n 's/^Worker Version ID: \(.*\)$/\1/p' "$deploy_log" | tail -1)"
+          worker_name="gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}"
+          if [ -z "$version_id" ]; then
+            echo "Wrangler did not emit a Worker Version ID"
             exit 1
           fi
-          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
-          echo "Preview URL: $preview_url"
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+          echo "worker_name=$worker_name" >> "$GITHUB_OUTPUT"
 
-      - name: Verify exact preview health
+      - name: Activate candidate on isolated PR Worker
         env:
-          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          PREVIEW_URL: ${{ steps.upload.outputs.url }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERSION_ID: ${{ steps.upload.outputs.version_id }}
+          WORKER_NAME: ${{ steps.upload.outputs.worker_name }}
         run: |
           set -euo pipefail
-          url="${PREVIEW_URL%/}/gv-health"
+          npx wrangler versions deploy "$VERSION_ID" --name "$WORKER_NAME" -y
+
+      - name: Verify exact isolated worker health
+        env:
+          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          WORKER_NAME: ${{ steps.upload.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          url="https://${WORKER_NAME}.carleugenetolentino22.workers.dev/gv-health"
           for attempt in $(seq 1 12); do
             health="$(curl -fsS "$url" || true)"
             echo "Health: $health"
