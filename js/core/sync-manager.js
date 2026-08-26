@@ -35,9 +35,21 @@
   function renderRemoteState() { if (interactionProtected()) { deferredRender = true; return; } const selections = captureBulkSelections(); try { if (window.GVUI && typeof window.GVUI.renderAll === "function") window.GVUI.renderAll(); else if (typeof window.renderAll === "function") window.renderAll(); } catch (error) { console.warn("GotaVita sync render:", error?.message || error); return; } restoreBulkSelections(selections); }
   async function ensureConflictIntegration() { if (window.GVConflictIntegration?.run) return window.GVConflictIntegration; if (conflictPromise) return conflictPromise; conflictPromise = new Promise((resolve, reject) => { if (typeof document === "undefined") { reject(new Error("Conflict integration requires a browser document.")); return; } const existing = document.querySelector('script[data-gv-conflict-integration="true"]'); if (existing) { existing.addEventListener("load", () => resolve(window.GVConflictIntegration), { once: true }); existing.addEventListener("error", reject, { once: true }); return; } const script = document.createElement("script"); script.src = "/js/core/conflict-resolution-integration.js"; script.defer = true; script.dataset.gvConflictIntegration = "true"; script.onload = () => resolve(window.GVConflictIntegration); script.onerror = () => reject(new Error("Conflict integration failed to load.")); (document.head || document.documentElement).appendChild(script); }); return conflictPromise; }
   function ensureEmergencyRecoveryLoaded() { if (typeof document === "undefined") return; if (window.GVEmergencyRecovery) return; if (document.querySelector('script[data-gv-emergency-recovery="true"]')) return; const script = document.createElement("script"); script.src = "/js/core/emergency-recovery.js"; script.defer = true; script.dataset.gvEmergencyRecovery = "true"; script.onerror = () => console.warn("GotaVita emergency recovery failed to load."); (document.head || document.documentElement).appendChild(script); }
+  function ensureRealtimeChannelLifecycleFixLoaded() {
+    if (typeof document === "undefined") return;
+    if (window.GVAuth?.getClient?.().__GV_REALTIME_CHANNEL_PATCH__) return;
+    if (document.querySelector('script[data-gv-realtime-channel-lifecycle-fix="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/core/realtime-channel-lifecycle-fix.js";
+    script.defer = true;
+    script.dataset.gvRealtimeChannelLifecycleFix = "true";
+    script.onerror = () => console.warn("GotaVita Realtime channel lifecycle fix failed to load.");
+    (document.head || document.documentElement).appendChild(script);
+  }
   function ensureOrderWriteBoundaryLoaded() {
     if (typeof document === "undefined") return;
     if (window.__GV_ORDER_WRITE_BOUNDARY_BRIDGE__ || document.querySelector('script[data-gv-order-write-boundary="true"]')) return;
+    ensureRealtimeChannelLifecycleFixLoaded();
     const script = document.createElement("script");
     script.src = "/js/core/order-write-boundary-bridge.js";
     script.defer = true;
@@ -100,7 +112,7 @@
   function stopPolling() { if (!timer) return; clearInterval(timer); timer = null; }
   function attachLifecycle() { if (typeof document === "undefined") return; document.addEventListener("pointerdown", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true); document.addEventListener("keydown", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true); document.addEventListener("focusin", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) beginInteraction(); }, true); document.addEventListener("focusout", (event) => { const target = event.target?.closest?.("input:not([type='checkbox']), select, textarea, button"); if (target) endInteractionSoon(); }, true); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (appReady() || authorized())) flush().catch(() => {}); }); window.addEventListener("online", () => { if (appReady() || authorized()) flush().catch(() => {}); }); window.addEventListener("focus", () => { if (appReady() || authorized()) flush().catch(() => {}); }); window.addEventListener("pageshow", () => { if (appReady() || authorized()) flush().catch(() => {}); }); window.addEventListener("gv-auth-state-changed", (event) => { if (event?.detail?.authenticated === true) { startPolling(); flush().catch(() => {}); } else stopPolling(); }); }
   window.GVSync = Object.freeze({ enqueue, flush, poll, startPolling, stopPolling, queue, meta: getMeta, clear: clearQueue, render: renderRemoteState });
-  window.addEventListener("DOMContentLoaded", () => { ensureEmergencyRecoveryLoaded(); ensureOrderWriteBoundaryLoaded(); if (typeof window.stopSyncReliability === "function") window.stopSyncReliability(); window.syncChangedResources = () => window.GVSync.flush(); window.syncNow = () => window.GVSync.flush(); window.startSyncReliability = () => {}; startPolling(); }, { once: true });
+  window.addEventListener("DOMContentLoaded", () => { ensureEmergencyRecoveryLoaded(); ensureRealtimeChannelLifecycleFixLoaded(); ensureOrderWriteBoundaryLoaded(); if (typeof window.stopSyncReliability === "function") window.stopSyncReliability(); window.syncChangedResources = () => window.GVSync.flush(); window.syncNow = () => window.GVSync.flush(); window.startSyncReliability = () => {}; startPolling(); }, { once: true });
   attachLifecycle();
-  if (window.__GV_APP_READY === true) { ensureEmergencyRecoveryLoaded(); ensureOrderWriteBoundaryLoaded(); startPolling(); }
+  if (window.__GV_APP_READY === true) { ensureEmergencyRecoveryLoaded(); ensureRealtimeChannelLifecycleFixLoaded(); ensureOrderWriteBoundaryLoaded(); startPolling(); }
 })();
