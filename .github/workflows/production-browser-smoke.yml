@@ -29,11 +29,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Playwright
-        run: npx --yes playwright@latest install --with-deps chromium
+      - name: Install Playwright browsers
+        run: npx --yes @playwright/test@latest install --with-deps chromium
 
       - name: Run production Browser A/B sync test
-        run: npx --yes playwright@latest test tests/e2e/production-cross-browser-sync.spec.js --project=chromium --reporter=line
+        run: npx --yes @playwright/test@latest test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
 
       - name: Upload Playwright report on failure
         if: failure()
