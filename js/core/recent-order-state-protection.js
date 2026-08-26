@@ -32,13 +32,19 @@
     return map;
   }
 
-  function protectOrders(current, nextState) {
+  function protectState(current, nextState) {
+    if (!nextState || typeof nextState !== "object") return nextState;
+
     const currentOrders = Array.isArray(current?.orders) ? current.orders : [];
-    const incomingOrders = Array.isArray(nextState?.orders) ? nextState.orders.slice() : [];
+    const incomingOrders = Array.isArray(nextState.orders) ? nextState.orders.slice() : [];
     if (!currentOrders.length) return nextState;
 
-    const incomingById = new Map(incomingOrders.map((row) => [idOf(row), row]).filter(([id]) => id));
-    const tombstones = tombstoneMap(nextState?.deletedOrders);
+    const incomingById = new Map(
+      incomingOrders
+        .map((row) => [idOf(row), row])
+        .filter(([id]) => id)
+    );
+    const tombstones = tombstoneMap(nextState.deletedOrders);
     const now = Date.now();
     let changed = false;
 
@@ -72,43 +78,10 @@
     return nextState;
   }
 
-  function install() {
-    if (window[INSTALLED] === true) return true;
-    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
+  window.GVRecentOrderStateProtection = Object.freeze({
+    protectState,
+    protectWindowMs: PROTECT_MS
+  });
 
-    const original = window.replaceState;
-    if (original.__GV_RECENT_ORDER_STATE_PROTECTION__) {
-      window[INSTALLED] = true;
-      return true;
-    }
-
-    function protectedReplaceState(nextState, options) {
-      try {
-        const current = window.getStateSnapshot();
-        const protectedState = protectOrders(current, nextState);
-        return original.call(window, protectedState, options);
-      } catch (error) {
-        console.warn("GotaVita recent Order state protection:", error?.message || error);
-        return original.call(window, nextState, options);
-      }
-    }
-
-    Object.defineProperty(protectedReplaceState, "__GV_RECENT_ORDER_STATE_PROTECTION__", {
-      value: true,
-      configurable: false,
-      enumerable: false,
-      writable: false
-    });
-
-    window.replaceState = protectedReplaceState;
-    window[INSTALLED] = true;
-    return true;
-  }
-
-  function activate() {
-    if (!install()) setTimeout(activate, 25);
-  }
-
-  activate();
-  window.addEventListener("DOMContentLoaded", activate, { once: true });
+  window[INSTALLED] = true;
 })();
