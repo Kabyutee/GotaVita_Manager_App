@@ -1,21 +1,8 @@
-/* GotaVita Manager — Order write-through boundary and Realtime subscription. */
+/* GotaVita Manager — durable Order mutation write-through boundary. */
 (function () {
   "use strict";
 
   let installed = false;
-  let realtimeChannel = null;
-  let realtimeStarting = false;
-  const REALTIME_RETRY_MS = 1000;
-  const REALTIME_RESOURCES = Object.freeze({
-    orders: "orders",
-    clients: "clients",
-    products: "products",
-    employees: "employees",
-    expenses: "expenses",
-    order_groups: "orderGroups",
-    delivery_routes: "deliveryRoutes",
-    deleted_orders: "deletedOrders"
-  });
 
   function cloneRows(rows) {
     return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
@@ -36,193 +23,92 @@
       const id = rowId(row);
       if (!id) return false;
       const previous = before.get(id);
-      try { return !previous || JSON.stringify(previous) !== JSON.stringify(row); }
-      catch (_) { return true; }
+      try {
+        return !previous || JSON.stringify(previous) !== JSON.stringify(row);
+      } catch (_) {
+        return true;
+      }
     });
   }
 
   function explicitDeletedIds(beforeDeletedRows, afterDeletedRows) {
-    const before = new Set(cloneRows(beforeDeletedRows).map(rowId).filter(Boolean));
+    const before = new Set(
+      cloneRows(beforeDeletedRows).map(rowId).filter(Boolean)
+    );
     return cloneRows(afterDeletedRows)
       .map(rowId)
       .filter(Boolean)
       .filter((id) => !before.has(id));
   }
 
-  function renderSafely() {
-    try {
-      if (window.GVSync?.render) return window.GVSync.render();
-      if (window.GVUI?.renderAll) return window.GVUI.renderAll();
-      if (typeof window.renderAll === "function") return window.renderAll();
-    } catch (_) {}
-    return undefined;
-  }
-
-  async function applyRealtimeDelete(resource, oldRow) {
-    if (resource === "orders" || resource === "deleted_orders") {
-      try { await window.GVOrderDeleteReconciliation?.apply?.(); } catch (_) {}
-      return;
-    }
-
-    const stateName = REALTIME_RESOURCES[resource] || resource;
-    const deletedId = rowId(oldRow);
-    if (!deletedId || typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return;
-
-    const state = window.getStateSnapshot();
-    const rows = Array.isArray(state[stateName]) ? state[stateName] : [];
-    const next = rows.filter((row) => rowId(row) !== deletedId);
-    if (next.length === rows.length) return;
-
-    state[stateName] = next;
-    state._meta = Object.assign({}, state._meta, {
-      lastUpdated: Date.now(),
-      lastSynchronizedAt: Date.now(),
-      lastRemoteChangedResources: [resource],
-      lastRealtimeSyncAt: new Date().toISOString()
-    });
-    window.replaceState(state);
-    if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
-    renderSafely();
-  }
-
-  async function mergeRealtimeRow(resource, row) {
-    const id = rowId(row);
-    if (!id || typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
-
-    const stateName = REALTIME_RESOURCES[resource] || resource;
-    const state = window.getStateSnapshot();
-    const rows = Array.isArray(state[stateName]) ? state[stateName].slice() : [];
-    const index = rows.findIndex((item) => rowId(item) === id);
-    if (index < 0) rows.push({ ...row });
-    else {
-      try {
-        if (JSON.stringify(rows[index]) === JSON.stringify(row)) return false;
-      } catch (_) {}
-      rows[index] = { ...row };
-    }
-
-    state[stateName] = rows;
-    state._meta = Object.assign({}, state._meta, {
-      lastUpdated: Date.now(),
-      lastSynchronizedAt: Date.now(),
-      lastRemoteChangedResources: [resource],
-      lastRealtimeSyncAt: new Date().toISOString()
-    });
-    window.replaceState(state);
-    if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
-    renderSafely();
-    return true;
-  }
-
-  const realtimePending = new Map();
-  let realtimeProcessTimer = null;
-
-  function queueRealtimeWork(resource, eventType, payload) {
-    realtimePending.set(resource, { eventType, payload });
-    if (realtimeProcessTimer) return;
-
-    realtimeProcessTimer = setTimeout(async () => {
-      realtimeProcessTimer = null;
-      if (window.__GV_ORDER_DIRECT_WRITE_ACTIVE === true) {
-        for (const [key, value] of realtimePending) queueRealtimeWork(key, value.eventType, value.payload);
-        return;
-      }
-
-      const pending = [...realtimePending.entries()];
-      realtimePending.clear();
-      for (const [resource, item] of pending) {
-        if (item.eventType === "DELETE") await applyRealtimeDelete(resource, item.payload?.old || {});
-        else await mergeRealtimeRow(resource, item.payload?.new || {});
-      }
-    }, 100);
-  }
-
-  async function stopRealtime() {
-    const client = window.GVAuth?.getClient?.();
-    if (client && realtimeChannel) {
-      try { await client.removeChannel(realtimeChannel); } catch (_) {}
-    }
-    realtimeChannel = null;
-    realtimeStarting = false;
-  }
-
-  async function startRealtime() {
-    if (realtimeChannel || realtimeStarting) return;
-    const auth = window.GVAuth;
-    const client = auth?.getClient?.();
-    if (!client || auth?.isAuthorized?.() !== true) return;
-
-    realtimeStarting = true;
-    try {
-      const channel = client.channel("gotavita-canonical-sync");
-      for (const resource of Object.keys(REALTIME_RESOURCES)) {
-        channel.on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: resource },
-          (payload) => queueRealtimeWork(resource, payload?.eventType || "*", payload)
-        );
-      }
-
-      channel.subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          realtimeChannel = channel;
-          realtimeStarting = false;
-          return;
-        }
-        if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-          if (realtimeChannel === channel) realtimeChannel = null;
-          realtimeStarting = false;
-          setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
-        }
-      });
-    } catch (error) {
-      realtimeStarting = false;
-      console.warn("GotaVita Realtime startup:", error?.message || error);
-      setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
-    }
-  }
-
+  // A direct Order mutation must advance the conflict baseline only after the
+  // canonical write has completed. Otherwise the next 5-second reconciliation
+  // can compare a freshly-written local Order against a stale pre-write
+  // baseline and remove the Order from the originating browser.
   async function refreshOrderBaseline() {
     const integration = window.GVConflictIntegration;
     const data = window.GVData;
-    if (!integration?.getBaseline || !integration?.setBaseline || !data?.selectResource) return;
+    if (
+      !integration ||
+      typeof integration.getBaseline !== "function" ||
+      typeof integration.setBaseline !== "function" ||
+      !data ||
+      typeof data.selectResource !== "function"
+    ) return;
 
     try {
-      const rows = await data.selectResource("orders");
-      if (!Array.isArray(rows)) return;
+      const remoteOrders = await data.selectResource("orders");
+      if (!Array.isArray(remoteOrders)) return;
+      const baseline = integration.getBaseline() || {};
       integration.setBaseline({
-        ...integration.getBaseline(),
-        orders: { baselineAt: new Date().toISOString(), rows: cloneRows(rows) }
+        ...baseline,
+        orders: {
+          baselineAt: new Date().toISOString(),
+          rows: cloneRows(remoteOrders)
+        }
       });
     } catch (error) {
       console.warn("GotaVita Order post-write baseline refresh:", error?.message || error);
     }
   }
 
-  async function writeOrderDelta(before, after) {
+  async function writeDelta(before, after) {
     const data = window.GVData;
-    if (!data) throw new Error("Supabase data gateway unavailable.");
+    if (!data) return;
 
     const beforeOrders = Array.isArray(before?.orders) ? before.orders : [];
     const afterOrders = Array.isArray(after?.orders) ? after.orders : [];
     const changedOrders = changedRows(beforeOrders, afterOrders);
+
     if (changedOrders.length && typeof data.upsertResource === "function") {
       await data.upsertResource("orders", changedOrders);
     }
 
-    const beforeDeleted = Array.isArray(before?.deletedOrders) ? before.deletedOrders : [];
-    const afterDeleted = Array.isArray(after?.deletedOrders) ? after.deletedOrders : [];
+    const beforeDeleted = Array.isArray(before?.deletedOrders)
+      ? before.deletedOrders
+      : [];
+    const afterDeleted = Array.isArray(after?.deletedOrders)
+      ? after.deletedOrders
+      : [];
+
     const changedDeleted = changedRows(beforeDeleted, afterDeleted);
     if (changedDeleted.length && typeof data.upsertResource === "function") {
       await data.upsertResource("deleted_orders", changedDeleted);
     }
 
     const explicitDeletes = explicitDeletedIds(beforeDeleted, afterDeleted);
-    if (explicitDeletes.length && typeof data.deleteResourceByLegacyId === "function") {
-      for (const id of explicitDeletes) await data.deleteResourceByLegacyId("orders", id);
+    if (
+      explicitDeletes.length &&
+      typeof data.deleteResourceByLegacyId === "function"
+    ) {
+      for (const id of explicitDeletes) {
+        await data.deleteResourceByLegacyId("orders", id);
+      }
     }
 
-    await refreshOrderBaseline();
+    if (changedOrders.length || changedDeleted.length || explicitDeletes.length) {
+      await refreshOrderBaseline();
+    }
   }
 
   function wrap(name) {
@@ -231,12 +117,19 @@
     if (original.__GV_ORDER_WRITE_THROUGH__) return true;
 
     async function wrapped(...args) {
-      const before = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
+      const before =
+        typeof window.getStateSnapshot === "function"
+          ? window.getStateSnapshot()
+          : null;
+
       window.__GV_ORDER_DIRECT_WRITE_ACTIVE = true;
       try {
         const result = await Promise.resolve(original.apply(this, args));
-        const after = typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null;
-        await writeOrderDelta(before, after);
+        const after =
+          typeof window.getStateSnapshot === "function"
+            ? window.getStateSnapshot()
+            : null;
+        await writeDelta(before, after);
         return result;
       } finally {
         window.__GV_ORDER_DIRECT_WRITE_ACTIVE = false;
@@ -249,29 +142,32 @@
       enumerable: false,
       writable: false
     });
+
     window[name] = wrapped;
     return true;
   }
 
   function install() {
-    if (installed) return true;
-    const results = ["handleOrderSubmit", "handleOrderEditSubmit", "archiveOrders"].map(wrap);
-    installed = results.every(Boolean);
+    if (installed) return;
+    installed = [
+      "handleOrderSubmit",
+      "handleOrderEditSubmit",
+      "archiveOrders"
+    ].map(wrap).some(Boolean);
     if (installed) window.__GV_ORDER_WRITE_BOUNDARY_BRIDGE__ = true;
-    return installed;
   }
 
   function boot() {
     if (typeof window === "undefined" || typeof document === "undefined") return;
-    const retry = () => { if (!install()) setTimeout(retry, 50); };
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", retry, { once: true });
-    else retry();
-
-    window.addEventListener("gv-auth-state-changed", (event) => {
-      if (event?.detail?.authenticated === true) startRealtime().catch(() => {});
-      else stopRealtime().catch(() => {});
-    });
-    if (window.GVAuth?.isAuthorized?.()) startRealtime().catch(() => {});
+    const retry = () => {
+      install();
+      if (!installed) setTimeout(retry, 50);
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", retry, { once: true });
+    } else {
+      retry();
+    }
   }
 
   boot();

@@ -29,25 +29,17 @@
     for(const id of ids){
       const rawLocalRow=localMap.get(id)||null,rawRemoteRow=remoteMap.get(id)||null,baselineRow=baselineMap.get(id)||null;
       const existedAtBaseline=baselineRow!=null;let result=null;
-
-      // Orders are deletion-sensitive business records. A missing remote row
-      // is not deletion evidence: it may be a transient RLS/network snapshot
-      // or an incomplete remote read. Only an explicit deleted_orders tombstone
-      // authorizes removing an Order from local state.
-      if(resourceCloudName("orders") === "orders" && rawLocalRow && !rawRemoteRow){
-        const remoteDeletion=deletionEvidence(remoteDeletedRows,id) || deletionEvidence(localDeletedRows,id);
-        if(!remoteDeletion){
-          result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:false};
-        }
-      }
-
-      if(!result&&!rawLocalRow&&rawRemoteRow&&!existedAtBaseline)result={action:"keep-remote",reason:"remote-new-record",mutation:false};
-      else if(!result&&rawLocalRow&&!rawRemoteRow&&!existedAtBaseline)result={action:"keep-local",reason:"local-new-record",mutation:false};
+      if(!rawLocalRow&&rawRemoteRow&&!existedAtBaseline)result={action:"keep-remote",reason:"remote-new-record",mutation:false};
+      else if(rawLocalRow&&!rawRemoteRow&&!existedAtBaseline)result={action:"keep-local",reason:"local-new-record",mutation:false};
       let localRow=rawLocalRow,remoteRow=rawRemoteRow;
       if(!localRow){const evidence=deletionEvidence(localDeletedRows,id);localRow=evidence?tombstone(evidence,evidence.archivedAt||evidence.deletedAt):(existedAtBaseline?null:baselinePlaceholder(id,baselineAt));}
       if(!remoteRow){const evidence=deletionEvidence(remoteDeletedRows,id);remoteRow=evidence?tombstone(evidence,evidence.archivedAt||evidence.deletedAt):(existedAtBaseline?null:baselinePlaceholder(id,baselineAt));}
 
       if(!result&&!rowsEquivalent(localRow,remoteRow)){
+        // Timestamp precedence is authoritative whenever both sides expose
+        // comparable update timestamps. Equal timestamps with divergent
+        // business content are deliberately unresolved: silently choosing a
+        // side can destroy a concurrent edit.
         const localTime=rowTimestamp(localRow),remoteTime=rowTimestamp(remoteRow);
         if(localTime!=null&&remoteTime!=null){
           const localMs=Date.parse(localTime),remoteMs=Date.parse(remoteTime);

@@ -1,15 +1,14 @@
-const fs = require("node:fs");
-const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
+const assert = require("assert");
 
-const state = fs.readFileSync("js/core/state.js", "utf8");
-const orderBridge = fs.readFileSync("js/core/order-write-boundary-bridge.js", "utf8");
+const file = path.join(__dirname, "..", "js", "core", "sync-cloud-write-reconciler.js");
+const text = fs.readFileSync(file, "utf8");
 
-assert.match(state, /function reconcileOrderCounterBeforeCreate\(\)/);
-assert.match(state, /state\.orderCounter|snapshot\.orderCounter/);
-assert.match(state, /deletedOrders/);
-assert.match(state, /numericOrderNumber/);
-assert.match(state, /orderForm/);
-assert.match(orderBridge, /handleOrderSubmit/);
-assert.match(orderBridge, /upsertResource\("orders"/);
+assert(text.includes("const owner = ownerByOrderNumber.get(number);"), "reconciler must track order-number ownership");
+assert(text.includes("used.has(number)"), "reconciler must track numbers already used by the current batch");
+assert(text.includes("used.add(number);"), "reconciler must reserve a safe order number");
+assert(text.includes("retryRows"), "reconciler must retry a concurrent unique conflict");
+assert(text.includes("original.upsertResource(resource, retryRows)"), "reconciler must retry the complete reconciled batch");
 
 console.log("sprint18 order-number reconciliation contract: PASS");

@@ -85,7 +85,11 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.124.0"
-          command: deploy --var "GV_RELEASE_SHA:${{ github.event.pull_request.merge_commit_sha || github.sha }}"
+          vars: |
+            GV_RELEASE_SHA
+          command: deploy
+        env:
+          GV_RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Verify production release SHA
         env:
