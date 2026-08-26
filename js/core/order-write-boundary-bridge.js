@@ -5,7 +5,6 @@
   let installed = false;
   let realtimeChannel = null;
   let realtimeStarting = false;
-  let realtimeStartingChannel = null;
   const REALTIME_RETRY_MS = 1000;
   const REALTIME_RESOURCES = Object.freeze({
     orders: "orders",
@@ -138,27 +137,13 @@
     }, 100);
   }
 
-  async function removeRealtimeChannel(channel, client) {
-    if (!channel || !client || typeof client.removeChannel !== "function") return;
-    try { await client.removeChannel(channel); } catch (_) {}
-  }
-
   async function stopRealtime() {
     const client = window.GVAuth?.getClient?.();
-    const channel = realtimeChannel || realtimeStartingChannel;
-    await removeRealtimeChannel(channel, client);
+    if (client && realtimeChannel) {
+      try { await client.removeChannel(realtimeChannel); } catch (_) {}
+    }
     realtimeChannel = null;
-    realtimeStartingChannel = null;
     realtimeStarting = false;
-  }
-
-  function scheduleRealtimeRetry(channel, client) {
-    realtimeChannel = realtimeChannel === channel ? null : realtimeChannel;
-    realtimeStartingChannel = null;
-    realtimeStarting = false;
-    void removeRealtimeChannel(channel, client).finally(() => {
-      setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
-    });
   }
 
   async function startRealtime() {
@@ -168,10 +153,8 @@
     if (!client || auth?.isAuthorized?.() !== true) return;
 
     realtimeStarting = true;
-    let channel = null;
     try {
-      channel = client.channel("gotavita-canonical-sync");
-      realtimeStartingChannel = channel;
+      const channel = client.channel("gotavita-canonical-sync");
       for (const resource of Object.keys(REALTIME_RESOURCES)) {
         channel.on(
           "postgres_changes",
@@ -183,21 +166,19 @@
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
           realtimeChannel = channel;
-          realtimeStartingChannel = null;
           realtimeStarting = false;
           return;
         }
         if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-          scheduleRealtimeRetry(channel, client);
+          if (realtimeChannel === channel) realtimeChannel = null;
+          realtimeStarting = false;
+          setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
         }
       });
     } catch (error) {
-      realtimeStartingChannel = null;
       realtimeStarting = false;
       console.warn("GotaVita Realtime startup:", error?.message || error);
-      void removeRealtimeChannel(channel, client).finally(() => {
-        setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
-      });
+      setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
     }
   }
 
