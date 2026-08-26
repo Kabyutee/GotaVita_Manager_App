@@ -13,39 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     name: Classify change and run minimal safe gate
     steps:
-      - name: Checkout pull request
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: JARVIS 9.0 business-first adaptive workflow
-        run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
-      - name: JARVIS 7.0 adaptive whole-application scan
-        run: node tests/anti-big-bang-7-adaptive-application-scan.test.js
-      - name: JARVIS 8.0 runtime adaptation audit
-        run: node tests/jarvis-8-runtime-adaptation-audit.test.js
-      - name: JARVIS whole-app hardening contract
-        run: node tests/jarvis-whole-app-hardening-contract.test.js
-      - name: ANTI BIG BANG 6.0 whole-application connection audit
-        run: node tests/anti-big-bang-6-application-connection-audit.test.js
-      - name: ANTI BIG BANG 5.0 system audit
-        run: node tests/anti-big-bang-4-system-audit.test.js
-      - name: Full sync/application gate
-        run: |
-          node tests/sprint18-transaction-sync-readiness-contract.test.js
-          node tests/sprint18-sync-queue-preservation-contract.test.js
-          node tests/sprint18-order-number-reconciliation-contract.test.js
-          node tests/sprint20-sync-transaction-no-requeue-contract.test.js
-          node tests/sprint21-whole-sync-hardening-contract.test.js
-          node tests/sprint22-complete-runtime-sync-repair.test.js
-          node tests/anti-big-bang-5-sync-architecture-contract.test.js
-          node tests/anti-big-bang-6-application-connection-audit.test.js
-          node tests/anti-big-bang-7-adaptive-application-scan.test.js
-          node tests/jarvis-8-runtime-adaptation-audit.test.js
-          node tests/sprint20-empty-resource-convergence-contract.test.js
-          node --check worker.js
-          node --check js/core/sync-manager.js
-          node --check js/core/conflict-resolution-integration.js
-          node --check js/core/sync-cloud-write-reconciler.js
-          node --check js/core/sync-authority.js
-          node --check js/core/sync-complete-runtime-repair.js
-          node --check js/core/order-write-boundary-bridge.js
+      - uses: actions/checkout@v4
+      - run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
+      - run: node tests/anti-big-bang-7-adaptive-application-scan.test.js
+      - run: node tests/jarvis-8-runtime-adaptation-audit.test.js
+      - run: node tests/jarvis-whole-app-hardening-contract.test.js
+      - run: node tests/anti-big-bang-6-application-connection-audit.test.js
+      - run: node tests/anti-big-bang-4-system-audit.test.js
+      - run: node tests/sprint18-transaction-sync-readiness-contract.test.js
+      - run: node tests/sprint18-sync-queue-preservation-contract.test.js
+      - run: node tests/sprint18-order-number-reconciliation-contract.test.js
+      - run: node tests/sprint20-sync-transaction-no-requeue-contract.test.js
+      - run: node tests/sprint21-whole-sync-hardening-contract.test.js
+      - run: node tests/sprint22-complete-runtime-sync-repair.test.js
+      - run: node tests/anti-big-bang-5-sync-architecture-contract.test.js
+      - run: node tests/sprint20-empty-resource-convergence-contract.test.js
+      - run: node --check worker.js
+      - run: node --check js/core/sync-manager.js
+      - run: node --check js/core/conflict-resolution-integration.js
+      - run: node --check js/core/sync-cloud-write-reconciler.js
+      - run: node --check js/core/sync-authority.js
+      - run: node --check js/core/sync-complete-runtime-repair.js
+      - run: node --check js/core/order-write-boundary-bridge.js
