@@ -6,21 +6,34 @@ const PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 if (!EMAIL || !PASSWORD) throw new Error('E2E_MANAGER_EMAIL and E2E_MANAGER_PASSWORD are required.');
 
-async function login(page) {
+async function login(page, name = 'browser') {
+  const authResponses = [];
+  page.on('response', response => {
+    const url = response.url();
+    if (url.includes('/auth/v1/')) {
+      authResponses.push(`${response.status()} ${response.request().method()} ${url}`);
+    }
+  });
+
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.locator('#gvAuthEmail').fill(EMAIL);
   await page.locator('#gvAuthPassword').fill(PASSWORD);
   await page.locator('#gvAuthForm button[type="submit"]').click();
-  await expect(page.locator('html')).toHaveAttribute('data-gv-auth-state', 'unlocked', { timeout: 30000 });
-  await expect(page.locator('#gvCloudLogoutBtn')).toBeVisible();
-  await expect.poll(
-    () => page.evaluate(() => Boolean(window.__GV_AUTH_HYDRATION_PROMISE)),
-    { timeout: 30000, intervals: [250, 500, 1000] }
-  ).toBeTruthy().catch(() => {});
-  await page.waitForFunction(
-    () => !window.__GV_AUTH_HYDRATION_PROMISE,
-    { timeout: 30000 }
-  );
+
+  try {
+    await expect(page.locator('html')).toHaveAttribute('data-gv-auth-state', 'unlocked', { timeout: 30000 });
+    await expect(page.locator('#gvCloudLogoutBtn')).toBeVisible();
+    await page.waitForFunction(() => !window.__GV_AUTH_HYDRATION_PROMISE, { timeout: 30000 });
+  } catch (error) {
+    console.log(`[Smoke] ${name} auth responses`, authResponses.slice(-20));
+    console.log(`[Smoke] ${name} auth status`, await page.evaluate(() => ({
+      locked: document.documentElement.dataset.gvAuthState,
+      authorized: window.GVAuth?.isAuthorized?.() === true,
+      status: document.querySelector('#gvAuthStatus')?.textContent?.trim() || '',
+      identity: document.querySelector('#gvAuthIdentity')?.textContent?.trim() || ''
+    })).catch(() => null));
+    throw error;
+  }
 }
 
 async function openOrderLog(page) {
@@ -74,7 +87,11 @@ test('production Browser A/B order create-edit-delete convergence', async ({ bro
 
   try {
     stage = 'login';
-    await Promise.all([login(pageA), login(pageB)]);
+    // Authenticate sequentially. This removes concurrent Supabase auth as a
+    // confounding variable and makes Browser B auth failures independently
+    // diagnosable before we exercise Order synchronization.
+    await login(pageA, 'Browser A');
+    await login(pageB, 'Browser B');
 
     stage = 'create';
     await pageA.locator('[data-tab="neworder"]').click();
