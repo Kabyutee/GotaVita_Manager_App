@@ -13,6 +13,14 @@ async function login(page) {
   await page.locator('#gvAuthForm button[type="submit"]').click();
   await expect(page.locator('html')).toHaveAttribute('data-gv-auth-state', 'unlocked', { timeout: 30000 });
   await expect(page.locator('#gvCloudLogoutBtn')).toBeVisible();
+  await expect.poll(
+    () => page.evaluate(() => Boolean(window.__GV_AUTH_HYDRATION_PROMISE)),
+    { timeout: 30000, intervals: [250, 500, 1000] }
+  ).toBeTruthy().catch(() => {});
+  await page.waitForFunction(
+    () => !window.__GV_AUTH_HYDRATION_PROMISE,
+    { timeout: 30000 }
+  );
 }
 
 async function openOrderLog(page) {
@@ -30,6 +38,11 @@ async function runtimeSnapshot(page) {
     return {
       appReady: window.__GV_APP_READY === true,
       authorized: window.GVAuth?.isAuthorized?.() === true,
+      hydrationActive: Boolean(window.__GV_AUTH_HYDRATION_PROMISE),
+      clientValue: document.querySelector('#clientSelect')?.value || '',
+      productValue: document.querySelector('#custTypeSelect')?.value || '',
+      formValid: document.querySelector('#orderForm')?.checkValidity?.() ?? null,
+      lastToasts: [...document.querySelectorAll('#toastContainer .toast')].slice(-3).map(el => el.textContent?.trim()).filter(Boolean),
       orderCount: Array.isArray(stateSnapshot?.orders) ? stateSnapshot.orders.length : null,
       matchingOrders: Array.isArray(stateSnapshot?.orders) ? stateSnapshot.orders.filter(o => String(o?.address || '').includes('E2E-SYNC-') || String(o?.notes || '').includes('E2E-SYNC-')).map(o => ({ id: o.id, orderNumber: o.orderNumber, address: o.address, notes: o.notes })) : [],
       queue: typeof window.getSyncQueue === 'function' ? window.getSyncQueue() : null,
