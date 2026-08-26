@@ -3,6 +3,7 @@ name: ANTI BIG BANG 6.0 Risk Gate
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  merge_group:
 
 permissions:
   contents: read
