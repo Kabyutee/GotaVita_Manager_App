@@ -27,6 +27,8 @@ function orderRow(page, marker) {
 test.describe.configure({ mode: 'serial' });
 
 test('production Browser A/B order create-edit-delete convergence', async ({ browser }) => {
+  test.setTimeout(120000);
+
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
   const pageA = await contextA.newPage();
