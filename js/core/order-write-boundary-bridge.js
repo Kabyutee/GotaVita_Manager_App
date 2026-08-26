@@ -5,6 +5,7 @@
   let installed = false;
   let realtimeChannel = null;
   let realtimeStarting = false;
+  let canonicalGatewayPatched = false;
   const realtimeRetryMs = 500;
   const REALTIME_RESOURCES = Object.freeze({
     orders: "orders",
@@ -15,6 +16,42 @@
     order_groups: "orderGroups",
     delivery_routes: "deliveryRoutes",
     deleted_orders: "deletedOrders"
+  });
+
+  const CANONICAL_FIELDS = Object.freeze({
+    clients: {
+      legacy_id: "id", name: "name", client_group: "group", phone: "phone",
+      address: "address", default_price: "defaultPrice", notes: "notes", active: "active",
+      created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    products: {
+      legacy_id: "id", name: "name", category: "category", current_price: "price", active: "active",
+      created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    employees: {
+      legacy_id: "id", name: "name", position: "position", salary_type: "salaryType", salary_rate: "salaryRate",
+      schedule: "schedule", status: "status", phone: "phone", notes: "notes",
+      created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    orders: {
+      legacy_id: "id", order_number: "orderNumber", client_legacy_id: "clientId", product_legacy_id: "productId",
+      order_date: "date", status: "status", delivery_status: "deliveryStatus", gallons: "gallons",
+      empty_gallons_collected: "emptyGallonsCollected", unit_price: "price", total: "total",
+      created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    expenses: {
+      legacy_id: "id", expense_date: "date", category: "category", description: "description", amount: "amount",
+      employee_legacy_id: "employeeId", is_advance: "isAdvance", created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    order_groups: {
+      legacy_id: "id", name: "name", group_date: "date", status: "status", created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    delivery_routes: {
+      legacy_id: "id", name: "name", route_date: "date", status: "status", created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    },
+    deleted_orders: {
+      legacy_id: "id", archived_at: "archivedAt", created_at: "createdAt", updated_at: "updatedAt", id: "supabaseId"
+    }
   });
 
   function cloneRows(rows) {
@@ -63,6 +100,70 @@
       if (window.GVUI?.renderAll) window.GVUI.renderAll();
       else if (typeof window.renderAll === "function") window.renderAll();
     } catch (_) {}
+  }
+
+  function canonicalizeRow(resource, raw, fallback) {
+    const mapping = CANONICAL_FIELDS[resource];
+    if (!mapping || !raw) return fallback;
+    const next = { ...fallback };
+    for (const [source, target] of Object.entries(mapping)) {
+      if (Object.prototype.hasOwnProperty.call(raw, source)) {
+        next[target] = raw[source];
+      }
+    }
+    return next;
+  }
+
+  async function patchCanonicalGateway() {
+    if (canonicalGatewayPatched) return true;
+    const data = window.GVData;
+    if (!data || typeof data.selectResource !== "function" || typeof data.getClient !== "function") return false;
+
+    const originalSelect = data.selectResource;
+    const getClient = data.getClient;
+    if (originalSelect.__GV_CANONICAL_READ_PATCH__) {
+      canonicalGatewayPatched = true;
+      return true;
+    }
+
+    async function canonicalSelectResource(resource, options = {}) {
+      const converted = await originalSelect(resource, options);
+      const mapping = CANONICAL_FIELDS[resource];
+      if (!mapping || !Array.isArray(converted) || !converted.length) return converted;
+
+      try {
+        const client = getClient();
+        if (!client?.from) return converted;
+        const { data: rawRows, error } = await client.from(resource).select("*");
+        if (error || !Array.isArray(rawRows)) return converted;
+        const byId = new Map(
+          rawRows
+            .map((raw) => [raw?.legacy_id != null ? String(raw.legacy_id) : String(raw?.id ?? ""), raw])
+            .filter(([id]) => id)
+        );
+        return converted.map((row) => {
+          const id = rowId(row);
+          return canonicalizeRow(resource, byId.get(String(id)), row);
+        });
+      } catch (error) {
+        console.warn("GotaVita canonical Supabase read overlay:", error?.message || error);
+        return converted;
+      }
+    }
+
+    Object.defineProperty(canonicalSelectResource, "__GV_CANONICAL_READ_PATCH__", {
+      value: true,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+
+    window.GVData = Object.freeze({
+      ...data,
+      selectResource: canonicalSelectResource
+    });
+    canonicalGatewayPatched = true;
+    return true;
   }
 
   async function mergeCanonicalResource(resource, targetId = null) {
@@ -329,16 +430,22 @@
   function boot() {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     const retry = () => {
+      patchCanonicalGateway().catch(() => {});
       install();
-      if (!installed) setTimeout(retry, 50);
+      if (!installed || !canonicalGatewayPatched) setTimeout(retry, 50);
     };
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", retry, { once: true });
     else retry();
     window.addEventListener("gv-auth-state-changed", (event) => {
-      if (event?.detail?.authenticated === true) startRealtime().catch(() => {});
-      else stopRealtime().catch(() => {});
+      if (event?.detail?.authenticated === true) {
+        patchCanonicalGateway().catch(() => {});
+        startRealtime().catch(() => {});
+      } else stopRealtime().catch(() => {});
     });
-    if (window.GVAuth?.isAuthorized?.()) startRealtime().catch(() => {});
+    if (window.GVAuth?.isAuthorized?.()) {
+      patchCanonicalGateway().catch(() => {});
+      startRealtime().catch(() => {});
+    }
   }
 
   boot();
