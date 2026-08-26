@@ -4,27 +4,27 @@
 
   const auth = window.GVAuth;
   if (!auth || typeof auth.getClient !== "function") return;
-  if (auth.getClient.__GV_REALTIME_CHANNEL_PATCH__) return;
 
-  const originalGetClient = auth.getClient.bind(auth);
   let sequence = 0;
   let patchedClient = null;
 
   function patchClient(client) {
     if (!client || client.__GV_REALTIME_CHANNEL_PATCH__) return client;
-    const originalChannel = client.channel.bind(client);
+
+    const originalChannel = client.channel;
+    if (typeof originalChannel !== "function") return client;
 
     client.channel = function channel(topic, ...args) {
       if (topic !== "gotavita-canonical-sync") {
-        return originalChannel(topic, ...args);
+        return originalChannel.apply(this, [topic, ...args]);
       }
 
-      // Supabase Realtime keeps channel topics keyed internally. Reusing a
-      // previously subscribed topic during retry causes later .on() calls to
-      // be rejected. Give each canonical-sync attempt a fresh topic.
+      // Supabase Realtime keys channels by topic. A retry that reuses an
+      // already-subscribed topic can reject later .on() registrations.
+      // Give each canonical-sync subscription attempt a fresh topic.
       sequence += 1;
       const uniqueTopic = `gotavita-canonical-sync-${Date.now()}-${sequence}`;
-      return originalChannel(uniqueTopic, ...args);
+      return originalChannel.apply(this, [uniqueTopic, ...args]);
     };
 
     Object.defineProperty(client, "__GV_REALTIME_CHANNEL_PATCH__", {
@@ -34,22 +34,22 @@
       writable: false
     });
 
+    patchedClient = client;
     return client;
   }
 
-  function getClientPatched() {
-    const client = originalGetClient();
-    if (!client) return client;
-    if (client !== patchedClient) patchedClient = patchClient(client);
-    return patchedClient;
+  function patchCurrentClient() {
+    try {
+      const client = auth.getClient?.();
+      if (client && client !== patchedClient) patchClient(client);
+    } catch (_) {}
   }
 
-  Object.defineProperty(getClientPatched, "__GV_REALTIME_CHANNEL_PATCH__", {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false
-  });
+  patchCurrentClient();
 
-  auth.getClient = getClientPatched;
+  window.addEventListener("gv-auth-state-changed", (event) => {
+    if (event?.detail?.authenticated === true) {
+      setTimeout(patchCurrentClient, 0);
+    }
+  });
 })();
