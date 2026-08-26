@@ -39,7 +39,10 @@ jobs:
               raise SystemExit('decision loop not found')
           text = text.replace(old, new, 1)
 
-          old = 'const results=[],nextBaseline={...baseline};for(const resource of supportedResources()){'
+          old = 'const results=[],nextBaseline={...baseline};for(const resource of supportedResources(){'
+          if old not in text:
+              # retry the exact valid source spelling
+              old = 'const results=[],nextBaseline={...baseline};for(const resource of supportedResources()){'
           new = 'const results=[],nextBaseline={...baseline},mutationEpochAtStart=Number(window.__GV_ORDER_MUTATION_EPOCH||0);for(const resource of supportedResources()){if(mutationEpochAtStart!==Number(window.__GV_ORDER_MUTATION_EPOCH||0))return{ok:false,status:"state-changed-during-run",results};'
           if old not in text:
               raise SystemExit('run setup not found')
@@ -155,3 +158,5 @@ console.log("Sprint 25 Order reconciliation race contract: PASS");
           git add js/core/conflict-resolution-integration.js js/core/order-mutation-epoch.js js/core/sync-runtime-activation.js tests/sprint25-order-sync-race-contract.test.js
           git commit -m "fix: abort stale Order reconciliation after concurrent mutation"
           git push origin HEAD:${GITHUB_REF_NAME}
+
+# Force a second push so GitHub executes the workflow after the workflow file exists.
