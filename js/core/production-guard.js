@@ -65,11 +65,8 @@
   }
 
   function rowsEquivalent(localRow, remoteRow) {
-    try {
-      return JSON.stringify(comparableRow(localRow)) === JSON.stringify(comparableRow(remoteRow));
-    } catch (_) {
-      return false;
-    }
+    try { return JSON.stringify(comparableRow(localRow)) === JSON.stringify(comparableRow(remoteRow)); }
+    catch (_) { return false; }
   }
 
   function isBaselinePlaceholder(row, baseline) {
@@ -86,69 +83,49 @@
     const local = Array.isArray(localRows) ? localRows : [];
     const remote = Array.isArray(remoteRows) ? remoteRows : [];
     const remoteByKey = new Map();
-    for (const row of remote) {
-      const key = rowKey(row);
-      if (key != null) remoteByKey.set(key, row);
-    }
-
+    for (const row of remote) { const key = rowKey(row); if (key != null) remoteByKey.set(key, row); }
     const conflicts = [];
     const indeterminate = [];
     for (const localRow of local) {
-      const key = rowKey(localRow);
-      if (key == null) continue;
-      const remoteRow = remoteByKey.get(key);
-      if (!remoteRow) continue;
-      if (rowsEquivalent(localRow, remoteRow)) continue;
-      const localUpdated = rowUpdatedAt(localRow);
-      const remoteUpdated = rowUpdatedAt(remoteRow);
-      if (baseline == null || localUpdated == null || remoteUpdated == null) {
-        indeterminate.push({ key, reason: "missing-baseline-or-timestamp" });
-        continue;
-      }
-      const localChanged = localUpdated > baseline;
-      const remoteChanged = remoteUpdated > baseline;
-      if (localChanged && remoteChanged && localUpdated !== remoteUpdated) {
-        conflicts.push({ key, baselineAt: new Date(baseline).toISOString(), localUpdatedAt: new Date(localUpdated).toISOString(), remoteUpdatedAt: new Date(remoteUpdated).toISOString(), preferredObservation: remoteUpdated > localUpdated ? "remote-newer" : "local-newer" });
-      }
+      const key = rowKey(localRow); if (key == null) continue;
+      const remoteRow = remoteByKey.get(key); if (!remoteRow || rowsEquivalent(localRow, remoteRow)) continue;
+      const localUpdated = rowUpdatedAt(localRow); const remoteUpdated = rowUpdatedAt(remoteRow);
+      if (baseline == null || localUpdated == null || remoteUpdated == null) { indeterminate.push({ key, reason: "missing-baseline-or-timestamp" }); continue; }
+      const localChanged = localUpdated > baseline; const remoteChanged = remoteUpdated > baseline;
+      if (localChanged && remoteChanged && localUpdated !== remoteUpdated) conflicts.push({ key, baselineAt: new Date(baseline).toISOString(), localUpdatedAt: new Date(localUpdated).toISOString(), remoteUpdatedAt: new Date(remoteUpdated).toISOString(), preferredObservation: remoteUpdated > localUpdated ? "remote-newer" : "local-newer" });
     }
     return { conflictCount: conflicts.length, indeterminateCount: indeterminate.length, conflicts, indeterminate };
   }
 
-  // Side-effect-free resolver: policy returns decisions only; it does not mutate state or cloud data.
   function resolveConflictPolicy(localRow, remoteRow, baselineAt) {
-    const baseline = parseTime(baselineAt);
-    const localUpdated = rowUpdatedAt(localRow);
-    const remoteUpdated = rowUpdatedAt(remoteRow);
-    const localDeleted = isDeleted(localRow);
-    const remoteDeleted = isDeleted(remoteRow);
-    const localDeletedAt = rowDeletedAt(localRow);
-    const remoteDeletedAt = rowDeletedAt(remoteRow);
-
-    if (rowsEquivalent(localRow, remoteRow)) {
-      return { action: "no-conflict", reason: "equivalent-records", mutation: false };
-    }
-    if (isBaselinePlaceholder(localRow, baseline) && !isBaselinePlaceholder(remoteRow, baseline)) {
-      return { action: "keep-remote", reason: "remote-new-record-against-baseline", mutation: false };
-    }
-    if (isBaselinePlaceholder(remoteRow, baseline) && !isBaselinePlaceholder(localRow, baseline)) {
-      return { action: "keep-local", reason: "local-new-record-against-baseline", mutation: false };
-    }
-    if (baseline == null || localUpdated == null || remoteUpdated == null) {
-      return { action: "manual-review", reason: "indeterminate", mutation: false };
-    }
+    const baseline = parseTime(baselineAt); const localUpdated = rowUpdatedAt(localRow); const remoteUpdated = rowUpdatedAt(remoteRow);
+    const localDeleted = isDeleted(localRow); const remoteDeleted = isDeleted(remoteRow); const localDeletedAt = rowDeletedAt(localRow); const remoteDeletedAt = rowDeletedAt(remoteRow);
+    if (rowsEquivalent(localRow, remoteRow)) return { action: "no-conflict", reason: "equivalent-records", mutation: false };
+    if (isBaselinePlaceholder(localRow, baseline) && !isBaselinePlaceholder(remoteRow, baseline)) return { action: "keep-remote", reason: "remote-new-record-against-baseline", mutation: false };
+    if (isBaselinePlaceholder(remoteRow, baseline) && !isBaselinePlaceholder(localRow, baseline)) return { action: "keep-local", reason: "local-new-record-against-baseline", mutation: false };
+    if (baseline == null || localUpdated == null || remoteUpdated == null) return { action: "manual-review", reason: "indeterminate", mutation: false };
     if (localDeleted !== remoteDeleted) {
       if (localDeletedAt != null && remoteUpdated != null && localDeletedAt > remoteUpdated) return { action: "keep-local", reason: "local-deletion-newer", mutation: false };
       if (remoteDeletedAt != null && localUpdated != null && remoteDeletedAt > localUpdated) return { action: "keep-remote", reason: "remote-deletion-newer", mutation: false };
       return { action: "manual-review", reason: "deletion-vs-update-ambiguous", mutation: false };
     }
-    const localChanged = localUpdated > baseline;
-    const remoteChanged = remoteUpdated > baseline;
+    const localChanged = localUpdated > baseline; const remoteChanged = remoteUpdated > baseline;
     if (!localChanged && !remoteChanged) return { action: "no-conflict", reason: "unchanged-since-baseline", mutation: false };
     if (localChanged && !remoteChanged) return { action: "keep-local", reason: "local-only-change", mutation: false };
     if (remoteChanged && !localChanged) return { action: "keep-remote", reason: "remote-only-change", mutation: false };
     if (localUpdated > remoteUpdated) return { action: "keep-local", reason: "local-newer", mutation: false };
     if (remoteUpdated > localUpdated) return { action: "keep-remote", reason: "remote-newer", mutation: false };
     return { action: "manual-review", reason: "same-timestamp", mutation: false };
+  }
+
+  function loadClientDirectorySafety() {
+    if (document.querySelector('script[data-gv-client-directory-safety="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "/js/core/client-directory-safety.js";
+    script.defer = true;
+    script.dataset.gvClientDirectorySafety = "true";
+    script.onerror = () => console.warn("GotaVita client directory safety boundary failed to load.");
+    (document.head || document.documentElement).appendChild(script);
   }
 
   function run() {
@@ -159,5 +136,6 @@
 
   window.GVConflictDetector = Object.freeze({ detect, resolveConflictPolicy, rowKey, rowUpdatedAt, rowDeletedAt, isDeleted, parseTime });
   window.GVProductionGuard = Object.freeze({ diagnostics, run, isLocal, cloudConfigured });
+  window.addEventListener("DOMContentLoaded", () => { try { loadClientDirectorySafety(); } catch (_) {} }, { once: true });
   window.addEventListener("load", () => { try { run(); } catch (_) {} }, { once: true });
 })();
