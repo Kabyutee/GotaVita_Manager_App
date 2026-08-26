@@ -1,1 +1,0 @@
-This branch removes redundant synchronization repair layers and consolidates runtime ownership. Seed data, backups, business modules, authentication, state, gateway, conflict policy, sync manager, and Order write boundary are preserved.
