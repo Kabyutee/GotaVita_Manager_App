@@ -17,25 +17,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: JARVIS 9.0 business-first adaptive workflow
         run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
-
       - name: JARVIS 7.0 adaptive whole-application scan
         run: node tests/anti-big-bang-7-adaptive-application-scan.test.js
-
       - name: JARVIS 8.0 runtime adaptation audit
         run: node tests/jarvis-8-runtime-adaptation-audit.test.js
-
       - name: JARVIS whole-app hardening contract
         run: node tests/jarvis-whole-app-hardening-contract.test.js
-
       - name: ANTI BIG BANG 6.0 whole-application connection audit
         run: node tests/anti-big-bang-6-application-connection-audit.test.js
-
       - name: ANTI BIG BANG 5.0 system audit
         run: node tests/anti-big-bang-4-system-audit.test.js
-
       - name: Full sync/application gate
         run: |
           node tests/sprint18-transaction-sync-readiness-contract.test.js
