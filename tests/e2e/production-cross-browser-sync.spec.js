@@ -28,7 +28,7 @@ async function matching(page, marker) {
     : [];
 }
 
-test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
+test('production Browser A/B order create-edit-delete convergence', async ({ browser }) => {
   test.setTimeout(150000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -61,10 +61,8 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     const created = (await matching(a, marker))[0];
     expect(created?.id).toBeTruthy();
     expect(created?.orderNumber).toBeTruthy();
-    console.log('[Smoke] create A state PASS', { orderNumber: created.orderNumber });
 
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
-    console.log('[Smoke] create B state PASS');
 
     await a.evaluate((id) => window.openOrderEditor(id), created.id);
     await expect(a.locator('#orderEditModal')).toBeVisible();
@@ -74,12 +72,10 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect(a.locator('#orderEditModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
-    console.log('[Smoke] edit A/B state PASS');
 
     await a.evaluate((id) => window.deleteOrder(id), created.id);
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000] }).toBe(0);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
-    console.log('[Smoke] delete A/B state PASS');
   } finally {
     await Promise.allSettled([contextA.close(), contextB.close()]);
   }
