@@ -24,9 +24,12 @@ for (const syntaxTarget of [
   assert.match(source, new RegExp(syntaxTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
 
+// The production deploy must bind the exact commit SHA to the Worker.
+// Accept the explicit Wrangler --var form used by the deployment command,
+// while retaining compatibility with the older unquoted form.
 assert.match(
   source,
-  /GV_RELEASE_SHA: \$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}/
+  /--var\s+"?GV_RELEASE_SHA:\$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}"?/
 );
 assert.match(
   source,
