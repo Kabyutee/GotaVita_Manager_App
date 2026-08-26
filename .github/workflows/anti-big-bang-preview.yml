@@ -90,20 +90,22 @@ jobs:
           set -euo pipefail
           deployments="$(npx wrangler deployments list --name "$WORKER_NAME" --json)"
           printf '%s\n' "$deployments"
-          expected="$EXPECTED_VERSION_ID" actual="$(printf '%s' "$deployments" | node -e '
+          expected="$EXPECTED_VERSION_ID" actual="$(printf '%s' "$deployments" | EXPECTED_VERSION_ID="$EXPECTED_VERSION_ID" node -e '
             let s="";
             process.stdin.on("data", d => s += d);
             process.stdin.on("end", () => {
               try {
                 const payload = JSON.parse(s);
                 const rows = Array.isArray(payload) ? payload : (payload.deployments || payload.result || []);
-                const latest = Array.isArray(rows) ? rows[0] : null;
-                console.log(latest?.versions?.[0]?.version_id || latest?.version_id || latest?.id || "");
+                const expected = process.env.EXPECTED_VERSION_ID;
+                const match = rows.flatMap((item) => Array.isArray(item?.versions) ? item.versions : [])
+                  .find((version) => version?.version_id === expected && Number(version?.percentage) === 100);
+                console.log(match?.version_id || "");
               } catch (_) { console.log(""); }
             });
           ')"
           if [ "$actual" != "$expected" ]; then
-            echo "Expected isolated deployment version $expected but found $actual"
+            echo "Expected isolated deployment version $expected at 100% but did not find it"
             exit 1
           fi
-          echo "Isolated Worker deployment verified: $actual"
+          echo "Isolated Worker deployment verified: $actual at 100%"
