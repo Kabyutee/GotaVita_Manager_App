@@ -8,8 +8,6 @@
     return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
   }
 
-  // The application ID is the stable GotaVita legacy_id used by Supabase.
-  // Never key Order synchronization only by a database UUID.
   function rowId(row) {
     const value = row?.id ?? row?.legacyId ?? row?.legacy_id;
     return value != null && String(value).trim() !== "" ? String(value) : null;
@@ -33,8 +31,6 @@
     });
   }
 
-  // Never infer deletes from a shorter/partial orders snapshot. A transiently
-  // incomplete state must never delete unrelated historical Orders remotely.
   function explicitDeletedIds(beforeDeletedRows, afterDeletedRows) {
     const before = new Set(
       cloneRows(beforeDeletedRows).map(rowId).filter(Boolean)
@@ -43,6 +39,37 @@
       .map(rowId)
       .filter(Boolean)
       .filter((id) => !before.has(id));
+  }
+
+  // A direct Order mutation must advance the conflict baseline only after the
+  // canonical write has completed. Otherwise the next 5-second reconciliation
+  // can compare a freshly-written local Order against a stale pre-write
+  // baseline and remove the Order from the originating browser.
+  async function refreshOrderBaseline() {
+    const integration = window.GVConflictIntegration;
+    const data = window.GVData;
+    if (
+      !integration ||
+      typeof integration.getBaseline !== "function" ||
+      typeof integration.setBaseline !== "function" ||
+      !data ||
+      typeof data.selectResource !== "function"
+    ) return;
+
+    try {
+      const remoteOrders = await data.selectResource("orders");
+      if (!Array.isArray(remoteOrders)) return;
+      const baseline = integration.getBaseline() || {};
+      integration.setBaseline({
+        ...baseline,
+        orders: {
+          baselineAt: new Date().toISOString(),
+          rows: cloneRows(remoteOrders)
+        }
+      });
+    } catch (error) {
+      console.warn("GotaVita Order post-write baseline refresh:", error?.message || error);
+    }
   }
 
   async function writeDelta(before, after) {
@@ -69,8 +96,6 @@
       await data.upsertResource("deleted_orders", changedDeleted);
     }
 
-    // Deletion is authoritative only when the application creates a new
-    // deletedOrders tombstone for that exact legacy ID.
     const explicitDeletes = explicitDeletedIds(beforeDeleted, afterDeleted);
     if (
       explicitDeletes.length &&
@@ -79,6 +104,10 @@
       for (const id of explicitDeletes) {
         await data.deleteResourceByLegacyId("orders", id);
       }
+    }
+
+    if (changedOrders.length || changedDeleted.length || explicitDeletes.length) {
+      await refreshOrderBaseline();
     }
   }
 
