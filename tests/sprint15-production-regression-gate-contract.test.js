@@ -10,7 +10,8 @@ for (const required of [
   "node tests/sprint12-controlled-conflict-integration-contract.test.js",
   "node tests/sprint12-two-device-conflict-scenarios.test.js",
   "node tests/sprint12-live-sync-polling-contract.test.js",
-  "node tests/sprint14-order-edit-group-contract.test.js"
+  "node tests/sprint14-order-edit-group-contract.test.js",
+  "node tests/sprint26-order-remote-gap-protection.test.js"
 ]) {
   assert.match(source, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
@@ -24,12 +25,8 @@ for (const syntaxTarget of [
   assert.match(source, new RegExp(syntaxTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
 
-assert.match(
-  source,
-  /GV_RELEASE_SHA: \$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}/
-);
-assert.match(
-  source,
-  /ref: \$\{\{ github\.event\.pull_request\.merge_commit_sha \|\| github\.sha \}\}/
-);
+assert.match(source, /GV_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
+assert.match(source, /ref: \$\{\{ github\.sha \}\}/);
 assert.match(source, /Production deployment verified:/);
+assert.match(source, /pull_request:/g) === null;
+console.log("Sprint 15 production regression gate contract: PASS");
