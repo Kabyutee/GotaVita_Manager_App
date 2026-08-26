@@ -1,6 +1,9 @@
 name: ANTI BIG BANG 6.0 Risk Gate
 
 on:
+  push:
+    branches:
+      - release/realtime-sync-verified
   pull_request:
     types: [opened, synchronize, reopened]
   merge_group:
@@ -20,20 +23,20 @@ jobs:
 
       - name: JARVIS 9.0 business-first adaptive workflow
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
 
       - name: JARVIS 7.0 adaptive whole-application scan
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node tests/anti-big-bang-7-adaptive-application-scan.test.js
 
       - name: JARVIS 8.0 runtime adaptation audit
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node tests/jarvis-8-runtime-adaptation-audit.test.js
 
       - name: JARVIS whole-app hardening contract
@@ -49,8 +52,8 @@ jobs:
         id: risk
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
