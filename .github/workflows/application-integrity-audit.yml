@@ -23,7 +23,8 @@ jobs:
           node --check js/core/sync-manager.js
           node --check js/core/conflict-resolution-integration.js
           node --check js/core/application-lifecycle-guard.js
-          node --check js/core/sync-runtime-activation.js
+          node --check js/core/order-write-boundary-bridge.js
+          node --check js/core/persist-resource-queue-bridge.js
 
       - name: Check application lifecycle and sync registry
         run: node tests/application-lifecycle-and-registry.test.js
