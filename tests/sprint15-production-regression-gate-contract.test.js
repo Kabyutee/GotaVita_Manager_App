@@ -28,5 +28,6 @@ for (const syntaxTarget of [
 assert.match(source, /GV_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
 assert.match(source, /ref: \$\{\{ github\.sha \}\}/);
 assert.match(source, /Production deployment verified:/);
-assert.match(source, /pull_request:/g) === null;
+assert.doesNotMatch(source, /pull_request:/);
+
 console.log("Sprint 15 production regression gate contract: PASS");
