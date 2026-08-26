@@ -1,0 +1,44 @@
+name: GotaVita Production Browser Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: Production Worker URL
+        required: false
+        default: https://gotavita-manager-app.carleugenetolentino22.workers.dev
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  production-browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOTAVITA_PRODUCTION_URL: ${{ inputs.target_url || 'https://gotavita-manager-app.carleugenetolentino22.workers.dev' }}
+      E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+      E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: npx --yes playwright@latest install --with-deps chromium
+
+      - name: Run production Browser A/B sync test
+        run: npx --yes playwright@latest test tests/e2e/production-cross-browser-sync.spec.js --project=chromium --reporter=line
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-browser-smoke-report
+          path: test-results/
+          if-no-files-found: ignore
