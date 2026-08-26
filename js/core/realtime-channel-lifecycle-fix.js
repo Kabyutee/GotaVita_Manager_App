@@ -19,9 +19,6 @@
         return originalChannel.apply(this, [topic, ...args]);
       }
 
-      // Supabase Realtime keys channels by topic. A retry that reuses an
-      // already-subscribed topic can reject later .on() registrations.
-      // Give each canonical-sync subscription attempt a fresh topic.
       sequence += 1;
       const uniqueTopic = `gotavita-canonical-sync-${Date.now()}-${sequence}`;
       return originalChannel.apply(this, [uniqueTopic, ...args]);
@@ -48,8 +45,6 @@
   patchCurrentClient();
 
   window.addEventListener("gv-auth-state-changed", (event) => {
-    if (event?.detail?.authenticated === true) {
-      setTimeout(patchCurrentClient, 0);
-    }
+    if (event?.detail?.authenticated === true) setTimeout(patchCurrentClient, 0);
   });
 })();
