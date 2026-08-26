@@ -1,1 +1,0 @@
-Cleanup scope: remove obsolete synchronization repair layers and keep one authoritative owner per concern. Seed data, backups, business feature modules, authentication, state, gateway, conflict policy, sync coordinator, Order write boundary, and sync status remain.
