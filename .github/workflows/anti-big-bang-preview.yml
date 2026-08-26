@@ -31,13 +31,11 @@ jobs:
           if [ -n "$INPUT_SHA" ]; then candidate="$INPUT_SHA"; fi
           if [ -z "$candidate" ]; then exit 1; fi
           echo "sha=$candidate" >> "$GITHUB_OUTPUT"
-
       - name: Checkout exact candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
-
       - name: Verify candidate syntax
         run: |
           node --check script.js
@@ -45,67 +43,29 @@ jobs:
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
           node --check worker.js
-
-      - name: Install exact Wrangler
-        run: npm install --no-save --no-package-lock wrangler@4.124.0
-
-      - name: Upload isolated candidate Worker version
-        id: upload
+      - name: Deploy isolated candidate Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.124.0"
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            deploy
+            --name gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}
+            --var GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}
+      - name: Verify exact preview health
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 'manual' }}
         run: |
           set -euo pipefail
-          deploy_log="$(mktemp)"
-          npx wrangler versions upload \
-            --name "gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}" \
-            --preview-alias "pr-${{ github.event.pull_request.number || 'manual' }}" \
-            --var "GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}" 2>&1 | tee "$deploy_log"
-          version_id="$(sed -n 's/^Worker Version ID: \(.*\)$/\1/p' "$deploy_log" | tail -1)"
-          worker_name="gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}"
-          if [ -z "$version_id" ]; then
-            echo "Wrangler did not emit a Worker Version ID"
-            exit 1
-          fi
-          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
-          echo "worker_name=$worker_name" >> "$GITHUB_OUTPUT"
-
-      - name: Activate candidate on isolated PR Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          VERSION_ID: ${{ steps.upload.outputs.version_id }}
-          WORKER_NAME: ${{ steps.upload.outputs.worker_name }}
-        run: |
-          set -euo pipefail
-          npx wrangler versions deploy "$VERSION_ID" --name "$WORKER_NAME" -y
-
-      - name: Verify isolated deployment version
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          EXPECTED_VERSION_ID: ${{ steps.upload.outputs.version_id }}
-          WORKER_NAME: ${{ steps.upload.outputs.worker_name }}
-        run: |
-          set -euo pipefail
-          deployments="$(npx wrangler deployments list --name "$WORKER_NAME" --json)"
-          printf '%s\n' "$deployments"
-          expected="$EXPECTED_VERSION_ID" actual="$(printf '%s' "$deployments" | EXPECTED_VERSION_ID="$EXPECTED_VERSION_ID" node -e '
-            let s="";
-            process.stdin.on("data", d => s += d);
-            process.stdin.on("end", () => {
-              try {
-                const payload = JSON.parse(s);
-                const rows = Array.isArray(payload) ? payload : (payload.deployments || payload.result || []);
-                const expected = process.env.EXPECTED_VERSION_ID;
-                const match = rows.flatMap((item) => Array.isArray(item?.versions) ? item.versions : [])
-                  .find((version) => version?.version_id === expected && Number(version?.percentage) === 100);
-                console.log(match?.version_id || "");
-              } catch (_) { console.log(""); }
-            });
-          ')"
-          if [ "$actual" != "$expected" ]; then
-            echo "Expected isolated deployment version $expected at 100% but did not find it"
-            exit 1
-          fi
-          echo "Isolated Worker deployment verified: $actual at 100%"
+          url="https://gotavita-manager-pr-${PR_NUMBER}.carleugenetolentino22.workers.dev/gv-health"
+          for attempt in $(seq 1 12); do
+            health="$(curl -fsS "$url" || true)"
+            echo "Health: $health"
+            deployed_sha="$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).releaseSha||"")}catch{console.log("")}})')"
+            if [ "$deployed_sha" = "$EXPECTED_SHA" ]; then exit 0; fi
+            sleep 5
+          done
+          exit 1

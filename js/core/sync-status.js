@@ -63,7 +63,6 @@
   loadScript("/js/core/order-delete-reconciliation-bridge.js", "__GV_ORDER_DELETE_RECONCILIATION_BRIDGE__");
   loadScript("/js/core/client-delete-bridge.js", "__GV_CLIENT_DELETE_BRIDGE__");
   loadScript("/js/core/remote-canonical-field-bridge.js", "__GV_REMOTE_CANONICAL_FIELD_BRIDGE__");
-  loadScript("/js/core/recent-order-state-protection.js", "__GV_RECENT_ORDER_STATE_PROTECTION__");
   loadScript("/js/core/order-write-boundary-bridge.js", "__GV_ORDER_WRITE_BOUNDARY_BRIDGE__");
 
   if (document.readyState === "loading") {
