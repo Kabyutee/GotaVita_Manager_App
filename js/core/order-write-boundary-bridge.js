@@ -41,10 +41,59 @@
       .filter((id) => !before.has(id));
   }
 
-  // A direct Order mutation must advance the conflict baseline only after the
-  // canonical write has completed. Otherwise the next 5-second reconciliation
-  // can compare a freshly-written local Order against a stale pre-write
-  // baseline and remove the Order from the originating browser.
+  async function mergeCanonicalOrdersIntoLocalState() {
+    const data = window.GVData;
+    if (!data || typeof data.selectResource !== "function") return false;
+    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
+
+    try {
+      const remoteOrders = await data.selectResource("orders");
+      if (!Array.isArray(remoteOrders) || !remoteOrders.length) return false;
+
+      const state = window.getStateSnapshot();
+      const localOrders = Array.isArray(state.orders) ? state.orders.slice() : [];
+      const byId = new Map(localOrders.map((row) => [rowId(row), row]).filter(([id]) => id));
+      let changed = false;
+
+      for (const remote of remoteOrders) {
+        const id = rowId(remote);
+        if (!id) continue;
+        const existing = byId.get(id);
+        if (!existing) {
+          localOrders.push({ ...remote });
+          byId.set(id, remote);
+          changed = true;
+          continue;
+        }
+        try {
+          if (JSON.stringify(existing) !== JSON.stringify(remote)) {
+            const index = localOrders.findIndex((row) => rowId(row) === id);
+            if (index >= 0) localOrders[index] = { ...remote };
+            changed = true;
+          }
+        } catch (_) {}
+      }
+
+      if (!changed) return false;
+      state.orders = localOrders;
+      state._meta = Object.assign({}, state._meta, {
+        lastUpdated: Date.now(),
+        lastSynchronizedAt: Date.now(),
+        lastRemoteChangedResources: ["orders"]
+      });
+      window.replaceState(state);
+      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+      try {
+        if (window.GVUI?.renderAll) window.GVUI.renderAll();
+        else if (typeof window.renderAll === "function") window.renderAll();
+      } catch (_) {}
+      return true;
+    } catch (error) {
+      console.warn("GotaVita Order originating-browser canonical merge:", error?.message || error);
+      return false;
+    }
+  }
+
   async function refreshOrderBaseline() {
     const integration = window.GVConflictIntegration;
     const data = window.GVData;
@@ -106,9 +155,12 @@
       }
     }
 
-    if (changedOrders.length || changedDeleted.length || explicitDeletes.length) {
-      await refreshOrderBaseline();
-    }
+    // The originating handler can successfully persist the Order remotely
+    // without exposing the new row in its immediate local snapshot. Always
+    // merge the canonical remote Order collection back into local state after
+    // a direct Order mutation, without deleting any local Orders.
+    await mergeCanonicalOrdersIntoLocalState();
+    await refreshOrderBaseline();
   }
 
   function wrap(name) {
