@@ -59,22 +59,37 @@
 
   async function canonicalSnapshotIsSafe(resource, previous, normalized) {
     if (!Array.isArray(previous) || !previous.length) return true;
-    if (normalized.length >= previous.length) return true;
+    if (!Array.isArray(normalized)) return false;
 
-    if (normalized.length === 0) return false;
+    // Orders require identity-level deletion evidence. A same-sized remote
+    // snapshot can still be incomplete, so row counts alone are insufficient.
+    // A locally present Order may be removed from application state only when
+    // the remote snapshot contains that identity or an explicit deleted_orders
+    // tombstone authorizes its removal.
+    if (resource === "orders") {
+      if (!window.GVData?.selectResource) return false;
 
-    if (resource !== "orders") return false;
-    if (!window.GVData?.selectResource) return false;
+      try {
+        const tombstones = await window.GVData.selectResource("deleted_orders");
+        const deletedIds = new Set(
+          (Array.isArray(tombstones) ? tombstones : [])
+            .map(idOf)
+            .filter(Boolean)
+        );
+        const normalizedMap = mapRows(normalized);
+        const missing = previous
+          .map(idOf)
+          .filter(Boolean)
+          .filter((id) => !normalizedMap.has(id));
 
-    try {
-      const tombstones = await window.GVData.selectResource("deleted_orders");
-      const deletedIds = new Set((Array.isArray(tombstones) ? tombstones : []).map(idOf).filter(Boolean));
-      const normalizedMap = mapRows(normalized);
-      const missing = previous.map(idOf).filter(Boolean).filter((id) => !normalizedMap.has(id));
-      return missing.length > 0 && missing.every((id) => deletedIds.has(id));
-    } catch (_) {
-      return false;
+        return missing.every((id) => deletedIds.has(id));
+      } catch (_) {
+        return false;
+      }
     }
+
+    // Non-Order resources retain the existing fail-closed shrink rule.
+    return normalized.length >= previous.length;
   }
 
   function applyRemoteOrderTombstones(state, tombstones) {
