@@ -54,7 +54,7 @@ function withNoStore(response, content) {
 
 function bustLocalScriptUrls(html, releaseSha) {
   const version = encodeURIComponent(String(releaseSha || "unknown").trim() || "unknown");
-  return html.replace(
+  let output = html.replace(
     /(<script\s+src=["'])(\/?(?:js\/|script\.js)[^"']*)(["'][^>]*>)/gi,
     (match, prefix, src, suffix) => {
       const clean = src.replace(/[?&]gv_release=[^&#]*/g, "");
@@ -62,6 +62,17 @@ function bustLocalScriptUrls(html, releaseSha) {
       return `${prefix}${clean}${separator}gv_release=${version}${suffix}`;
     }
   );
+
+  // The realtime lifecycle compatibility module already exists in the
+  // application but was not wired into index.html. Inject it immediately
+  // before sync-manager so its Supabase channel patch is installed first.
+  if (!/realtime-channel-lifecycle-fix\.js(?:[?"'])/i.test(output)) {
+    const marker = /<script\s+src=["'][^"']*js\/core\/sync-manager\.js[^"']*["'][^>]*><\/script>/i;
+    const fixTag = `<script src="js/core/realtime-channel-lifecycle-fix.js?gv_release=${version}" defer></script>`;
+    output = output.replace(marker, `${fixTag}\n$&`);
+  }
+
+  return output;
 }
 
 async function serveApplicationAsset(request, env) {
