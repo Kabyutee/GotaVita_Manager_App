@@ -63,13 +63,18 @@ function bustLocalScriptUrls(html, releaseSha) {
     }
   );
 
-  // Install the order write boundary before script.js registers its form
-  // listeners. This makes the durable Supabase write wrapper deterministic.
-  // Realtime itself remains optional; canonical synchronization uses the
-  // authenticated polling/reconciliation coordinator.
+  // These two bridges must execute before script.js registers form listeners.
+  // Durable cross-device convergence is handled by the authenticated polling
+  // and reconciliation coordinator; Realtime is kept optional and is safely
+  // shimmed so a websocket lifecycle failure cannot break writes.
   const marker = /<script\s+src=["'][^"']*js\/core\/sync-manager\.js[^"']*["'][^>]*><\/script>/i;
+  const realtimeTag = `<script src="js/core/realtime-channel-lifecycle-fix.js?gv_release=${version}" defer></script>`;
+  const bridgeTag = `<script src="js/core/order-write-boundary-bridge.js?gv_release=${version}" defer></script>`;
+
+  if (!/realtime-channel-lifecycle-fix\.js(?:[?"'])/i.test(output)) {
+    output = output.replace(marker, `${realtimeTag}\n$&`);
+  }
   if (!/order-write-boundary-bridge\.js(?:[?"'])/i.test(output)) {
-    const bridgeTag = `<script src="js/core/order-write-boundary-bridge.js?gv_release=${version}" defer></script>`;
     output = output.replace(marker, `${bridgeTag}\n$&`);
   }
 
