@@ -30,14 +30,15 @@
       const rawLocalRow=localMap.get(id)||null,rawRemoteRow=remoteMap.get(id)||null,baselineRow=baselineMap.get(id)||null;
       const existedAtBaseline=baselineRow!=null;let result=null;
 
-      // Orders are deletion-sensitive business records. A missing remote row
-      // is not deletion evidence: it may be a transient RLS/network snapshot
-      // or an incomplete remote read. Only an explicit deleted_orders tombstone
-      // authorizes removing an Order from local state.
+      // An Order disappearing from a remote snapshot is never, by itself,
+      // deletion evidence. This is true even when the Order existed in the
+      // previous baseline: a transient/incomplete remote read must not erase
+      // a real local business record. Only an explicit deleted_orders tombstone
+      // can authorize removal.
       if(resourceCloudName("orders") === "orders" && rawLocalRow && !rawRemoteRow){
         const remoteDeletion=deletionEvidence(remoteDeletedRows,id) || deletionEvidence(localDeletedRows,id);
         if(!remoteDeletion){
-          result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:false};
+          result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true};
         }
       }
 
