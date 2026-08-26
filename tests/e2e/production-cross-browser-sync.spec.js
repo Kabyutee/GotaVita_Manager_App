@@ -28,7 +28,7 @@ async function matching(page, marker) {
     : [];
 }
 
-test('production Browser A/B order create-edit-delete convergence', async ({ browser }) => {
+test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
   test.setTimeout(150000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -61,41 +61,25 @@ test('production Browser A/B order create-edit-delete convergence', async ({ bro
     const created = (await matching(a, marker))[0];
     expect(created?.id).toBeTruthy();
     expect(created?.orderNumber).toBeTruthy();
+    console.log('[Smoke] create A state PASS', { orderNumber: created.orderNumber });
 
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
+    console.log('[Smoke] create B state PASS');
 
-    const editorDebug = await a.evaluate((id) => {
-      const orders = window.getStateSnapshot?.()?.orders || [];
-      const matches = orders.filter((o) => String(o?.id) === String(id)).map((o) => ({ id: o.id, idType: typeof o.id, orderNumber: o.orderNumber, address: o.address }));
-      const fn = window.openOrderEditor;
-      const before = document.querySelector('#orderEditModal')?.getAttribute('aria-hidden');
-      const result = typeof fn === 'function' ? fn(id) : 'missing';
-      const after = document.querySelector('#orderEditModal')?.getAttribute('aria-hidden');
-      return {
-        functionType: typeof fn,
-        functionSource: typeof fn === 'function' ? String(fn).slice(0, 500) : '',
-        toIdType: typeof window.toId,
-        id,
-        idType: typeof id,
-        matches,
-        before,
-        after,
-        result
-      };
-    }, created.id);
-    console.log('[Smoke] editor binding debug', editorDebug);
+    await a.evaluate((id) => window.openOrderEditor(id), created.id);
     await expect(a.locator('#orderEditModal')).toBeVisible();
-
     await a.locator('#editOrderAddress').fill(edited);
     await a.locator('#editOrderNotes').fill(edited);
     await a.locator('#orderEditForm button[type="submit"]').click();
     await expect(a.locator('#orderEditModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
+    console.log('[Smoke] edit A/B state PASS');
 
     await a.evaluate((id) => window.deleteOrder(id), created.id);
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000] }).toBe(0);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
+    console.log('[Smoke] delete A/B state PASS');
   } finally {
     await Promise.allSettled([contextA.close(), contextB.close()]);
   }
