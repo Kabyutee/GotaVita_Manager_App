@@ -53,7 +53,7 @@ test('production Browser A/B order create-edit-delete convergence', async ({ bro
 
   for (const [name, page] of [['A', pageA], ['B', pageB]]) {
     page.on('console', msg => console.log(`[Browser ${name} console:${msg.type()}] ${msg.text()}`));
-    page.on('pageerror', error => console.log(`[Browser ${name} pageerror] ${error.message}`));
+    page.on('pageerror', error => console.log(`[Browser ${name} pageerror] ${error.stack || error.message}`));
   }
 
   pageA.on('dialog', dialog => dialog.accept());
@@ -66,8 +66,18 @@ test('production Browser A/B order create-edit-delete convergence', async ({ bro
     stage = 'create';
     await pageA.locator('[data-tab="neworder"]').click();
     await expect(pageA.locator('#orderForm')).toBeVisible();
-    await pageA.locator('#clientSelect option').nth(1).waitFor();
-    await pageA.locator('#custTypeSelect option').first().waitFor();
+
+    // Playwright treats HTML <option> nodes as hidden. Wait for population
+    // by count instead of waiting for an option's visibility.
+    await expect.poll(
+      () => pageA.locator('#clientSelect option').count(),
+      { timeout: 30000, intervals: [500, 1000, 2000] }
+    ).toBeGreaterThan(1);
+    await expect.poll(
+      () => pageA.locator('#custTypeSelect option').count(),
+      { timeout: 30000, intervals: [500, 1000, 2000] }
+    ).toBeGreaterThan(0);
+
     await pageA.locator('#clientSelect').selectOption({ index: 1 });
     await pageA.locator('#custTypeSelect').selectOption({ index: 0 });
     await pageA.locator('#gallons').fill('1');
