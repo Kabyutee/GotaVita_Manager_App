@@ -1,26 +1,21 @@
 const fs = require("node:fs");
 const assert = require("node:assert/strict");
 
-const repair = fs.readFileSync("js/core/sync-complete-runtime-repair.js", "utf8");
 const worker = fs.readFileSync("worker.js", "utf8");
 const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
+const bridge = fs.readFileSync("js/core/order-write-boundary-bridge.js", "utf8");
 const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
-assert.match(repair, /selectResource\(resource\)/);
-assert.match(repair, /upsertResource\(resource, localWrites\)/);
-assert.match(repair, /remoteMerges/);
-assert.match(repair, /const remoteTime = timeOf\(remoteRow\)/);
-assert.match(repair, /const localTime = timeOf\(localRow\)/);
-assert.match(repair, /localTime > remoteTime/);
-assert.match(repair, /canonicalSnapshotIsSafe/);
-assert.match(repair, /deleted_orders/);
-assert.match(repair, /canonical-snapshot-incomplete/);
-assert.match(repair, /replaceState\((?:state|protectedState)\)/);
-assert.match(repair, /writeLocalStateSnapshot/);
-assert.match(repair, /GVSync = Object\.freeze/);
-assert.match(worker, /sync-complete-runtime-repair\.js/);
-assert.match(manager, /hydrateFirstBaseline/);
+assert.doesNotMatch(worker, /sync-complete-runtime-repair\.js/);
+assert.match(manager, /hydrateFirstBaseline\(integration\)/);
+assert.match(manager, /window\.GVSync = Object\.freeze/);
+assert.match(manager, /ensureConflictIntegration\(\)/);
+assert.match(bridge, /channel\.on\(/);
+assert.match(bridge, /channel\.subscribe\(/);
+assert.match(bridge, /removeChannel/);
+assert.match(bridge, /window\.GVData\.upsertResource|data\.upsertResource/);
 assert.match(gateway, /async function selectResource/);
 assert.match(gateway, /async function upsertResource/);
+assert.match(gateway, /supportedResources/);
 
-console.log("Sprint 22 complete runtime synchronization repair contract: PASS");
+console.log("Sprint 22 canonical runtime synchronization contract: PASS");
