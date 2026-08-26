@@ -31,11 +31,13 @@ jobs:
           if [ -n "$INPUT_SHA" ]; then candidate="$INPUT_SHA"; fi
           if [ -z "$candidate" ]; then exit 1; fi
           echo "sha=$candidate" >> "$GITHUB_OUTPUT"
+
       - name: Checkout exact candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
+
       - name: Verify candidate syntax
         run: |
           node --check script.js
@@ -43,24 +45,46 @@ jobs:
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
           node --check worker.js
-      - name: Deploy isolated candidate Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4.124.0"
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: >-
-            deploy
-            --name gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}
-            --var GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}
+
+      - name: Install exact Wrangler
+        run: npm install --no-save --no-package-lock wrangler@4.124.0
+
+      - name: Upload isolated candidate Worker version
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+        run: |
+          set -euo pipefail
+          npx wrangler versions upload \
+            --name "gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}" \
+            --preview-alias "pr-${{ github.event.pull_request.number || 'manual' }}" \
+            --var "GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}"
+          preview_url="$(node -e '
+            const fs=require("node:fs");
+            const path=process.argv[1];
+            const lines=fs.readFileSync(path,"utf8").split(/\r?\n/).filter(Boolean);
+            for (const line of lines.reverse()) {
+              try {
+                const item=JSON.parse(line);
+                const urls=[...(item.preview_urls||[]), ...(item.targets||[])].filter((value)=>typeof value==="string");
+                const url=urls.find((value)=>/https:\/\//.test(value));
+                if(url){ console.log(url); process.exit(0); }
+              } catch (_) {}
+            }
+            process.exit(1);
+          ' "$WRANGLER_OUTPUT_FILE_PATH")"
+          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+          echo "Preview URL: $preview_url"
+
       - name: Verify exact preview health
         env:
           EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || 'manual' }}
+          PREVIEW_URL: ${{ steps.upload.outputs.url }}
         run: |
           set -euo pipefail
-          url="https://gotavita-manager-pr-${PR_NUMBER}.carleugenetolentino22.workers.dev/gv-health"
+          url="${PREVIEW_URL%/}/gv-health"
           for attempt in $(seq 1 12); do
             health="$(curl -fsS "$url" || true)"
             echo "Health: $health"
