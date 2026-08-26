@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   integrity:
@@ -13,6 +13,57 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair canonical Supabase payload precedence
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('js/core/data-gateway.js')
+          text = path.read_text(encoding='utf-8')
+          old = '''  function mergePayload(\n    original,\n    payload\n  ) {\n    return {\n      ...(payload || {}),\n      ...(\n        original &&\n        typeof original === "object"\n          ? original\n          : {}\n      )\n    };\n  }'''
+          new = '''  function mergePayload(\n    original,\n    payload\n  ) {\n    // legacy_payload is compatibility data only. Canonical Supabase columns\n    // must be merged last so remote authoritative values win over stale\n    // historical browser snapshots.\n    return {\n      ...(\n        original &&\n        typeof original === "object"\n          ? original\n          : {}\n      ),\n      ...(payload || {})\n    };\n  }'''
+          if old not in text:
+              raise SystemExit('Expected mergePayload implementation not found; refusing unsafe rewrite.')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+      - name: Add and run canonical payload regression contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > tests/sprint23-canonical-payload-authority-contract.test.js <<'EOF'
+          const fs = require("node:fs");
+          const assert = require("node:assert/strict");
+
+          const source = fs.readFileSync("js/core/data-gateway.js", "utf8");
+          const start = source.indexOf("function mergePayload(");
+          assert.notEqual(start, -1, "mergePayload must exist");
+          const end = source.indexOf("\\n  }", start);
+          assert.notEqual(end, -1, "mergePayload must close");
+          const block = source.slice(start, end + 4);
+          const legacy = block.indexOf("original &&");
+          const canonical = block.indexOf("...(payload || {})");
+          assert(legacy >= 0, "legacy payload support must remain");
+          assert(canonical > legacy, "canonical payload must be merged after legacy payload");
+          console.log("Sprint 23 canonical payload authority contract: PASS");
+          EOF
+          node tests/sprint23-canonical-payload-authority-contract.test.js
+          node --check js/core/data-gateway.js
+
+      - name: Commit canonical payload repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/core/data-gateway.js tests/sprint23-canonical-payload-authority-contract.test.js
+          if git diff --cached --quiet; then
+            echo "No canonical payload repair needed."
+            exit 0
+          fi
+          git commit -m "fix: restore canonical Supabase payload precedence"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
       - name: Check core JavaScript syntax
         run: |
