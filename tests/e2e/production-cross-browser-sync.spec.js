@@ -64,8 +64,28 @@ test('production Browser A/B order create-edit-delete convergence', async ({ bro
 
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
 
-    await a.evaluate((id) => window.openOrderEditor(id), created.id);
+    const editorDebug = await a.evaluate((id) => {
+      const orders = window.getStateSnapshot?.()?.orders || [];
+      const matches = orders.filter((o) => String(o?.id) === String(id)).map((o) => ({ id: o.id, idType: typeof o.id, orderNumber: o.orderNumber, address: o.address }));
+      const fn = window.openOrderEditor;
+      const before = document.querySelector('#orderEditModal')?.getAttribute('aria-hidden');
+      const result = typeof fn === 'function' ? fn(id) : 'missing';
+      const after = document.querySelector('#orderEditModal')?.getAttribute('aria-hidden');
+      return {
+        functionType: typeof fn,
+        functionSource: typeof fn === 'function' ? String(fn).slice(0, 500) : '',
+        toIdType: typeof window.toId,
+        id,
+        idType: typeof id,
+        matches,
+        before,
+        after,
+        result
+      };
+    }, created.id);
+    console.log('[Smoke] editor binding debug', editorDebug);
     await expect(a.locator('#orderEditModal')).toBeVisible();
+
     await a.locator('#editOrderAddress').fill(edited);
     await a.locator('#editOrderNotes').fill(edited);
     await a.locator('#orderEditForm button[type="submit"]').click();
