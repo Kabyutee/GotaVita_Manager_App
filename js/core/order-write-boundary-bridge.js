@@ -109,7 +109,8 @@
       try {
         if (JSON.stringify(rows[index]) === JSON.stringify(row)) return false;
       } catch (_) {}
-      rows[index] = { ...row };
+      const localId = rows[index]?.id;
+      rows[index] = { ...row, id: localId };
     }
 
     const now = new Date().toISOString();
@@ -166,7 +167,10 @@
 
         const index = localRows.findIndex((row) => rowId(row) === id);
         if (index >= 0) {
-          localRows[index] = { ...remote };
+          // Preserve the browser's established local ID type/value while
+          // replacing all business fields with the authoritative remote row.
+          const localId = localRows[index]?.id;
+          localRows[index] = { ...remote, id: localId };
           changed = true;
         }
       }
@@ -304,9 +308,6 @@
     const afterOrders = Array.isArray(after?.orders) ? after.orders : [];
     const changedOrders = changedRows(beforeOrders, afterOrders);
     if (changedOrders.length && typeof data.upsertResource === "function") {
-      // Every local Order mutation gets a fresh canonical timestamp at the cloud write boundary.
-      // This is essential for cross-device conflict resolution: Browser B must be able to
-      // distinguish an edited Order from the prior version that it already has locally.
       const updatedAt = new Date().toISOString();
       for (const order of changedOrders) {
         order.updatedAt = updatedAt;
