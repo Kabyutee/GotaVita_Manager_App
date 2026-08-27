@@ -29,6 +29,35 @@
     return value != null && String(value).trim() !== "" ? String(value) : null;
   }
 
+  function isCanonicalOrderRow(row) {
+    const stable = rowId(row);
+    const directId = row?.id == null ? null : String(row.id);
+    const directLegacy = row?.legacyId ?? row?.legacy_id;
+    const legacyId = directLegacy == null ? null : String(directLegacy);
+    const payloadLegacy = row?.legacy_payload?.legacyId ?? row?.legacy_payload?.legacy_id;
+    const payloadId = row?.legacy_payload?.id;
+    const score =
+      (stable && directId === stable ? 100 : 0) +
+      (legacyId && directLegacy != null && legacyId === stable ? 25 : 0) +
+      (payloadLegacy != null && String(payloadLegacy) === stable ? 10 : 0) +
+      (row?.orderNumber ? 5 : 0) +
+      (Number(row?.total) > 0 ? 3 : 0) +
+      (Number(row?.price) > 0 ? 1 : 0) +
+      (payloadId != null && String(payloadId) === stable ? 2 : 0);
+    return score;
+  }
+
+  function dedupeRemoteOrders(rows) {
+    const byId = new Map();
+    for (const row of cloneRows(rows)) {
+      const id = rowId(row);
+      if (!id) continue;
+      const existing = byId.get(id);
+      if (!existing || isCanonicalOrderRow(row) > isCanonicalOrderRow(existing)) byId.set(id, row);
+    }
+    return [...byId.values()];
+  }
+
   function rowUpdatedMs(row) {
     const value = row?.updatedAt ?? row?.updated_at ?? row?.createdAt ?? row?.created_at ?? null;
     if (value == null || value === "") return 0;
@@ -104,7 +133,7 @@
     const state = window.getStateSnapshot();
     const rows = Array.isArray(state[stateName]) ? state[stateName].slice() : [];
     const index = rows.findIndex((item) => rowId(item) === id);
-    if (index < 0) rows.push({ ...row });
+    if (index < 0) rows.push({ ...row, id: row?.id });
     else {
       try {
         if (JSON.stringify(rows[index]) === JSON.stringify(row)) return false;
@@ -114,7 +143,7 @@
     }
 
     const now = new Date().toISOString();
-    state[stateName] = rows;
+    state[stateName] = resource === "orders" ? dedupeRemoteOrders(rows) : rows;
     state._meta = Object.assign({}, state._meta, {
       lastUpdated: Date.now(),
       lastSynchronizedAt: Date.now(),
@@ -137,11 +166,12 @@
 
     remoteOrderPullInFlight = true;
     try {
-      const remoteRows = await data.selectResource("orders");
-      if (!Array.isArray(remoteRows)) return false;
+      const fetchedRows = await data.selectResource("orders");
+      if (!Array.isArray(fetchedRows)) return false;
+      const remoteRows = dedupeRemoteOrders(fetchedRows);
 
       const state = window.getStateSnapshot();
-      const localRows = Array.isArray(state.orders) ? state.orders.slice() : [];
+      const localRows = dedupeRemoteOrders(Array.isArray(state.orders) ? state.orders.slice() : []);
       const localById = new Map(localRows.map((row) => [rowId(row), row]).filter(([id]) => id));
       let changed = false;
 
@@ -173,10 +203,11 @@
         }
       }
 
-      if (!changed) return false;
+      const normalizedRows = dedupeRemoteOrders(localRows);
+      if (!changed && normalizedRows.length === localRows.length) return false;
 
       const now = Date.now();
-      state.orders = localRows;
+      state.orders = normalizedRows;
       state._meta = Object.assign({}, state._meta, {
         lastUpdated: now,
         lastSynchronizedAt: now,
@@ -291,7 +322,7 @@
       if (!Array.isArray(rows)) return;
       integration.setBaseline({
         ...integration.getBaseline(),
-        orders: { baselineAt: new Date().toISOString(), rows: cloneRows(rows) }
+        orders: { baselineAt: new Date().toISOString(), rows: dedupeRemoteOrders(rows) }
       });
     } catch (error) {
       console.warn("GotaVita Order post-write baseline refresh:", error?.message || error);
@@ -307,13 +338,10 @@
     const changedOrders = changedRows(beforeOrders, afterOrders);
     if (changedOrders.length && typeof data.upsertResource === "function") {
       const updatedAt = new Date().toISOString();
-      const cloudOrders = changedOrders.map((order) => {
+      const cloudOrders = dedupeRemoteOrders(changedOrders).map((order) => {
         const stableId = order?.legacyId ?? order?.legacy_id ?? order?.legacy_payload?.legacyId ?? order?.legacy_payload?.legacy_id ?? order?.id;
-        return { ...order, id: stableId, legacyId: stableId };
+        return { ...order, id: stableId, legacyId: stableId, updatedAt };
       });
-      for (const order of cloudOrders) {
-        order.updatedAt = updatedAt;
-      }
       await data.upsertResource("orders", cloudOrders);
     }
 
