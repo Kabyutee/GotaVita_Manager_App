@@ -2,7 +2,9 @@
 (function () {
   "use strict";
   const INTERVAL_MS = 2000;
+  const INITIAL_DELAY_MS = 6000;
   let timer = null;
+  let startTimer = null;
   let inFlight = false;
   function idOf(row) {
     const value = row?.legacyId ?? row?.legacy_id ?? row?.legacy_payload?.legacyId ?? row?.legacy_payload?.legacy_id ?? row?.id;
@@ -66,11 +68,16 @@
     } finally { inFlight = false; }
   }
   function start() {
-    if (timer) return;
-    pull().catch(() => {});
-    timer = setInterval(() => pull().catch(() => {}), INTERVAL_MS);
+    if (timer || startTimer) return;
+    startTimer = setTimeout(() => {
+      startTimer = null;
+      if (!authorized()) return;
+      pull().catch(() => {});
+      timer = setInterval(() => pull().catch(() => {}), INTERVAL_MS);
+    }, INITIAL_DELAY_MS);
   }
   function stop() {
+    if (startTimer) { clearTimeout(startTimer); startTimer = null; }
     if (!timer) return;
     clearInterval(timer);
     timer = null;
