@@ -1,7 +1,6 @@
 /* GotaVita Manager — Sprint 12 Controlled Conflict Resolution Integration */
 (function () {
   "use strict";
-
   const STORAGE_KEY = "gotavita_conflict_baseline_v1";
   const CONFLICT_KEY = "gotavita_sync_conflicts";
   const RUN_LOCK_KEY = "gotavita_conflict_integration_lock";
@@ -21,7 +20,6 @@
   function deletionEvidence(rows,key){return(Array.isArray(rows)?rows:[]).find((row,index)=>rowKey(row,index)===key)||null;}
   function tombstone(row,deletedAt){if(!deletedAt)return null;return{id:row?.id,legacy_id:row?.legacy_id,deleted:true,deletedAt,updatedAt:deletedAt};}
   function baselinePlaceholder(id,baselineAt){if(!baselineAt)return null;return{id,updatedAt:baselineAt,createdAt:baselineAt};}
-
   function buildResolutionPlan(localRows,remoteRows,baselineAt,localDeletedRows=[],remoteDeletedRows=[],baselineRows=[]){
     const localMap=indexRows(localRows),remoteMap=indexRows(remoteRows),baselineMap=indexRows(baselineRows);
     const ids=new Set([...localMap.keys(),...remoteMap.keys()]);
@@ -31,9 +29,7 @@
       const existedAtBaseline=baselineRow!=null;let result=null;
       if(resourceCloudName("orders") === "orders" && rawLocalRow && !rawRemoteRow){
         const remoteDeletion=deletionEvidence(remoteDeletedRows,id) || deletionEvidence(localDeletedRows,id);
-        if(!remoteDeletion){
-          result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true};
-        }
+        if(!remoteDeletion) result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true};
       }
       if(!result&&!rawLocalRow&&rawRemoteRow&&!existedAtBaseline)result={action:"keep-remote",reason:"remote-new-record",mutation:false};
       else if(!result&&rawLocalRow&&!rawRemoteRow&&!existedAtBaseline)result={action:"keep-local",reason:"local-new-record",mutation:false};
