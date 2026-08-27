@@ -65,6 +65,7 @@
   loadScript("/js/core/remote-canonical-field-bridge.js", "__GV_REMOTE_CANONICAL_FIELD_BRIDGE__");
   loadScript("/js/core/recent-order-state-protection.js", "__GV_RECENT_ORDER_STATE_PROTECTION__");
   loadScript("/js/core/order-write-boundary-bridge.js", "__GV_ORDER_WRITE_BOUNDARY_BRIDGE__");
+  loadScript("/js/core/order-remote-pull-fix.js", "__GV_ORDER_REMOTE_PULL_FIX__");
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => setTimeout(() => {
