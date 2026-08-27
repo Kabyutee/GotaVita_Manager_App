@@ -138,6 +138,15 @@ async function serveApplicationAsset(request, env) {
     html = html.replace(authorityMarker, `${orderWriteBoundaryInjected}\n${authorityMarker}`);
   }
 
+  // Independent Order hydration MUST also load before script.js. It depends
+  // only on the already-deferred auth/gateway scripts and self-starts once
+  // manager authorization becomes true, so Browser B cannot miss the login
+  // lifecycle event simply because a dynamically injected script loaded late.
+  const orderRemotePullInjected = `<script src="/js/core/order-remote-pull-fix.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(authorityMarker) && !html.includes(orderRemotePullInjected)) {
+    html = html.replace(authorityMarker, `${orderRemotePullInjected}\n${authorityMarker}`);
+  }
+
   const authorityInjected = `<script src="/js/core/sync-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(authorityMarker) && !html.includes(authorityInjected)) {
     html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
