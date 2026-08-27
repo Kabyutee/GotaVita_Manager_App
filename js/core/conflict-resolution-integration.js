@@ -36,11 +36,6 @@
       let localRow=rawLocalRow,remoteRow=rawRemoteRow;
       if(!localRow){const evidence=deletionEvidence(localDeletedRows,id);localRow=evidence?tombstone(evidence,evidence.archivedAt||evidence.deletedAt):(existedAtBaseline?null:baselinePlaceholder(id,baselineAt));}
       if(!remoteRow){const evidence=deletionEvidence(remoteDeletedRows,id);remoteRow=evidence?tombstone(evidence,evidence.archivedAt||evidence.deletedAt):(existedAtBaseline?null:baselinePlaceholder(id,baselineAt));}
-      // Orders are written through to Supabase before a successful sync result.
-      // Once the cloud read succeeds, its Order row is the canonical value for
-      // the other browser. This avoids stale local timestamps/content winning
-      // merely because both browsers edited the same record at different times.
-      if(!result&&resourceCloudName("orders")==="orders"&&rawLocalRow&&rawRemoteRow&&!rowsEquivalent(rawLocalRow,rawRemoteRow))result={action:"keep-remote",reason:"order-remote-canonical",mutation:false};
       if(!result&&!rowsEquivalent(localRow,remoteRow)){
         const localTime=rowTimestamp(localRow),remoteTime=rowTimestamp(remoteRow);
         if(localTime!=null&&remoteTime!=null){
@@ -52,7 +47,6 @@
           }
         }
       }
-      if(!result&&!baselineRow&&!rowsEquivalent(localRow,remoteRow)&&resourceCloudName("orders")==="orders"&&rawLocalRow&&rawRemoteRow)result={action:"keep-remote",reason:"order-remote-canonical-without-baseline",mutation:false};
       if(!result&&baselineRow&&!rowsEquivalent(localRow,remoteRow)){
         const localMatchesBaseline=rowsEquivalent(localRow,baselineRow),remoteMatchesBaseline=rowsEquivalent(remoteRow,baselineRow);
         if(!localMatchesBaseline&&remoteMatchesBaseline)result={action:"keep-local",reason:"local-content-change-by-baseline",mutation:true};
