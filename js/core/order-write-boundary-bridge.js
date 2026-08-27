@@ -5,7 +5,10 @@
   let installed = false;
   let realtimeChannel = null;
   let realtimeStarting = false;
+  let remoteOrderPullTimer = null;
+  let remoteOrderPullInFlight = false;
   const REALTIME_RETRY_MS = 1000;
+  const REMOTE_ORDER_PULL_MS = 2000;
   const REALTIME_RESOURCES = Object.freeze({
     orders: "orders",
     clients: "clients",
@@ -24,6 +27,13 @@
   function rowId(row) {
     const value = row?.id ?? row?.legacyId ?? row?.legacy_id;
     return value != null && String(value).trim() !== "" ? String(value) : null;
+  }
+
+  function rowUpdatedMs(row) {
+    const value = row?.updatedAt ?? row?.updated_at ?? row?.createdAt ?? row?.created_at ?? null;
+    if (value == null || value === "") return 0;
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   function changedRows(beforeRows, afterRows) {
@@ -114,6 +124,87 @@
     return true;
   }
 
+  async function pullRemoteOrders() {
+    if (remoteOrderPullInFlight) return false;
+    if (window.__GV_ORDER_DIRECT_WRITE_ACTIVE === true || window.__GV_SYNC_TRANSACTION_ACTIVE === true) return false;
+    if (!navigator.onLine || window.GVAuth?.isAuthorized?.() !== true) return false;
+    const data = window.GVData;
+    if (!data || typeof data.selectResource !== "function") return false;
+    if (typeof window.getStateSnapshot !== "function" || typeof window.replaceState !== "function") return false;
+
+    remoteOrderPullInFlight = true;
+    try {
+      const remoteRows = await data.selectResource("orders");
+      if (!Array.isArray(remoteRows)) return false;
+
+      const state = window.getStateSnapshot();
+      const localRows = Array.isArray(state.orders) ? state.orders.slice() : [];
+      const localById = new Map(localRows.map((row) => [rowId(row), row]).filter(([id]) => id));
+      let changed = false;
+
+      for (const remote of remoteRows) {
+        const id = rowId(remote);
+        if (!id) continue;
+        const local = localById.get(id);
+        if (!local) {
+          localRows.push({ ...remote });
+          localById.set(id, remote);
+          changed = true;
+          continue;
+        }
+
+        const remoteMs = rowUpdatedMs(remote);
+        const localMs = rowUpdatedMs(local);
+        let shouldApply = remoteMs > localMs;
+        if (remoteMs === 0 && localMs === 0) {
+          try { shouldApply = JSON.stringify(remote) !== JSON.stringify(local); }
+          catch (_) { shouldApply = true; }
+        }
+        if (!shouldApply) continue;
+
+        const index = localRows.findIndex((row) => rowId(row) === id);
+        if (index >= 0) {
+          localRows[index] = { ...remote };
+          changed = true;
+        }
+      }
+
+      if (!changed) return false;
+
+      const now = Date.now();
+      state.orders = localRows;
+      state._meta = Object.assign({}, state._meta, {
+        lastUpdated: now,
+        lastSynchronizedAt: now,
+        lastRemoteChangedResources: ["orders"],
+        lastRealtimeSyncAt: new Date().toISOString(),
+        lastOrderRemotePullAt: new Date().toISOString()
+      });
+      window.replaceState(state);
+      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
+      renderSafely();
+      return true;
+    } catch (error) {
+      console.warn("GotaVita Order remote pull:", error?.message || error);
+      return false;
+    } finally {
+      remoteOrderPullInFlight = false;
+    }
+  }
+
+  function startRemoteOrderPull() {
+    if (remoteOrderPullTimer) return;
+    pullRemoteOrders().catch(() => {});
+    remoteOrderPullTimer = setInterval(() => pullRemoteOrders().catch(() => {}), REMOTE_ORDER_PULL_MS);
+  }
+
+  function stopRemoteOrderPull() {
+    if (!remoteOrderPullTimer) return;
+    clearInterval(remoteOrderPullTimer);
+    remoteOrderPullTimer = null;
+    remoteOrderPullInFlight = false;
+  }
+
   const realtimePending = new Map();
   let realtimeProcessTimer = null;
 
@@ -144,6 +235,7 @@
     }
     realtimeChannel = null;
     realtimeStarting = false;
+    stopRemoteOrderPull();
   }
 
   async function startRealtime() {
@@ -167,17 +259,20 @@
         if (status === "SUBSCRIBED") {
           realtimeChannel = channel;
           realtimeStarting = false;
+          startRemoteOrderPull();
           return;
         }
         if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
           if (realtimeChannel === channel) realtimeChannel = null;
           realtimeStarting = false;
+          startRemoteOrderPull();
           setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
         }
       });
     } catch (error) {
       realtimeStarting = false;
       console.warn("GotaVita Realtime startup:", error?.message || error);
+      startRemoteOrderPull();
       setTimeout(() => startRealtime().catch(() => {}), REALTIME_RETRY_MS);
     }
   }
@@ -268,10 +363,17 @@
     else retry();
 
     window.addEventListener("gv-auth-state-changed", (event) => {
-      if (event?.detail?.authenticated === true) startRealtime().catch(() => {});
-      else stopRealtime().catch(() => {});
+      if (event?.detail?.authenticated === true) {
+        startRealtime().catch(() => {});
+        startRemoteOrderPull();
+      } else {
+        stopRealtime().catch(() => {});
+      }
     });
-    if (window.GVAuth?.isAuthorized?.()) startRealtime().catch(() => {});
+    if (window.GVAuth?.isAuthorized?.()) {
+      startRealtime().catch(() => {});
+      startRemoteOrderPull();
+    }
   }
 
   boot();
