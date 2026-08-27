@@ -8,6 +8,7 @@
   const RECOVERY_LOCK = "gotavita_cloud_recovery_lock_v1";
   const PULL_MS = 5000;
   let pullTimer = null;
+  let fullSyncTimer = null;
   let pullBusy = false;
 
   function state() {
@@ -112,13 +113,11 @@
         const remoteRows = await window.GVData.selectResource(resource);
         if (!Array.isArray(remoteRows)) continue;
 
-        // Never infer P0 deletions. A remote shrink is visible only as a warning.
         if (unsafeShrink(localRows, remoteRows, resource, [])) {
           try { if (typeof window.setSyncStatus === "function") window.setSyncStatus(`P0 ${resource} snapshot requires review`, "warning"); } catch (_) {}
           continue;
         }
 
-        const localMap = rowsMap(localRows);
         const remoteMap = rowsMap(remoteRows);
         const nextRows = localRows.slice();
         const protectLocalEdits = hasPendingLocalP0Write(resource);
@@ -127,14 +126,7 @@
           const index = nextRows.findIndex((row, rowIndex) => keyOf(row, rowIndex) === id);
           const localRow = index >= 0 ? nextRows[index] : null;
           if (!rowChanged(localRow, remoteRow)) continue;
-
-          // A receiving browser with no pending local write adopts the remote
-          // canonical master row. This deliberately does not depend on local
-          // timestamps, because restored/cached timestamps may be synthetic.
-          // A browser with an explicit pending write keeps its local mutation
-          // until the normal queue write reaches Supabase.
           if (protectLocalEdits) continue;
-
           if (index >= 0) nextRows[index] = remoteRow;
           else nextRows.push(remoteRow);
           changed = true;
@@ -196,10 +188,18 @@
     return true;
   }
 
+  async function runFullSync() {
+    try { await window.GVSync?.flush?.(); } catch (_) {}
+  }
+
   function guardedStartPolling() {
-    if (pullTimer) return;
-    pullP0MasterData().catch(() => {});
-    pullTimer = setInterval(() => pullP0MasterData().catch(() => {}), PULL_MS);
+    if (fullSyncTimer) return;
+    runFullSync();
+    fullSyncTimer = setInterval(runFullSync, PULL_MS);
+    if (!pullTimer) {
+      pullP0MasterData().catch(() => {});
+      pullTimer = setInterval(() => pullP0MasterData().catch(() => {}), PULL_MS);
+    }
   }
 
   function install() {
@@ -208,9 +208,9 @@
   }
 
   install();
-  window.addEventListener("DOMContentLoaded", () => { install(); pullP0MasterData().catch(() => {}); }, { once: true });
-  window.addEventListener("focus", () => pullP0MasterData().catch(() => {}));
-  window.addEventListener("pageshow", () => pullP0MasterData().catch(() => {}));
-  window.addEventListener("gv-auth-state-changed", (event) => { if (event?.detail?.authenticated === true) pullP0MasterData().catch(() => {}); });
+  window.addEventListener("DOMContentLoaded", () => { install(); guardedStartPolling(); pullP0MasterData().catch(() => {}); }, { once: true });
+  window.addEventListener("focus", () => { runFullSync(); pullP0MasterData().catch(() => {}); });
+  window.addEventListener("pageshow", () => { runFullSync(); pullP0MasterData().catch(() => {}); });
+  window.addEventListener("gv-auth-state-changed", (event) => { if (event?.detail?.authenticated === true) guardedStartPolling(); });
   window.GVCloudSnapshotSafety = Object.freeze({ preflight, recoverCloudFromLocal, unsafeShrink, pullP0MasterData, p0Resources: [...P0_MASTER_RESOURCES] });
 })();
