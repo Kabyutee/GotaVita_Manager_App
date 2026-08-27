@@ -25,7 +25,7 @@
   }
 
   function rowId(row) {
-    const value = row?.id ?? row?.legacyId ?? row?.legacy_id;
+    const value = row?.legacyId ?? row?.legacy_id ?? row?.legacy_payload?.legacyId ?? row?.legacy_payload?.legacy_id ?? row?.id;
     return value != null && String(value).trim() !== "" ? String(value) : null;
   }
 
@@ -167,8 +167,6 @@
 
         const index = localRows.findIndex((row) => rowId(row) === id);
         if (index >= 0) {
-          // Preserve the browser's established local ID type/value while
-          // replacing all business fields with the authoritative remote row.
           const localId = localRows[index]?.id;
           localRows[index] = { ...remote, id: localId };
           changed = true;
@@ -309,10 +307,14 @@
     const changedOrders = changedRows(beforeOrders, afterOrders);
     if (changedOrders.length && typeof data.upsertResource === "function") {
       const updatedAt = new Date().toISOString();
-      for (const order of changedOrders) {
+      const cloudOrders = changedOrders.map((order) => {
+        const stableId = order?.legacyId ?? order?.legacy_id ?? order?.legacy_payload?.legacyId ?? order?.legacy_payload?.legacy_id ?? order?.id;
+        return { ...order, id: stableId, legacyId: stableId };
+      });
+      for (const order of cloudOrders) {
         order.updatedAt = updatedAt;
       }
-      await data.upsertResource("orders", changedOrders);
+      await data.upsertResource("orders", cloudOrders);
     }
 
     const beforeDeleted = Array.isArray(before?.deletedOrders) ? before.deletedOrders : [];
