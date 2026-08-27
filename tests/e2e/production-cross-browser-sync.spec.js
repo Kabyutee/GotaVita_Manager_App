@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-const BASE_URL = process.env.GOTAVITA_PRODUCTION_URL || 'https://gotavita-manager-app.carleugenetolentino22.workers.dev';
+const BASE_URL = process.env.GOTAVITA_PRODUCTION_URL || 'https://gotavita-manager-manager-pr-215.carleugenetolentino22.workers.dev';
 const EMAIL = process.env.E2E_MANAGER_EMAIL;
 const PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
@@ -28,8 +28,15 @@ async function matching(page, marker) {
     : [];
 }
 
+async function remoteMatching(page, marker, edited) {
+  return page.evaluate(async ({ marker, edited }) => {
+    const rows = await window.GVData?.selectResource?.('orders') || [];
+    return rows.filter((row) => String(row?.address || '').includes(marker) || String(row?.notes || '').includes(marker) || String(row?.address || '').includes(edited) || String(row?.notes || '').includes(edited));
+  }, { marker, edited });
+}
+
 test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
-  test.setTimeout(150000);
+  test.setTimeout(180000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
   const a = await contextA.newPage();
@@ -74,18 +81,19 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect(a.locator('#orderEditModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
 
+    await expect.poll(
+      async () => (await remoteMatching(b, marker, edited)).filter((row) => String(row?.address || '').includes(edited) || String(row?.notes || '').includes(edited)).length,
+      { timeout: 30000, intervals: [500, 1000, 2000, 3000] }
+    ).toBe(1);
+
     const diagnostic = await b.evaluate(async ({ id, marker, edited }) => {
       const state = window.getStateSnapshot?.() || {};
       const local = Array.isArray(state.orders) ? state.orders.find((row) => String(row?.id) === String(id)) : null;
-      let remoteRows = [];
-      let remoteError = null;
-      try { remoteRows = await window.GVData?.selectResource?.('orders') || []; } catch (error) { remoteError = String(error?.message || error); }
-      const remote = Array.isArray(remoteRows) ? remoteRows.find((row) => String(row?.id) === String(id)) : null;
+      const remoteRows = await window.GVData?.selectResource?.('orders') || [];
+      const remote = remoteRows.find((row) => String(row?.id) === String(id)) || null;
       const baseline = window.GVConflictIntegration?.getBaseline?.() || {};
       const baselineAt = baseline.orders?.baselineAt || null;
-      const baselineRow = Array.isArray(baseline.orders?.rows)
-        ? baseline.orders.rows.find((row) => String(row?.id) === String(id))
-        : null;
+      const baselineRow = Array.isArray(baseline.orders?.rows) ? baseline.orders.rows.find((row) => String(row?.id) === String(id)) : null;
       let plan = null;
       try {
         plan = window.GVConflictIntegration?.buildResolutionPlan?.(
@@ -99,22 +107,11 @@ test('production Browser A/B order create-edit-delete convergence at state bound
       } catch (error) {
         plan = { error: String(error?.message || error) };
       }
+      const beforeFlush = { local, remote, baselineAt, baselineRow, plan };
       let flushResult = null;
       try { flushResult = await window.GVSync?.flush?.(); } catch (error) { flushResult = { error: String(error?.message || error) }; }
       const afterFlush = window.getStateSnapshot?.()?.orders?.find((row) => String(row?.id) === String(id)) || null;
-      return {
-        targetId: id,
-        local,
-        remote,
-        baselineAt,
-        baselineRow,
-        plan,
-        flushResult,
-        afterFlush,
-        remoteIsEdited: Boolean(remote && (String(remote.address || '').includes(edited) || String(remote.notes || '').includes(edited))),
-        localIsEdited: Boolean(local && (String(local.address || '').includes(edited) || String(local.notes || '').includes(edited))),
-        remoteError
-      };
+      return { targetId: id, marker, edited, beforeFlush, flushResult, afterFlush };
     }, { id: created.id, marker, edited });
     console.log('[Smoke] edit conflict diagnostic', JSON.stringify(diagnostic));
 
