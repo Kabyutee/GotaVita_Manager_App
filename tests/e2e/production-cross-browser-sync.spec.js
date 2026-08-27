@@ -76,7 +76,13 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] edit A/B state PASS');
 
-    await a.evaluate((id) => window.deleteOrder(id), created.id);
+    // deleteOrder intentionally waits for the application's custom confirmation modal.
+    // Start it without awaiting so Playwright can confirm the real UI action.
+    await a.evaluate((id) => { void window.deleteOrder(id); }, created.id);
+    await expect(a.locator('#confirmModal')).toBeVisible();
+    await expect(a.locator('#confirmModalAccept')).toBeVisible();
+    await a.locator('#confirmModalAccept').click();
+    await expect(a.locator('#confirmModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000] }).toBe(0);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
     console.log('[Smoke] delete A/B state PASS');
