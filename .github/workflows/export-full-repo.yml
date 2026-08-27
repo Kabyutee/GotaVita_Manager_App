@@ -1,0 +1,26 @@
+name: Export full repository ZIP
+
+on:
+  pull_request:
+    types: [opened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repository tree
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create complete tracked-files ZIP
+        run: git archive --format=zip --output=GotaVita_Manager_App-full.zip HEAD
+      - name: Upload complete ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GotaVita_Manager_App-full
+          path: GotaVita_Manager_App-full.zip
+          if-no-files-found: error
