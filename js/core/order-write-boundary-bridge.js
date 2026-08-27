@@ -83,12 +83,13 @@
     const next = rows.filter((row) => rowId(row) !== deletedId);
     if (next.length === rows.length) return;
 
+    const now = new Date().toISOString();
     state[stateName] = next;
     state._meta = Object.assign({}, state._meta, {
       lastUpdated: Date.now(),
       lastSynchronizedAt: Date.now(),
       lastRemoteChangedResources: [resource],
-      lastRealtimeSyncAt: new Date().toISOString()
+      lastRealtimeSyncAt: now
     });
     window.replaceState(state);
     if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
@@ -111,12 +112,13 @@
       rows[index] = { ...row };
     }
 
+    const now = new Date().toISOString();
     state[stateName] = rows;
     state._meta = Object.assign({}, state._meta, {
       lastUpdated: Date.now(),
       lastSynchronizedAt: Date.now(),
       lastRemoteChangedResources: [resource],
-      lastRealtimeSyncAt: new Date().toISOString()
+      lastRealtimeSyncAt: now
     });
     window.replaceState(state);
     if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
@@ -302,6 +304,13 @@
     const afterOrders = Array.isArray(after?.orders) ? after.orders : [];
     const changedOrders = changedRows(beforeOrders, afterOrders);
     if (changedOrders.length && typeof data.upsertResource === "function") {
+      // Every local Order mutation gets a fresh canonical timestamp at the cloud write boundary.
+      // This is essential for cross-device conflict resolution: Browser B must be able to
+      // distinguish an edited Order from the prior version that it already has locally.
+      const updatedAt = new Date().toISOString();
+      for (const order of changedOrders) {
+        order.updatedAt = updatedAt;
+      }
       await data.upsertResource("orders", changedOrders);
     }
 
