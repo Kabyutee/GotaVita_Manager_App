@@ -129,6 +129,15 @@ async function serveApplicationAsset(request, env) {
   }
 
   const authorityMarker = `<script src="script.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+
+  // Order mutation write-through MUST load before script.js registers the
+  // order form submit handlers. Otherwise script.js captures the unwrapped
+  // handler and a later wrapper replacement cannot intercept real edits.
+  const orderWriteBoundaryInjected = `<script src="/js/core/order-write-boundary-bridge.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
+  if (html.includes(authorityMarker) && !html.includes(orderWriteBoundaryInjected)) {
+    html = html.replace(authorityMarker, `${orderWriteBoundaryInjected}\n${authorityMarker}`);
+  }
+
   const authorityInjected = `<script src="/js/core/sync-authority.js?gv_release=${encodeURIComponent(releaseSha)}" defer></script>`;
   if (html.includes(authorityMarker) && !html.includes(authorityInjected)) {
     html = html.replace(authorityMarker, `${authorityMarker}\n${authorityInjected}`);
