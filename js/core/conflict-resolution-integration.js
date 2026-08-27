@@ -29,7 +29,9 @@
       const existedAtBaseline=baselineRow!=null;let result=null;
       if(resourceCloudName("orders") === "orders" && rawLocalRow && !rawRemoteRow){
         const remoteDeletion=deletionEvidence(remoteDeletedRows,id) || deletionEvidence(localDeletedRows,id);
-        if(!remoteDeletion) result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true};
+        if(!remoteDeletion) {
+          result={action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true};
+        }
       }
       if(!result&&!rawLocalRow&&rawRemoteRow&&!existedAtBaseline)result={action:"keep-remote",reason:"remote-new-record",mutation:false};
       else if(!result&&rawLocalRow&&!rawRemoteRow&&!existedAtBaseline)result={action:"keep-local",reason:"local-new-record",mutation:false};
