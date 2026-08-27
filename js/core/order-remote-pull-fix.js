@@ -70,7 +70,37 @@
     pull().catch(() => {});
     timer = setInterval(() => pull().catch(() => {}), INTERVAL_MS);
   }
-  function stop() { if (timer) { clearInterval(timer); timer = null; } }
-  window.addEventListener("gv-auth-state-changed", (event) => event?.detail?.authenticated === true ? start() : stop());
-  if (window.GVAuth?.isAuthorized?.()) start();
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  }
+  function authorized() {
+    return window.GVAuth?.isAuthorized?.() === true;
+  }
+  let authBootstrapTimer = null;
+  function ensureStarted() {
+    if (authorized()) {
+      if (authBootstrapTimer) {
+        clearInterval(authBootstrapTimer);
+        authBootstrapTimer = null;
+      }
+      start();
+      return;
+    }
+    if (!authBootstrapTimer) {
+      authBootstrapTimer = setInterval(() => {
+        if (authorized()) {
+          clearInterval(authBootstrapTimer);
+          authBootstrapTimer = null;
+          start();
+        }
+      }, 250);
+    }
+  }
+  window.addEventListener("gv-auth-state-changed", (event) => {
+    if (event?.detail?.authenticated === true) ensureStarted();
+    else stop();
+  });
+  ensureStarted();
 })();
