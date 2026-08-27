@@ -15,7 +15,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if\(!remoteDeletion\)\{\s*result=\{action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true\};\s*\}/,
+  /if\(!remoteDeletion\)\s*\{\s*result=\{action:"keep-local",reason:"order-remote-missing-without-tombstone",mutation:true\};\s*\}/,
   "A missing remote Order without a tombstone must keep the local record"
 );
 
