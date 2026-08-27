@@ -98,6 +98,7 @@
       }, 250);
     }
   }
+  window.GVOrderRemotePullFix = Object.freeze({ pull, start, stop });
   window.addEventListener("gv-auth-state-changed", (event) => {
     if (event?.detail?.authenticated === true) ensureStarted();
     else stop();
