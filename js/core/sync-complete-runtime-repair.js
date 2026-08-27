@@ -61,11 +61,6 @@
     if (!Array.isArray(previous) || !previous.length) return true;
     if (!Array.isArray(normalized)) return false;
 
-    // Orders require identity-level deletion evidence. A same-sized remote
-    // snapshot can still be incomplete, so row counts alone are insufficient.
-    // A locally present Order may be removed from application state only when
-    // the remote snapshot contains that identity or an explicit deleted_orders
-    // tombstone authorizes its removal.
     if (resource === "orders") {
       if (!window.GVData?.selectResource) return false;
 
@@ -88,7 +83,6 @@
       }
     }
 
-    // Non-Order resources retain the existing fail-closed shrink rule.
     return normalized.length >= previous.length;
   }
 
@@ -134,7 +128,7 @@
 
     inRepair = true;
     try {
-      const state = window.getStateSnapshot();
+      let state = window.getStateSnapshot();
       let stateChanged = false, writes = 0, remoteMerges = 0;
       const failures = [];
       let remoteDeletedOrders = [];
@@ -211,12 +205,12 @@
           lastSynchronizedAt: now
         });
 
-        const protectedState = window.GVRecentOrderStateProtection?.protectState
+        state = window.GVRecentOrderStateProtection?.protectState
           ? window.GVRecentOrderStateProtection.protectState(window.getStateSnapshot(), state)
           : state;
 
-        window.replaceState(protectedState);
-        if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(protectedState);
+        window.replaceState(state);
+        if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(state);
         try {
           if (window.GVUI?.renderAll) window.GVUI.renderAll();
           else if (typeof window.renderAll === "function") window.renderAll();
