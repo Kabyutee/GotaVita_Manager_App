@@ -66,6 +66,14 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] create B state PASS');
 
+    const handlerDiagnostic = await a.evaluate(() => ({
+      functionType: typeof window.handleOrderEditSubmit,
+      wrapped: Boolean(window.handleOrderEditSubmit?.__GV_ORDER_WRITE_THROUGH__),
+      bridgeInstalled: Boolean(window.__GV_ORDER_WRITE_BOUNDARY_BRIDGE__),
+      handlerSource: typeof window.handleOrderEditSubmit === 'function' ? String(window.handleOrderEditSubmit).slice(0, 700) : ''
+    }));
+    console.log('[Smoke] edit handler diagnostic', JSON.stringify(handlerDiagnostic));
+
     await a.evaluate((id) => window.openOrderEditor(id), created.id);
     await expect(a.locator('#orderEditModal')).toBeVisible();
     await a.locator('#editOrderAddress').fill(edited);
