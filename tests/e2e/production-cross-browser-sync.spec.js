@@ -61,7 +61,7 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     const created = (await matching(a, marker))[0];
     expect(created?.id).toBeTruthy();
     expect(created?.orderNumber).toBeTruthy();
-    console.log('[Smoke] create A state PASS', { orderNumber: created.orderNumber });
+    console.log('[Smoke] create A state PASS', { orderNumber: created.orderNumber, id: created.id });
 
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] create B state PASS');
@@ -73,6 +73,47 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await a.locator('#orderEditForm button[type="submit"]').click();
     await expect(a.locator('#orderEditModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
+
+    const diagnostic = await b.evaluate(async ({ id, marker, edited }) => {
+      const state = window.getStateSnapshot?.() || {};
+      const stateRows = Array.isArray(state.orders)
+        ? state.orders.filter((row) => String(row?.id) === String(id) || String(row?.address || '').includes(marker) || String(row?.notes || '').includes(marker))
+        : [];
+      let gatewayRows = null;
+      let gatewayError = null;
+      try {
+        gatewayRows = await window.GVData?.selectResource?.('orders');
+      } catch (error) {
+        gatewayError = String(error?.message || error);
+      }
+      const gatewayMatches = Array.isArray(gatewayRows)
+        ? gatewayRows.filter((row) => String(row?.id) === String(id) || String(row?.address || '').includes(marker) || String(row?.notes || '').includes(marker))
+        : [];
+      const supabase = window.GVAuth?.getClient?.();
+      let rawRows = null;
+      let rawError = null;
+      if (supabase?.from) {
+        try {
+          const result = await supabase.from('orders').select('*').eq('legacy_id', String(id));
+          rawRows = result.data || [];
+          rawError = result.error ? String(result.error.message || result.error) : null;
+        } catch (error) {
+          rawError = String(error?.message || error);
+        }
+      }
+      return {
+        marker,
+        edited,
+        targetId: id,
+        stateRows,
+        gatewayMatches,
+        gatewayError,
+        rawRows: rawRows?.map((row) => ({ legacy_id: row.legacy_id, updated_at: row.updated_at, legacy_payload: row.legacy_payload })) || rawRows,
+        rawError
+      };
+    }, { id: created.id, marker, edited });
+    console.log('[Smoke] edit B diagnostic', JSON.stringify(diagnostic));
+
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] edit A/B state PASS');
 
