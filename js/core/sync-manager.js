@@ -396,21 +396,85 @@
   async function bootstrap(auth, current) {
     const transactionDigest = businessDigest(current);
     const resources = supportedResources();
+    const previousLocal = localSnapshot();
     const remoteFirst = await fetchRemoteSet(resources);
     if (remoteFirst.failures.length) throw new Error(`Initial cloud snapshot incomplete: ${remoteFirst.failures.map((item) => item.resource).join(", ")}`);
+
+    const bootstrapBaseline = { version: 2, companyId: auth?.profile?.company_id || null, savedAt: Date.now(), state: {} };
+    const pending = [];
+
     for (const resource of resources) {
       const stateKey = stateName(resource);
       const localRows = Array.isArray(current[stateKey]) ? current[stateKey] : [];
       const remoteRows = remoteFirst.results[resource] || [];
-      const remoteKeys = rowMap(resource, remoteRows);
-      const localOnly = [];
-      for (const [key, row] of rowMap(resource, localRows)) if (!remoteKeys.has(key)) localOnly.push(row);
-      if (localOnly.length) await window.GVData.upsertResource(resource, localOnly);
+      const previousRows = Array.isArray(previousLocal?.[stateKey]) ? previousLocal[stateKey] : [];
+      const localMap = rowMap(resource, localRows);
+      const remoteMap = rowMap(resource, remoteRows);
+      const previousMap = rowMap(resource, previousRows);
+
+      // When a prior local snapshot exists, use it as the migration baseline so
+      // edits/deletes made locally can be compared against the remote version.
+      bootstrapBaseline.state[stateKey] = sortedRows(resource, previousLocal ? previousRows : remoteRows);
+
+      for (const [key, row] of localMap) {
+        const remote = remoteMap.get(key);
+        if (!remote) {
+          pending.push({ version: 2, id: createQueueId(), resource, key, operation: "upsert", row: clone(row), createdAt: new Date().toISOString(), mutationAt: rowMutationTimestamp(row, new Date().toISOString()) });
+          continue;
+        }
+
+        // Preserve an edited local row only when its own mutation timestamp is
+        // demonstrably newer than the remote row. Equal/missing timestamps are
+        // intentionally conservative and let the remote canonical row win.
+        if (!rowsEqual(resource, row, remote) && rowTime(row) > rowTime(remote)) {
+          pending.push({ version: 2, id: createQueueId(), resource, key, operation: "upsert", row: clone(row), createdAt: new Date().toISOString(), mutationAt: rowMutationTimestamp(row, new Date().toISOString()) });
+        }
+      }
+
+      if (previousLocal) {
+        const deletedAt = new Date().toISOString();
+        for (const [key, previousRow] of previousMap) {
+          if (localMap.has(key)) continue;
+          const remote = remoteMap.get(key);
+          if (!remote) continue;
+          const previousTime = rowTime(previousRow);
+          const remoteTime = rowTime(remote);
+          // A local delete can only be inferred safely from a prior local
+          // snapshot when the remote row is not newer than that snapshot.
+          if (previousTime > 0 && remoteTime <= previousTime) {
+            pending.push({ version: 2, id: createQueueId(), resource, key, operation: "delete", row: clone(previousRow), createdAt: deletedAt, mutationAt: deletedAt });
+          }
+        }
+      }
     }
+
+    const combinedOutbox = coalesceOutbox([...readOutbox(), ...pending]);
+    writeOutbox(combinedOutbox);
+
     if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap", transactionDigest);
+
+    const remaining = [];
+    const applied = [];
+    const remoteWon = [];
+    for (const entry of combinedOutbox) {
+      try {
+        const result = await executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline);
+        if (result.remoteWon) remoteWon.push(entry);
+        else if (result.applied) applied.push(entry);
+        else remaining.push(entry);
+      } catch (error) {
+        remaining.push(entry);
+        console.warn(`GotaVita canonical bootstrap mutation failed [${entry.resource}:${entry.key}]:`, error?.message || error);
+      }
+    }
+    writeOutbox(remaining);
+
+    if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap-write", transactionDigest);
+
     const canonicalResult = await fetchRemoteSet(resources);
     if (canonicalResult.failures.length) throw new Error(`Initial canonical read-back incomplete: ${canonicalResult.failures.map((item) => item.resource).join(", ")}`);
     if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap-readback", transactionDigest);
+
     const nextState = clone(stateSnapshot() || current);
     applyCanonicalSnapshot(nextState, canonicalResult.results);
     rebuildDerivedMembership(nextState);
@@ -419,12 +483,12 @@
       replaceState(nextState);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
       saveLocalSnapshot(nextState);
-      saveBaseline(nextState, auth?.profile?.company_id);
+      if (!remaining.length) saveBaseline(nextState, auth?.profile?.company_id);
       clearLegacyQueue();
     } finally { committing = false; }
     scheduleRender();
-    setMeta({ status: "synced", reason: "bootstrap", companyId: auth?.profile?.company_id || null, lastSyncAt: new Date().toISOString() });
-    return { ok: true, status: "initialized", stateChanged: true };
+    setMeta({ status: remaining.length ? "partial" : "synced", reason: "bootstrap", companyId: auth?.profile?.company_id || null, appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length, lastSyncAt: new Date().toISOString() });
+    return { ok: remaining.length === 0, status: remaining.length ? "partial" : "initialized", stateChanged: true };
   }
 
   async function flush(reason = "poll") {
