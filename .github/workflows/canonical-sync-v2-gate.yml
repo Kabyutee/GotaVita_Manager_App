@@ -25,14 +25,21 @@ jobs:
           from pathlib import Path
           path = Path('script.js')
           text = path.read_text()
+
           old = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      if (\n        window.GVAuth\n      ) {\n        initSyncReliability();\n        await window.GVAuth.init();\n      }\n'''
           new = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      // Critical UI event delegation must not depend on auth/network/sync startup.\n      // A degraded synchronization subsystem must never make the already-loaded\n      // application controls inert.\n      installUIEventDelegation();\n\n      if (\n        window.GVAuth\n      ) {\n        try {\n          initSyncReliability();\n        } catch (error) {\n          console.warn(\n            "GotaVita sync reliability startup degraded:",\n            error?.message || error\n          );\n        }\n        await window.GVAuth.init();\n      }\n'''
           if old in text:
               text = text.replace(old, new, 1)
-          elif new in text:
-              raise SystemExit('repair already applied')
-          else:
-              raise SystemExit('startup resilience pattern not found')
+
+          duplicate = '''      initProductionHardening();\n      installDuplicateOperationGuards();\n      installUIEventDelegation();\n      installProfessionalPolish();'''
+          canonical = '''      initProductionHardening();\n      installDuplicateOperationGuards();\n      installProfessionalPolish();'''
+          if duplicate in text:
+              text = text.replace(duplicate, canonical, 1)
+
+          if new not in text:
+              raise SystemExit('startup resilience repair not present after normalization')
+          if text.count('installUIEventDelegation();') != 1:
+              raise SystemExit('expected exactly one UI delegation installation')
           path.write_text(text)
           PY
 
@@ -83,6 +90,10 @@ jobs:
           branch="${{ github.event.pull_request.head.ref }}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- script.js; then
+            echo "Canonical startup repair already present."
+            exit 0
+          fi
           git add script.js
           git commit -m 'fix: isolate critical UI bootstrap from sync startup'
           git fetch origin "$branch"
