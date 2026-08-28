@@ -47,10 +47,16 @@ jobs:
           node --check worker.js
 
       - name: Prepare pinned Playwright runner
-        run: npx --yes @playwright/test@1.55.0 --version
+        run: |
+          set -euo pipefail
+          rm -rf .playwright-ci
+          mkdir -p .playwright-ci
+          printf '%s\n' '{"private":true}' > .playwright-ci/package.json
+          npm --prefix .playwright-ci install --no-save @playwright/test@1.55.0
+          .playwright-ci/node_modules/.bin/playwright --version
 
       - name: Install Playwright browser
-        run: npx --yes @playwright/test@1.55.0 install --with-deps chromium
+        run: .playwright-ci/node_modules/.bin/playwright install --with-deps chromium
 
       - name: Deploy isolated candidate Worker
         uses: cloudflare/wrangler-action@v3
@@ -85,4 +91,5 @@ jobs:
           GOTAVITA_PRODUCTION_URL: https://gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}.carleugenetolentino22.workers.dev
           E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
           E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
-        run: npx --yes @playwright/test@1.55.0 test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
