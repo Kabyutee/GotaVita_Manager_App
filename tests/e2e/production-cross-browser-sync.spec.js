@@ -15,6 +15,7 @@ async function login(page) {
   await expect(page.locator('html')).toHaveAttribute('data-gv-auth-state', 'unlocked', { timeout: 30000 });
   await expect(page.locator('#gvCloudLogoutBtn')).toBeVisible();
   await page.waitForFunction(() => !window.__GV_AUTH_HYDRATION_PROMISE, { timeout: 30000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__GV_CANONICAL_SYNC_V2__)), { timeout: 30000, intervals: [250, 500, 1000] }).toBeTruthy();
 }
 
 async function snapshot(page) {
@@ -28,8 +29,22 @@ async function matching(page, marker) {
     : [];
 }
 
+async function remoteOrders(page, marker) {
+  return page.evaluate(async (needle) => {
+    const rows = await window.GVData.selectResource('orders');
+    return rows.filter(o => String(o?.address || '').includes(needle) || String(o?.notes || '').includes(needle));
+  }, marker);
+}
+
+async function remoteDeletedOrders(page, marker) {
+  return page.evaluate(async (needle) => {
+    const rows = await window.GVData.selectResource('deleted_orders');
+    return rows.filter(o => String(o?.legacy_payload?.address || '').includes(needle) || String(o?.legacy_id || '') === String(needle));
+  }, marker);
+}
+
 test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
-  test.setTimeout(150000);
+  test.setTimeout(180000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
   const a = await contextA.newPage();
@@ -43,6 +58,20 @@ test('production Browser A/B order create-edit-delete convergence at state bound
   try {
     await login(a);
     await login(b);
+
+    const authority = await a.evaluate(() => ({
+      canonicalFlag: window.__GV_CANONICAL_SYNC_V2__ === true,
+      hasGVSync: Boolean(window.GVSync?.flush),
+      syncAliasUsesCanonical: /GVSync\.flush/.test(String(window.syncChangedResources)),
+      syncNowUsesCanonical: /GVSync\.flush/.test(String(window.syncNow))
+    }));
+    expect(authority).toEqual({
+      canonicalFlag: true,
+      hasGVSync: true,
+      syncAliasUsesCanonical: true,
+      syncNowUsesCanonical: true
+    });
+    console.log('[Smoke] canonical runtime authority PASS', authority);
 
     await a.locator('[data-tab="neworder"]').click();
     await expect(a.locator('#orderForm')).toBeVisible();
@@ -61,7 +90,9 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     const created = (await matching(a, marker))[0];
     expect(created?.id).toBeTruthy();
     expect(created?.orderNumber).toBeTruthy();
-    console.log('[Smoke] create A state PASS', { orderNumber: created.orderNumber });
+    await expect.poll(() => remoteOrders(a, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
+    expect((await remoteOrders(a, marker))[0]?.orderNumber).toBe(created.orderNumber);
+    console.log('[Smoke] create A + remote canonical PASS', { orderNumber: created.orderNumber });
 
     await expect.poll(() => matching(b, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] create B state PASS');
@@ -73,8 +104,10 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await a.locator('#orderEditForm button[type="submit"]').click();
     await expect(a.locator('#orderEditModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
+    await expect.poll(() => remoteOrders(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
+    expect((await remoteOrders(a, edited))[0]?.updatedAt).toBeTruthy();
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
-    console.log('[Smoke] edit A/B state PASS');
+    console.log('[Smoke] edit A + remote canonical + B state PASS');
 
     // deleteOrder intentionally waits for the application's custom confirmation modal.
     // Start it without awaiting so Playwright can confirm the real UI action.
@@ -84,8 +117,10 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await a.locator('#confirmModalAccept').click();
     await expect(a.locator('#confirmModal')).toBeHidden();
     await expect.poll(() => matching(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000] }).toBe(0);
+    await expect.poll(() => remoteOrders(a, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
+    await expect.poll(() => remoteDeletedOrders(a, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBeGreaterThan(0);
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
-    console.log('[Smoke] delete A/B state PASS');
+    console.log('[Smoke] delete A + remote tombstone + B convergence PASS');
   } finally {
     await Promise.allSettled([contextA.close(), contextB.close()]);
   }
