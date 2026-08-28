@@ -11,7 +11,7 @@ assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /gotavita_sync_outbox_v2/);
 assert.match(manager, /capturePendingLocalMutations/);
 assert.match(manager, /executeMutation/);
-assert.match(manager, /const canonical = await fetchRemoteSet/);
+assert.match(manager, /const finalRead = await fetchRemoteSet\(\[\.\.\.resources, "deleted_orders"\]\)/);
 assert.match(manager, /replaceState\(nextState\)/);
 assert.match(manager, /saveBaseline\(nextState, auth\?\.profile\?\.company_id\)/);
 assert.match(manager, /remoteTombstones/);
@@ -21,6 +21,7 @@ assert.match(manager, /setInterval\(\(\) => flush\("poll"\)/);
 assert.match(manager, /startRealtime/);
 assert.match(manager, /requestRealtimeSync/);
 assert.match(manager, /window\.syncNow = \(\) => window\.GVSync\.flush\("manual"\)/);
+assert.match(manager, /concurrentMutationDetected/);
 assert.doesNotMatch(manager, /GVConflictIntegration/);
 assert.doesNotMatch(manager, /sync-cloud-write-reconciler/);
 assert.doesNotMatch(manager, /order-remote-pull-fix/);
@@ -44,6 +45,28 @@ assert.doesNotMatch(status, /setInterval\(/);
 assert.doesNotMatch(status, /GVData\.selectResource/);
 assert.doesNotMatch(status, /GVData\.upsertResource/);
 
+for (const file of [
+  "sync-cloud-write-reconciler.js",
+  "order-remote-pull-fix.js",
+  "order-write-boundary-bridge.js",
+  "sync-queue-authority.js",
+  "sync-authority.js",
+  "sync-auth-startup-bridge.js",
+  "sync-runtime-activation.js",
+  "sync-p0-auth-hydration.js",
+  "sync-p0-final-canonicalizer.js",
+  "sync-complete-runtime-repair.js",
+  "remote-canonical-field-bridge.js",
+  "group-membership-sync-bridge.js",
+  "realtime-channel-lifecycle-fix.js",
+  "sync-tombstone-legacy-id-bridge.js",
+  "order-delete-reconciliation-bridge.js",
+  "client-delete-bridge.js",
+  "conflict-resolution-integration.js"
+]) {
+  assert.equal(fs.existsSync(`js/core/${file}`), false, `js/core/${file} must remain retired`);
+}
+
 assert.doesNotMatch(worker, /sync-cloud-write-reconciler/);
 assert.doesNotMatch(worker, /order-remote-pull-fix/);
 assert.doesNotMatch(worker, /sync-p0-auth-hydration/);
@@ -53,27 +76,6 @@ assert.doesNotMatch(worker, /group-membership-sync-bridge/);
 assert.doesNotMatch(worker, /realtime-channel-lifecycle-fix/);
 assert.doesNotMatch(worker, /sync-queue-authority/);
 assert.doesNotMatch(worker, /sync-authority/);
-
-const retired = [
-  "js/core/conflict-resolution-integration.js",
-  "js/core/order-remote-pull-fix.js",
-  "js/core/order-write-boundary-bridge.js",
-  "js/core/sync-cloud-write-reconciler.js",
-  "js/core/sync-queue-authority.js",
-  "js/core/sync-authority.js",
-  "js/core/sync-auth-startup-bridge.js",
-  "js/core/sync-runtime-activation.js",
-  "js/core/sync-p0-auth-hydration.js",
-  "js/core/sync-p0-final-canonicalizer.js",
-  "js/core/sync-complete-runtime-repair.js",
-  "js/core/remote-canonical-field-bridge.js",
-  "js/core/group-membership-sync-bridge.js",
-  "js/core/realtime-channel-lifecycle-fix.js",
-  "js/core/sync-tombstone-legacy-id-bridge.js",
-  "js/core/order-delete-reconciliation-bridge.js",
-  "js/core/client-delete-bridge.js"
-];
-for (const file of retired) assert.equal(fs.existsSync(file), false, `${file} must remain retired`);
 
 assert.match(index, /js\/core\/sync-manager\.js/);
 assert.match(index, /js\/core\/ui-bridge\.js/);
