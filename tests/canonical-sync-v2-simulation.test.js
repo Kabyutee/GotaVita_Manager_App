@@ -3,36 +3,15 @@ const vm = require("node:vm");
 const assert = require("node:assert/strict");
 
 const source = fs.readFileSync("js/core/sync-manager.js", "utf8");
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 function makeBrowser(remote) {
   const storage = new Map();
-  let state = {
-    orders: [],
-    clients: [],
-    products: [],
-    services: [],
-    employees: [],
-    payments: [],
-    expenses: [],
-    payrollRecords: [],
-    orderGroups: [],
-    deliveryRoutes: [],
-    orderGroupItems: [],
-    deliveryRouteItems: [],
-    dailyReports: [],
-    deletedOrders: [],
-    _meta: {}
-  };
-
+  let state = { orders: [], clients: [], products: [], services: [], employees: [], payments: [], expenses: [], payrollRecords: [], orderGroups: [], deliveryRoutes: [], orderGroupItems: [], deliveryRouteItems: [], dailyReports: [], deletedOrders: [], _meta: {} };
   const window = {};
-  const document = { activeElement: null, addEventListener() {} };
   const context = {
     window,
-    document,
+    document: { activeElement: null, addEventListener() {} },
     navigator: { onLine: true },
     console,
     setTimeout,
@@ -49,13 +28,8 @@ function makeBrowser(remote) {
     Boolean,
     Error,
     crypto: { randomUUID: () => "test-uuid" },
-    localStorage: {
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, String(value)),
-      removeItem: (key) => storage.delete(key)
-    }
+    localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key) }
   };
-
   window.localStorage = context.localStorage;
   window.addEventListener = () => {};
   window.getStateSnapshot = () => clone(state);
@@ -72,8 +46,7 @@ function makeBrowser(remote) {
       for (const row of rows) {
         const key = String(row.legacy_id ?? row.legacyId ?? row.id);
         const index = next.findIndex((item) => String(item.legacy_id ?? item.legacyId ?? item.id) === key);
-        if (index >= 0) next[index] = clone(row);
-        else next.push(clone(row));
+        if (index >= 0) next[index] = clone(row); else next.push(clone(row));
       }
       remote[resource] = next;
       return clone(rows);
@@ -83,22 +56,12 @@ function makeBrowser(remote) {
       return [];
     }
   };
-
   vm.runInNewContext(source, context, { filename: "sync-manager.js" });
-  return {
-    flush: (...args) => window.GVSync.flush(...args),
-    getState: () => clone(state),
-    setState: (next) => { state = clone(next); },
-    storage
-  };
+  return { flush: (...args) => window.GVSync.flush(...args), getState: () => clone(state), setState: (next) => { state = clone(next); }, storage };
 }
 
 (async () => {
-  const remote = {
-    orders: [{ id: 1, legacy_id: "1", orderNumber: "0000001", status: "Paid", updatedAt: "2026-08-28T00:00:00.000Z" }],
-    deleted_orders: []
-  };
-
+  const remote = { orders: [{ id: 1, legacy_id: "1", orderNumber: "0000001", status: "Paid", address: "BASE", updatedAt: "2026-08-28T00:00:00.000Z" }], deleted_orders: [] };
   const browserA = makeBrowser(remote);
   const browserB = makeBrowser(remote);
 
@@ -128,6 +91,16 @@ function makeBrowser(remote) {
 
   await browserB.flush("poll");
   assert.equal(browserB.getState().orders.some((row) => row.legacy_id === "2"), false, "Browser B must converge on Order deletion");
+
+  // Adversarial case: the local edit is older than a remote edit, but its sync
+  // detection is intentionally delayed. The row timestamp, not detection time,
+  // must determine the winner.
+  const remoteEdited = { id: 1, legacy_id: "1", orderNumber: "0000001", status: "Paid", address: "REMOTE-NEWER", updatedAt: "2026-08-28T00:04:00.000Z" };
+  remote.orders = [remoteEdited];
+  browserA.setState({ ...browserA.getState(), orders: browserA.getState().orders.map((row) => row.legacy_id === "1" ? { ...row, address: "LOCAL-OLDER", updatedAt: "2026-08-28T00:03:00.000Z" } : row) });
+  await browserA.flush("delayed-local-edit");
+  assert.equal(remote.orders.find((row) => row.legacy_id === "1")?.address, "REMOTE-NEWER", "newer remote edit must beat delayed stale local edit");
+  assert.equal(browserA.getState().orders.find((row) => row.legacy_id === "1")?.address, "REMOTE-NEWER", "local state must converge to newer remote edit");
 
   console.log("Canonical sync v2 convergence simulation: PASS");
 })();
