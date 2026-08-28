@@ -8,7 +8,8 @@
  *   5. One canonical baseline is maintained.
  *   6. Realtime is an invalidation signal; it never mutates application state.
  *   7. Legacy sync entry points in script.js are compatibility aliases only.
- *   8. Audit logs are not hydrated into the business-state cache.
+ *   8. An in-flight transaction never replaces state if the user changed it while the transaction ran.
+ *   9. Audit logs are not hydrated into the business-state cache.
  */
 (function () {
   "use strict";
@@ -88,9 +89,7 @@
   function stableJson(value) {
     if (value === null || value === undefined) return JSON.stringify(value);
     if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-    if (typeof value === "object") {
-      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
-    }
+    if (typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
     return JSON.stringify(value);
   }
 
@@ -144,6 +143,15 @@
     return map;
   }
 
+  function businessDigest(state) {
+    if (!state || typeof state !== "object") return "";
+    const business = {};
+    for (const [resource, stateKey] of Object.entries(RESOURCE_MAP)) {
+      business[resource] = sortedRows(resource, state[stateKey]);
+    }
+    return stableJson(business);
+  }
+
   function stateSnapshot() { return typeof window.getStateSnapshot === "function" ? window.getStateSnapshot() : null; }
 
   function replaceState(next) {
@@ -178,41 +186,17 @@
   function captureLocalMutations(previous, current) {
     const changes = [];
     const capturedAt = new Date().toISOString();
-
     for (const [resource, stateKey] of Object.entries(RESOURCE_MAP)) {
       const before = rowMap(resource, previous?.[stateKey] || []);
       const after = rowMap(resource, current?.[stateKey] || []);
-
       for (const [key, row] of after) {
         const old = before.get(key);
-        if (!old || !rowsEqual(resource, old, row)) {
-          changes.push({
-            version: 2,
-            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-            resource,
-            key,
-            operation: "upsert",
-            row: clone(row),
-            createdAt: capturedAt
-          });
-        }
+        if (!old || !rowsEqual(resource, old, row)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "upsert", row: clone(row), createdAt: capturedAt });
       }
-
       for (const [key, old] of before) {
-        if (!after.has(key)) {
-          changes.push({
-            version: 2,
-            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-            resource,
-            key,
-            operation: "delete",
-            row: clone(old),
-            createdAt: capturedAt
-          });
-        }
+        if (!after.has(key)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "delete", row: clone(old), createdAt: capturedAt });
       }
     }
-
     return changes;
   }
 
@@ -296,16 +280,7 @@
   function orderTombstone(row, timestamp) {
     const id = identity(row);
     if (!id) return null;
-    return {
-      id,
-      legacy_id: id,
-      deleted: true,
-      deletedAt: timestamp,
-      archivedAt: timestamp,
-      updatedAt: timestamp,
-      createdAt: row?.createdAt ?? row?.created_at ?? timestamp,
-      legacy_payload: clone(row)
-    };
+    return { id, legacy_id: id, deleted: true, deletedAt: timestamp, archivedAt: timestamp, updatedAt: timestamp, createdAt: row?.createdAt ?? row?.created_at ?? timestamp, legacy_payload: clone(row) };
   }
 
   async function applyRemoteDelete(resource, row) {
@@ -330,7 +305,6 @@
     const remoteRow = rowMap(entry.resource, remoteRows).get(entry.key);
     const previous = baselineRow(entry.resource, baseline, entry.key);
     const remoteChanged = remoteChangedSinceBaseline(entry.resource, remoteRow, previous);
-
     if (remoteChanged && !localMutationWins(entry, remoteRow)) return { remoteWon: true, applied: false };
 
     if (entry.operation === "upsert") {
@@ -359,17 +333,15 @@
 
     const tombstones = sortedRows("deleted_orders", canonical?.deleted_orders || []);
     if (tombstones.length) {
+      const priorOrders = Array.isArray(nextState.orders) ? nextState.orders : [];
       nextState.deletedOrders = tombstones;
       const deletedIds = new Map(tombstones.map((row) => [identity(row), rowTime(row)]).filter(([id]) => id));
-      const priorOrders = Array.isArray(nextState.orders) ? nextState.orders : [];
-      const filtered = priorOrders.filter((order) => {
+      nextState.orders = priorOrders.filter((order) => {
         const deletionTime = deletedIds.get(identity(order));
         return !deletionTime || rowTime(order) > deletionTime;
       });
-      if (filtered.length !== priorOrders.length) changed = true;
-      nextState.orders = filtered;
+      if (nextState.orders.length !== priorOrders.length) changed = true;
     } else if (!Array.isArray(nextState.deletedOrders)) nextState.deletedOrders = [];
-
     return changed;
   }
 
@@ -393,7 +365,22 @@
     }
   }
 
+  function concurrentMutationDetected(transactionDigest) {
+    const live = stateSnapshot();
+    if (!live) return false;
+    return businessDigest(live) !== transactionDigest;
+  }
+
+  function deferForConcurrentMutation(reason, transactionDigest) {
+    const live = stateSnapshot();
+    if (live) capturePendingLocalMutations(live);
+    setMeta({ status: "deferred", reason, concurrentLocalMutation: true, transactionDigest, lastSyncAt: new Date().toISOString() });
+    deferredSync = true;
+    return { ok: false, status: "concurrent-local-mutation", queuedMutations: readOutbox().length };
+  }
+
   async function bootstrap(auth, current) {
+    const transactionDigest = businessDigest(current);
     const resources = supportedResources();
     const remoteFirst = await fetchRemoteSet(resources);
     if (remoteFirst.failures.length) throw new Error(`Initial cloud snapshot incomplete: ${remoteFirst.failures.map((item) => item.resource).join(", ")}`);
@@ -408,10 +395,13 @@
       if (localOnly.length) await window.GVData.upsertResource(resource, localOnly);
     }
 
+    if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap", transactionDigest);
+
     const canonicalResult = await fetchRemoteSet(resources);
     if (canonicalResult.failures.length) throw new Error(`Initial canonical read-back incomplete: ${canonicalResult.failures.map((item) => item.resource).join(", ")}`);
+    if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap-readback", transactionDigest);
 
-    const nextState = clone(current);
+    const nextState = clone(stateSnapshot() || current);
     applyCanonicalSnapshot(nextState, canonicalResult.results);
     rebuildDerivedMembership(nextState);
 
@@ -446,6 +436,7 @@
 
       capturePendingLocalMutations(current);
       const outbox = coalesceOutbox(readOutbox());
+      const transactionDigest = businessDigest(current);
       const resources = supportedResources();
       const firstRead = await fetchRemoteSet([...resources, "deleted_orders"]);
       if (firstRead.failures.length) {
@@ -471,14 +462,18 @@
 
       writeOutbox(remaining);
 
+      if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation(reason, transactionDigest);
+
       const finalRead = await fetchRemoteSet([...resources, "deleted_orders"]);
       if (finalRead.failures.length) {
         setMeta({ status: "partial", reason, failures: finalRead.failures, lastSyncAt: new Date().toISOString() });
         return { ok: false, status: "partial", failures: finalRead.failures };
       }
 
+      if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation(`${reason}-readback`, transactionDigest);
+
       const nextState = clone(current);
-      const stateChanged = applyCanonicalSnapshot(nextState, finalRead.results);
+      applyCanonicalSnapshot(nextState, finalRead.results);
       rebuildDerivedMembership(nextState);
 
       committing = true;
@@ -499,19 +494,12 @@
         appliedMutations: applied.length,
         remoteWonMutations: remoteWon.length,
         queuedMutations: remaining.length,
-        stateChanged,
+        stateChanged: businessDigest(nextState) !== businessDigest(current),
         lastSyncAt: new Date().toISOString()
       });
 
-      if (stateChanged) scheduleRender();
-      return {
-        ok: remaining.length === 0,
-        status: remaining.length ? "partial" : "synced",
-        stateChanged,
-        appliedMutations: applied.length,
-        remoteWonMutations: remoteWon.length,
-        queuedMutations: remaining.length
-      };
+      if (businessDigest(nextState) !== businessDigest(current)) scheduleRender();
+      return { ok: remaining.length === 0, status: remaining.length ? "partial" : "synced", stateChanged: businessDigest(nextState) !== businessDigest(current), appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length };
     })().catch((error) => {
       setMeta({ status: "error", reason, error: String(error?.message || error), lastSyncAt: new Date().toISOString() });
       return { ok: false, status: "error", error: String(error?.message || error) };
@@ -519,7 +507,7 @@
       inFlight = null;
       if (deferredSync && !interactionActive()) {
         deferredSync = false;
-        setTimeout(() => flush("deferred").catch(() => {}), 0);
+        setTimeout(() => flush("concurrent-retry").catch(() => {}), 0);
       }
     });
 
@@ -558,7 +546,6 @@
   async function startRealtime() {
     const client = window.GVAuth?.getClient?.();
     if (!client || window.GVAuth?.isAuthorized?.() !== true || realtimeChannel || realtimeStarting) return;
-
     realtimeStarting = true;
     try {
       const channel = client.channel("gotavita-sync-v2");
@@ -569,9 +556,7 @@
           realtimeStarting = false;
           if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
           realtimeRetryTimer = null;
-          return;
-        }
-        if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+        } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
           if (realtimeChannel === channel) realtimeChannel = null;
           realtimeStarting = false;
           if (!realtimeRetryTimer) realtimeRetryTimer = setTimeout(() => { realtimeRetryTimer = null; startRealtime().catch(() => {}); }, REALTIME_RETRY_MS);
@@ -585,10 +570,6 @@
   }
 
   function reclaimLegacyRuntimeBoundaries() {
-    /* script.js still contains historical implementations for these global
-       names. At DOM-ready the whole deferred script graph has executed, so
-       this final boundary safely makes those names compatibility aliases to
-       GVSync without changing business-module code. */
     window.syncChangedResources = (reason) => window.GVSync.flush(reason || "legacy-entry");
     window.syncNow = () => window.GVSync.flush("manual");
     window.startSyncReliability = () => {};
@@ -601,10 +582,6 @@
   function bindLifecycle() {
     if (initialized) return;
     initialized = true;
-
-    /* This listener is registered by sync-manager before script.js registers
-       its DOMContentLoaded handler. It therefore reclaims the legacy global
-       functions before script.js can start the old scheduler. */
     reclaimLegacyRuntimeBoundaries();
 
     window.addEventListener("gv-auth-state-changed", (event) => {
@@ -618,10 +595,7 @@
       }
     });
 
-    window.addEventListener("online", () => {
-      startRealtime().catch(() => {});
-      flush("online").catch(() => {});
-    });
+    window.addEventListener("online", () => { startRealtime().catch(() => {}); flush("online").catch(() => {}); });
     window.addEventListener("focus", () => flush("focus").catch(() => {}));
     window.addEventListener("pageshow", () => flush("pageshow").catch(() => {}));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flush("visible").catch(() => {}); });
@@ -654,8 +628,6 @@
     clearOutbox: () => writeOutbox([])
   });
 
-  /* The aliases are installed immediately for modules that execute after this
-     file; they are reclaimed again at DOM-ready after script.js is evaluated. */
   window.syncChangedResources = (reason) => window.GVSync.flush(reason || "legacy-entry");
   window.syncNow = () => window.GVSync.flush("manual");
 
