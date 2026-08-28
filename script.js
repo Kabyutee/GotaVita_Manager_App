@@ -8065,10 +8065,22 @@ window.addEventListener(
   "DOMContentLoaded",
   async () => {
     try {
+      // Critical UI event delegation must not depend on auth/network/sync startup.
+      // A degraded synchronization subsystem must never make the already-loaded
+      // application controls inert.
+      installUIEventDelegation();
+
       if (
         window.GVAuth
       ) {
-        initSyncReliability();
+        try {
+          initSyncReliability();
+        } catch (error) {
+          console.warn(
+            "GotaVita sync reliability startup degraded:",
+            error?.message || error
+          );
+        }
         await window.GVAuth.init();
       }
 
