@@ -36,7 +36,6 @@ test('production safe UI interactions execute without browser errors', async ({ 
     await page.locator(`[data-sub="${sub}"]`).click();
     await expect(page.locator(`#sub-${sub}`)).toBeVisible();
     await expect(page.locator(`[data-sub="${sub}"]`)).toHaveAttribute('aria-selected', 'true');
-    expect(await page.locator('main .subpanel').filter({ has: page.locator('[aria-selected="true"]') }).count()).toBeGreaterThanOrEqual(0);
   }
   await page.locator('#orderDateFilter').selectOption('month');
   await page.locator('#orderDateFilter').selectOption('custom');
