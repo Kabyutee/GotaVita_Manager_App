@@ -37,7 +37,12 @@ for (const resource of requiredResources) assert(syncRegistry[1].includes(`\"${r
 for (const required of ["SUPPORTED_RESOURCES", "selectResource(", "upsertResource(", "transactionResources:", "supportedResources:"]) assert(gateway.includes(required), `gateway capability missing: ${required}`);
 assert(/async function requireAuthenticatedManager\(/.test(gateway), "gateway authentication boundary missing: requireAuthenticatedManager");
 
-const requiredMappings = { order_groups: "orderGroups", delivery_routes: "deliveryRoutes", order_group_items: "orderGroupItems", delivery_route_items: "deliveryRouteItems", daily_reports: "dailyReports", deleted_orders: "deletedOrders", audit_logs: "auditLog" };
+const requiredMappings = {
+  orders: "orders", clients: "clients", products: "products", expenses: "expenses",
+  employees: "employees", payroll_records: "payrollRecords", order_groups: "orderGroups",
+  delivery_routes: "deliveryRoutes", order_group_items: "orderGroupItems", delivery_route_items: "deliveryRouteItems",
+  daily_reports: "dailyReports", deleted_orders: "deletedOrders", services: "services", payments: "payments"
+};
 for (const [cloud, stateName] of Object.entries(requiredMappings)) assert(syncManager.includes(`\"${cloud}\"`) && syncManager.includes(`\"${stateName}\"`), `v2 mapping missing: ${cloud} -> ${stateName}`);
 assert(syncManager.includes("window.GVSync = Object.freeze"), "canonical sync coordinator missing");
 assert(syncManager.includes("gotavita_sync_baseline_v2"), "v2 baseline missing");
@@ -45,6 +50,8 @@ assert(syncManager.includes("gotavita_sync_outbox_v2"), "v2 outbox missing");
 assert(syncManager.includes("finalRead"), "canonical remote read-back missing");
 assert(syncManager.includes("concurrentMutationDetected"), "concurrency protection missing");
 assert(syncManager.includes("startRealtime") && syncManager.includes("requestRealtimeSync"), "Realtime invalidation boundary missing");
+assert(syncManager.includes("deletedOrders"), "deleted-order tombstone state is not retained");
+assert(!syncManager.includes("auditLog: \"audit_logs\""), "audit logs must not be hydrated into the v2 business-state map");
 assert(!syncManager.includes("GVConflictIntegration"), "legacy conflict engine still owns synchronization");
 assert(!syncManager.includes("queueSyncResources"), "legacy resource queue still owns synchronization");
 
@@ -73,6 +80,7 @@ assert(worker.includes("LEGACY_API_RETIRED"), "legacy API boundary missing");
 assert(!worker.includes("sync-cloud-write-reconciler") && !worker.includes("order-remote-pull-fix"), "Worker still contains hidden sync injection");
 assert(riskGate.includes("canonical-sync-v2-architecture.test.js"), "canonical v2 architecture gate not wired into ANTI BIG BANG");
 assert(riskGate.includes("canonical-sync-v2-simulation.test.js"), "canonical v2 simulation gate not wired into ANTI BIG BANG");
+assert(riskGate.includes("canonical-sync-v2-bootstrap-safety.test.js"), "bootstrap safety gate not wired into ANTI BIG BANG");
 
 console.log("ANTI BIG BANG 6 — FULL APPLICATION CONNECTION AUDIT: PASS");
-console.log(JSON.stringify({ resources: requiredResources.length, uiTabs: tabs.length, modulesChecked: requiredModules.length, realtime: "GVSync invalidation", scheduler: "GVSync", auditLog: "append-only-not-hydrated", result: "PASS" }, null, 2));
+console.log(JSON.stringify({ resources: requiredResources.length, hydratedBusinessResources: Object.keys(requiredMappings).length, uiTabs: tabs.length, modulesChecked: requiredModules.length, realtime: "GVSync invalidation", scheduler: "GVSync", auditLog: "append-only-not-hydrated", result: "PASS" }, null, 2));
