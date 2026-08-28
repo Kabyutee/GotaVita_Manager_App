@@ -266,7 +266,8 @@
   async function fetchRemoteSet(resources) {
     const results = {};
     const failures = [];
-    await Promise.all(resources.map(async (resource) => {
+    const uniqueResources = [...new Set(resources)];
+    await Promise.all(uniqueResources.map(async (resource) => {
       try {
         const rows = await window.GVData.selectResource(resource);
         results[resource] = Array.isArray(rows) ? rows : [];
@@ -321,9 +322,17 @@
     throw new Error(`No deletion adapter for ${resource}.`);
   }
 
-  async function executeMutation(entry, remoteRows, baseline) {
+  function remoteOrderTombstone(remoteDeletedRows, key) {
+    return rowMap("deleted_orders", remoteDeletedRows).get(key);
+  }
+
+  async function executeMutation(entry, remoteRows, baseline, remoteDeletedRows = []) {
     const remoteRow = rowMap(entry.resource, remoteRows).get(entry.key);
     const previous = baselineRow(entry.resource, baseline, entry.key);
+    const remoteTombstone = entry.resource === "orders" ? remoteOrderTombstone(remoteDeletedRows, entry.key) : null;
+    if (remoteTombstone && rowTime(remoteTombstone) >= mutationTime(entry)) {
+      return { remoteWon: true, applied: false, remoteTombstone: true };
+    }
     const remoteChanged = remoteChangedSinceBaseline(entry.resource, remoteRow, previous);
     if (remoteChanged && !localMutationWins(entry, remoteRow)) return { remoteWon: true, applied: false };
     if (entry.operation === "upsert") {
@@ -458,7 +467,7 @@
     const remoteWon = [];
     for (const entry of combinedOutbox) {
       try {
-        const result = await executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline);
+        const result = await executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline, remoteFirst.results["deleted_orders"] || []);
         if (result.remoteWon) remoteWon.push(entry);
         else if (result.applied) applied.push(entry);
         else remaining.push(entry);
@@ -520,7 +529,7 @@
       const remoteWon = [];
       for (const entry of outbox) {
         try {
-          const result = await executeMutation(entry, firstRead.results[entry.resource] || [], baseline);
+          const result = await executeMutation(entry, firstRead.results[entry.resource] || [], baseline, firstRead.results["deleted_orders"] || []);
           if (result.remoteWon) remoteWon.push(entry);
           else if (result.applied) applied.push(entry);
           else remaining.push(entry);
