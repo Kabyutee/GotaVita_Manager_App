@@ -9,9 +9,7 @@
  *   6. Realtime is an invalidation signal; it never mutates application state.
  *   7. Legacy sync entry points in script.js are compatibility aliases only.
  *   8. An in-flight transaction never replaces state if the user changed it while the transaction ran.
- *   9. Conflict ordering uses the local row mutation time for edits and the
- *      deletion capture time for deletes; detection time is never used to make
- *      an old edit appear newer than a remote change.
+ *   9. Conflict ordering uses local row mutation time for edits and deletion capture time for deletes.
  *  10. Audit logs are not hydrated into the business-state cache.
  */
 (function () {
@@ -45,14 +43,8 @@
   });
 
   const REALTIME_TABLES = Object.freeze([
-    "clients",
-    "products",
-    "employees",
-    "expenses",
-    "order_groups",
-    "delivery_routes",
-    "orders",
-    "deleted_orders"
+    "clients", "products", "employees", "expenses", "order_groups",
+    "delivery_routes", "orders", "deleted_orders"
   ]);
 
   const HARD_DELETE_RESOURCES = new Set([
@@ -87,6 +79,15 @@
   function writeJson(key, value) {
     try { window.localStorage?.setItem(key, JSON.stringify(value)); return true; }
     catch (_) { return false; }
+  }
+
+  function setMeta(patch) {
+    const current = readJson(META_KEY, {});
+    writeJson(META_KEY, {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   function stableJson(value) {
@@ -178,7 +179,7 @@
   function coalesceOutbox(rows) {
     const latest = new Map();
     for (const entry of rows) latest.set(`${entry.resource}::${entry.key}`, entry);
-    return [...latest.values()].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+    return [...latest.values()].sort((a, b) => String(a.mutationAt || a.createdAt || "").localeCompare(String(b.mutationAt || b.createdAt || "")));
   }
 
   function localSnapshot() { return readJson(LOCAL_SNAPSHOT_KEY, null); }
@@ -198,32 +199,10 @@
       const after = rowMap(resource, current?.[stateKey] || []);
       for (const [key, row] of after) {
         const old = before.get(key);
-        if (!old || !rowsEqual(resource, old, row)) {
-          changes.push({
-            version: 2,
-            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-            resource,
-            key,
-            operation: "upsert",
-            row: clone(row),
-            createdAt: capturedAt,
-            mutationAt: rowMutationTimestamp(row, capturedAt)
-          });
-        }
+        if (!old || !rowsEqual(resource, old, row)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "upsert", row: clone(row), createdAt: capturedAt, mutationAt: rowMutationTimestamp(row, capturedAt) });
       }
       for (const [key, old] of before) {
-        if (!after.has(key)) {
-          changes.push({
-            version: 2,
-            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-            resource,
-            key,
-            operation: "delete",
-            row: clone(old),
-            createdAt: capturedAt,
-            mutationAt: capturedAt
-          });
-        }
+        if (!after.has(key)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "delete", row: clone(old), createdAt: capturedAt, mutationAt: capturedAt });
       }
     }
     return changes;
@@ -231,10 +210,7 @@
 
   function capturePendingLocalMutations(current) {
     const previous = localSnapshot();
-    if (!previous) {
-      saveLocalSnapshot(current);
-      return [];
-    }
+    if (!previous) { saveLocalSnapshot(current); return []; }
     const changes = captureLocalMutations(previous, current);
     if (changes.length) writeOutbox(coalesceOutbox([...readOutbox(), ...changes]));
     saveLocalSnapshot(current);
@@ -336,17 +312,14 @@
     const previous = baselineRow(entry.resource, baseline, entry.key);
     const remoteChanged = remoteChangedSinceBaseline(entry.resource, remoteRow, previous);
     if (remoteChanged && !localMutationWins(entry, remoteRow)) return { remoteWon: true, applied: false };
-
     if (entry.operation === "upsert") {
       await window.GVData.upsertResource(entry.resource, [clone(entry.row)]);
       return { remoteWon: false, applied: true };
     }
-
     if (entry.resource === "orders") {
       const tombstone = orderTombstone(entry.row, entry.mutationAt || entry.createdAt || new Date().toISOString());
       if (tombstone) await window.GVData.upsertResource("deleted_orders", [tombstone]);
     }
-
     await applyRemoteDelete(entry.resource, entry.row);
     return { remoteWon: false, applied: true };
   }
@@ -360,7 +333,6 @@
       if (stableJson(nextRows) !== stableJson(previousRows)) changed = true;
       nextState[stateKey] = nextRows;
     }
-
     const tombstones = sortedRows("deleted_orders", canonical?.deleted_orders || []);
     if (tombstones.length) {
       const priorOrders = Array.isArray(nextState.orders) ? nextState.orders : [];
@@ -382,7 +354,6 @@
     const routeMap = new Map(routes.map((route) => [String(route.id), route]));
     for (const group of groups) group.orderIds = [];
     for (const route of routes) route.orderIds = [];
-
     for (const item of Array.isArray(state.orderGroupItems) ? state.orderGroupItems : []) {
       const group = groupMap.get(String(item?.groupLegacyId ?? item?.group_legacy_id ?? item?.groupId ?? ""));
       const orderId = item?.orderLegacyId ?? item?.order_legacy_id ?? item?.orderId;
@@ -413,7 +384,6 @@
     const resources = supportedResources();
     const remoteFirst = await fetchRemoteSet(resources);
     if (remoteFirst.failures.length) throw new Error(`Initial cloud snapshot incomplete: ${remoteFirst.failures.map((item) => item.resource).join(", ")}`);
-
     for (const resource of resources) {
       const stateKey = stateName(resource);
       const localRows = Array.isArray(current[stateKey]) ? current[stateKey] : [];
@@ -423,17 +393,13 @@
       for (const [key, row] of rowMap(resource, localRows)) if (!remoteKeys.has(key)) localOnly.push(row);
       if (localOnly.length) await window.GVData.upsertResource(resource, localOnly);
     }
-
     if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap", transactionDigest);
-
     const canonicalResult = await fetchRemoteSet(resources);
     if (canonicalResult.failures.length) throw new Error(`Initial canonical read-back incomplete: ${canonicalResult.failures.map((item) => item.resource).join(", ")}`);
     if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation("bootstrap-readback", transactionDigest);
-
     const nextState = clone(stateSnapshot() || current);
     applyCanonicalSnapshot(nextState, canonicalResult.results);
     rebuildDerivedMembership(nextState);
-
     committing = true;
     try {
       replaceState(nextState);
@@ -442,7 +408,6 @@
       saveBaseline(nextState, auth?.profile?.company_id);
       clearLegacyQueue();
     } finally { committing = false; }
-
     scheduleRender();
     setMeta({ status: "synced", reason: "bootstrap", companyId: auth?.profile?.company_id || null, lastSyncAt: new Date().toISOString() });
     return { ok: true, status: "initialized", stateChanged: true };
@@ -460,7 +425,6 @@
       const current = stateSnapshot();
       if (!current) throw new Error("Application state snapshot is unavailable.");
       const baseline = readBaseline();
-
       if (!baseline?.savedAt || baseline.version !== 2 || baseline.companyId !== auth?.profile?.company_id) return bootstrap(auth, current);
 
       capturePendingLocalMutations(current);
@@ -476,7 +440,6 @@
       const remaining = [];
       const applied = [];
       const remoteWon = [];
-
       for (const entry of outbox) {
         try {
           const result = await executeMutation(entry, firstRead.results[entry.resource] || [], baseline);
@@ -488,7 +451,6 @@
           console.warn(`GotaVita canonical mutation failed [${entry.resource}:${entry.key}]:`, error?.message || error);
         }
       }
-
       writeOutbox(remaining);
 
       if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation(reason, transactionDigest);
@@ -498,28 +460,22 @@
         setMeta({ status: "partial", reason, failures: finalRead.failures, lastSyncAt: new Date().toISOString() });
         return { ok: false, status: "partial", failures: finalRead.failures };
       }
-
       if (concurrentMutationDetected(transactionDigest)) return deferForConcurrentMutation(`${reason}-readback`, transactionDigest);
 
       const nextState = clone(current);
       applyCanonicalSnapshot(nextState, finalRead.results);
       rebuildDerivedMembership(nextState);
-
       committing = true;
       try {
         replaceState(nextState);
         if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
         saveLocalSnapshot(nextState);
-        if (!remaining.length) {
-          saveBaseline(nextState, auth?.profile?.company_id);
-          clearLegacyQueue();
-        }
+        if (!remaining.length) { saveBaseline(nextState, auth?.profile?.company_id); clearLegacyQueue(); }
       } finally { committing = false; }
 
       const finalChanged = businessDigest(nextState) !== businessDigest(current);
       setMeta({ status: remaining.length ? "partial" : "synced", reason, companyId: auth?.profile?.company_id || null, appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length, stateChanged: finalChanged, lastSyncAt: new Date().toISOString() });
       if (finalChanged) scheduleRender();
-
       return { ok: remaining.length === 0, status: remaining.length ? "partial" : "synced", stateChanged: finalChanged, appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length };
     })().catch((error) => {
       setMeta({ status: "error", reason, error: String(error?.message || error), lastSyncAt: new Date().toISOString() });
@@ -531,7 +487,6 @@
         setTimeout(() => flush("concurrent-retry").catch(() => {}), 0);
       }
     });
-
     return inFlight;
   }
 
@@ -604,7 +559,6 @@
     if (initialized) return;
     initialized = true;
     reclaimLegacyRuntimeBoundaries();
-
     window.addEventListener("gv-auth-state-changed", (event) => {
       if (event?.detail?.authenticated === true) {
         schedulePolling();
@@ -615,18 +569,13 @@
         stopRealtime().catch(() => {});
       }
     });
-
     window.addEventListener("online", () => { startRealtime().catch(() => {}); flush("online").catch(() => {}); });
     window.addEventListener("focus", () => flush("focus").catch(() => {}));
     window.addEventListener("pageshow", () => flush("pageshow").catch(() => {}));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flush("visible").catch(() => {}); });
     document.addEventListener("focusout", () => {
-      if (deferredSync && !interactionActive()) {
-        deferredSync = false;
-        flush("interaction-release").catch(() => {});
-      }
+      if (deferredSync && !interactionActive()) { deferredSync = false; flush("interaction-release").catch(() => {}); }
     }, true);
-
     if (window.GVAuth?.isAuthorized?.()) {
       schedulePolling();
       startRealtime().catch(() => {});
