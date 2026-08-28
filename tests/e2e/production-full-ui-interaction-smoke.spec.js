@@ -23,6 +23,13 @@ async function activePanel(page, id) {
   expect(await page.locator('main .panel[aria-hidden="false"]').count()).toBe(1);
 }
 
+async function activeClientSubtab(page, name) {
+  const button = page.locator(`[data-client-sub="${name}"]`);
+  await button.click();
+  await expect(page.locator(`#client-sub-${name}`)).toBeVisible();
+  await expect(button).toHaveClass(/active/);
+}
+
 test('production safe UI interactions execute without browser errors', async ({ page }) => {
   test.setTimeout(120000);
   const pageErrors = [];
@@ -69,21 +76,14 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await page.locator('[data-tab="clients"]').click();
   await activePanel(page, 'panel-clients');
   for (const sub of ['top', 'containers', 'directory']) {
-    const button = page.locator(`[data-client-sub="${sub}"]`);
-    await button.click();
-    await expect(page.locator(`#client-sub-${sub}`)).toBeVisible();
-    await expect(button).toHaveClass(/active/);
+    await activeClientSubtab(page, sub);
   }
   await page.locator('#clientGroupFilter').selectOption('Commercial');
   await page.locator('#clientGroupFilter').selectOption('');
   await page.locator('#clientSort').selectOption('revenue-desc');
   await page.locator('#clientSearchInput').fill('zzzz-ui-smoke');
   await page.locator('#clientSearchInput').fill('');
-
-  const containersTab = page.locator('[data-client-sub="containers"]');
-  await containersTab.click();
-  await expect(page.locator('#client-sub-containers')).toBeVisible();
-  await expect(containersTab).toHaveClass(/active/);
+  await activeClientSubtab(page, 'containers');
   const containerSort = page.locator('[data-action="setContainerSort"]');
   await expect(containerSort).toBeVisible();
   await containerSort.selectOption('gallons');
@@ -106,7 +106,9 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await page.locator('[data-tab="reports"]').click();
   await activePanel(page, 'panel-reports');
   await page.locator('#reportMonthBtn').click();
+  await expect(page.locator('#reportPeriodLabel')).toContainText('Monthly Report');
   await page.locator('#reportWeekBtn').click();
+  await expect(page.locator('#reportPeriodLabel')).toContainText('Weekly Report');
   await page.locator('#dailyReportNote').fill('UI smoke note');
   await page.locator('#dailyReportNote').fill('');
   await page.locator('[data-action="runSystemHealthCheck"]').click();
@@ -114,18 +116,18 @@ test('production safe UI interactions execute without browser errors', async ({ 
 
   await page.locator('[data-tab="dashboard"]').click();
   await activePanel(page, 'panel-dashboard');
-  await page.locator('[data-action="openReceivables"]').click();
-  await activePanel(page, 'panel-orderlog');
-  await expect(page.locator('#sub-receivables')).toBeVisible();
+  const weeklyReport = page.locator('[data-action="openPeriodReport"]').nth(0);
+  await weeklyReport.click();
+  await activePanel(page, 'panel-reports');
+  await expect(page.locator('#reportPeriodLabel')).toContainText('Weekly Report');
+
   await page.locator('[data-tab="dashboard"]').click();
-  await page.locator('[data-action="openPeriodReport"]').first().click();
-  const visibleModal = page.locator('.modal:visible').first();
-  await expect(visibleModal).toHaveCount(1);
-  const close = visibleModal.locator('[data-action="closeModal"]').first();
-  await expect(close).toHaveCount(1);
-  await close.click();
-  await expect(visibleModal).toBeHidden();
-  console.log('[UI interaction] dashboard modal paths PASS');
+  await activePanel(page, 'panel-dashboard');
+  const monthlyReport = page.locator('[data-action="openPeriodReport"]').nth(1);
+  await monthlyReport.click();
+  await activePanel(page, 'panel-reports');
+  await expect(page.locator('#reportPeriodLabel')).toContainText('Monthly Report');
+  console.log('[UI interaction] dashboard report shortcuts PASS');
 
   await page.locator('[data-action="toggleDarkMode"]').click();
   await page.locator('[data-action="toggleDarkMode"]').click();
