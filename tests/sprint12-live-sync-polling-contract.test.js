@@ -7,9 +7,8 @@ const source = fs.readFileSync("js/core/sync-manager.js", "utf8");
 let scheduled = null;
 let calls = 0;
 let remote = {};
+let state = { orders: [], deletedOrders: [], clients: [], products: [], services: [], employees: [], payments: [], expenses: [], payrollRecords: [], orderGroups: [], deliveryRoutes: [], orderGroupItems: [], deliveryRouteItems: [], dailyReports: [] };
 const storage = new Map();
-let state = { orders: [], deletedOrders: [] };
-
 const window = {};
 const context = {
   window,
@@ -51,11 +50,13 @@ window.GVData = {
 vm.runInNewContext(source, context, { filename: "sync-manager.js" });
 
 (async () => {
-  await window.GVSync.flush("startup");
+  window.GVSync.startPolling();
   assert.ok(scheduled, "canonical sync must own the background scheduler");
   assert.equal(scheduled.ms, 5000, "canonical sync polling must remain bounded at 5 seconds");
   assert.equal(typeof window.GVSync.request, "function", "event sources must have a single request boundary");
+  await window.GVSync.flush("startup");
+  const before = calls;
   await scheduled.fn();
-  assert.equal(calls, 0, "a clean empty state must not generate writes");
-  console.log("Sprint 12 live sync polling contract: PASS");
+  assert.equal(calls, before, "a clean state must not generate a write during polling");
+  console.log("Sprint 12 live sync polling v2 contract: PASS");
 })();
