@@ -9,7 +9,10 @@
  *   6. Realtime is an invalidation signal; it never mutates application state.
  *   7. Legacy sync entry points in script.js are compatibility aliases only.
  *   8. An in-flight transaction never replaces state if the user changed it while the transaction ran.
- *   9. Audit logs are not hydrated into the business-state cache.
+ *   9. Conflict ordering uses the local row mutation time for edits and the
+ *      deletion capture time for deletes; detection time is never used to make
+ *      an old edit appear newer than a remote change.
+ *  10. Audit logs are not hydrated into the business-state cache.
  */
 (function () {
   "use strict";
@@ -146,9 +149,7 @@
   function businessDigest(state) {
     if (!state || typeof state !== "object") return "";
     const business = {};
-    for (const [resource, stateKey] of Object.entries(RESOURCE_MAP)) {
-      business[resource] = sortedRows(resource, state[stateKey]);
-    }
+    for (const [resource, stateKey] of Object.entries(RESOURCE_MAP)) business[resource] = sortedRows(resource, state[stateKey]);
     return stableJson(business);
   }
 
@@ -183,6 +184,12 @@
   function localSnapshot() { return readJson(LOCAL_SNAPSHOT_KEY, null); }
   function saveLocalSnapshot(state) { return writeJson(LOCAL_SNAPSHOT_KEY, clone(state)); }
 
+  function rowMutationTimestamp(row, fallback) {
+    const value = row?.updatedAt ?? row?.updated_at;
+    const parsed = Date.parse(String(value || ""));
+    return Number.isFinite(parsed) && parsed > 0 ? new Date(parsed).toISOString() : fallback;
+  }
+
   function captureLocalMutations(previous, current) {
     const changes = [];
     const capturedAt = new Date().toISOString();
@@ -191,10 +198,32 @@
       const after = rowMap(resource, current?.[stateKey] || []);
       for (const [key, row] of after) {
         const old = before.get(key);
-        if (!old || !rowsEqual(resource, old, row)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "upsert", row: clone(row), createdAt: capturedAt });
+        if (!old || !rowsEqual(resource, old, row)) {
+          changes.push({
+            version: 2,
+            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+            resource,
+            key,
+            operation: "upsert",
+            row: clone(row),
+            createdAt: capturedAt,
+            mutationAt: rowMutationTimestamp(row, capturedAt)
+          });
+        }
       }
       for (const [key, old] of before) {
-        if (!after.has(key)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "delete", row: clone(old), createdAt: capturedAt });
+        if (!after.has(key)) {
+          changes.push({
+            version: 2,
+            id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+            resource,
+            key,
+            operation: "delete",
+            row: clone(old),
+            createdAt: capturedAt,
+            mutationAt: capturedAt
+          });
+        }
       }
     }
     return changes;
@@ -268,13 +297,14 @@
   }
 
   function mutationTime(entry) {
-    const parsed = Date.parse(String(entry?.createdAt || ""));
+    const parsed = Date.parse(String(entry?.mutationAt || entry?.createdAt || ""));
     return Number.isFinite(parsed) ? parsed : Date.now();
   }
 
   function localMutationWins(entry, remoteRow) {
     const remoteMs = rowTime(remoteRow);
-    return !remoteMs || mutationTime(entry) >= remoteMs;
+    if (!remoteMs) return true;
+    return mutationTime(entry) >= remoteMs;
   }
 
   function orderTombstone(row, timestamp) {
@@ -313,7 +343,7 @@
     }
 
     if (entry.resource === "orders") {
-      const tombstone = orderTombstone(entry.row, entry.createdAt || new Date().toISOString());
+      const tombstone = orderTombstone(entry.row, entry.mutationAt || entry.createdAt || new Date().toISOString());
       if (tombstone) await window.GVData.upsertResource("deleted_orders", [tombstone]);
     }
 
@@ -367,8 +397,7 @@
 
   function concurrentMutationDetected(transactionDigest) {
     const live = stateSnapshot();
-    if (!live) return false;
-    return businessDigest(live) !== transactionDigest;
+    return !!live && businessDigest(live) !== transactionDigest;
   }
 
   function deferForConcurrentMutation(reason, transactionDigest) {
@@ -487,19 +516,11 @@
         }
       } finally { committing = false; }
 
-      setMeta({
-        status: remaining.length ? "partial" : "synced",
-        reason,
-        companyId: auth?.profile?.company_id || null,
-        appliedMutations: applied.length,
-        remoteWonMutations: remoteWon.length,
-        queuedMutations: remaining.length,
-        stateChanged: businessDigest(nextState) !== businessDigest(current),
-        lastSyncAt: new Date().toISOString()
-      });
+      const finalChanged = businessDigest(nextState) !== businessDigest(current);
+      setMeta({ status: remaining.length ? "partial" : "synced", reason, companyId: auth?.profile?.company_id || null, appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length, stateChanged: finalChanged, lastSyncAt: new Date().toISOString() });
+      if (finalChanged) scheduleRender();
 
-      if (businessDigest(nextState) !== businessDigest(current)) scheduleRender();
-      return { ok: remaining.length === 0, status: remaining.length ? "partial" : "synced", stateChanged: businessDigest(nextState) !== businessDigest(current), appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length };
+      return { ok: remaining.length === 0, status: remaining.length ? "partial" : "synced", stateChanged: finalChanged, appliedMutations: applied.length, remoteWonMutations: remoteWon.length, queuedMutations: remaining.length };
     })().catch((error) => {
       setMeta({ status: "error", reason, error: String(error?.message || error), lastSyncAt: new Date().toISOString() });
       return { ok: false, status: "error", error: String(error?.message || error) };
