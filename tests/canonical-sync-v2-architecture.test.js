@@ -8,8 +8,12 @@ const ui = fs.readFileSync("js/core/ui-bridge.js", "utf8");
 
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /window\.GVSync\s*=\s*Object\.freeze/);
-assert.match(manager, /Always read back from Supabase after the write\/reconciliation phase/);
+assert.match(manager, /const canonical = await fetchRemoteSet\(resources\)/);
+assert.match(manager, /for \(const resource of resources\) \{\s*const stateName = resourceStateName\(resource\)/);
+assert.match(manager, /replaceState\(nextState\)/);
+assert.match(manager, /writeBaseline\(nextState, companyId\)/);
 assert.match(manager, /remoteTombstones/);
+assert.match(manager, /makeOrderTombstone/);
 assert.match(manager, /deleted_orders/);
 assert.match(manager, /setInterval\(\(\) => flush\("poll"\)/);
 assert.match(manager, /window\.syncNow = \(\) => window\.GVSync\.flush\("manual"\)/);
@@ -21,6 +25,7 @@ assert.doesNotMatch(ui, /hydrateFromSupabase/);
 assert.doesNotMatch(ui, /syncCrossDevice/);
 assert.doesNotMatch(ui, /selectResource\(/);
 assert.doesNotMatch(ui, /upsertResource\(/);
+assert.match(ui, /window\.GVUI\s*=\s*Object\.freeze/);
 
 assert.doesNotMatch(worker, /sync-cloud-write-reconciler/);
 assert.doesNotMatch(worker, /order-remote-pull-fix/);
