@@ -89,16 +89,19 @@ jobs:
       - name: Commit proven repair into candidate branch
         if: success()
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if git diff --quiet -- js/core/sync-manager.js; then
             echo "Canonical v2 repair already present."
             exit 0
           fi
+          branch="${{ github.event.pull_request.head.ref }}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git stash push -u -m 'jarvis-proven-sync-repair'
+          git fetch origin "$branch"
+          git checkout -B "$branch" "origin/$branch"
+          git stash pop
           git add js/core/sync-manager.js
           git commit -m 'fix: enforce tombstone authority and deduplicate sync reads'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin "HEAD:$branch"
