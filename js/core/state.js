@@ -17,44 +17,29 @@
       if (maxOrderNumber !== (Number(snapshot.orderCounter) || 0)) { snapshot.orderCounter = maxOrderNumber; window.replaceState(snapshot); }
     } catch (error) { console.warn("GotaVita order-number counter reconciliation skipped:", error?.message || error); }
   }
-  async function hydrateAuthorizedStateAfterAuth() {
+
+  // Canonical Sync v2 owns all remote-to-state hydration. This compatibility
+  // entry point intentionally delegates to GVSync and never reads remote data
+  // or commits application state itself.
+  async function hydrateAuthorizedStateAfterAuth(reason = "post-auth") {
     try {
       if (window.GVAuth?.isAuthorized?.() !== true) return false;
-      if (!window.GVData?.selectResource || !window.getStateSnapshot || !window.replaceState) return false;
-      const resources = [["clients","clients"],["products","products"],["services","services"],["employees","employees"],["orders","orders"],["payments","payments"],["expenses","expenses"],["payroll_records","payrollRecords"],["order_groups","orderGroups"],["delivery_routes","deliveryRoutes"],["order_group_items","orderGroupItems"],["delivery_route_items","deliveryRouteItems"],["daily_reports","dailyReports"],["deleted_orders","deletedOrders"]];
-      const next = window.getStateSnapshot(); let changed = false; const counts = {};
-      for (const [resource,stateName] of resources) {
-        try {
-          const remoteRows = await window.GVData.selectResource(resource);
-          const rows = Array.isArray(remoteRows) ? remoteRows : [];
-          const localRows = Array.isArray(next?.[stateName]) ? next[stateName] : [];
-          counts[resource] = rows.length;
-          if (rows.length > 0 && (localRows.length === 0 || rows.length > localRows.length)) { next[stateName] = rows; changed = true; }
-        } catch (error) { console.warn(`GotaVita ${resource} post-auth hydration skipped:`, error?.message || error); }
+      if (window.GVSync?.flush) {
+        const result = await window.GVSync.flush(reason);
+        return result?.ok === true;
       }
-      if (!changed) return false;
-      const now = Date.now();
-      next._meta = Object.assign({}, next._meta, { lastUpdated: now, lastSynchronizedAt: now, cloudHydratedAt: now, cloudHydrationVersion: 2, cloudHydrationCounts: counts });
-      window.replaceState(next);
-      if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(next);
-      if (typeof window.renderAll === "function") window.renderAll(); else if (window.GVUI?.renderAll) window.GVUI.renderAll();
-      if (typeof window.renderDailyL300Runs === "function") window.renderDailyL300Runs();
-      return true;
-    } catch (error) { console.warn("GotaVita post-auth canonical hydration skipped:", error?.message || error); return false; }
+    } catch (error) { console.warn("GotaVita canonical post-auth sync skipped:", error?.message || error); }
+    return false;
   }
+
   function scheduleAuthorizedHydration() {
     if (window.GVAuth?.isAuthorized?.() !== true) return Promise.resolve(false);
     if (window.__GV_AUTH_HYDRATION_PROMISE) return window.__GV_AUTH_HYDRATION_PROMISE;
-    const run = () => hydrateAuthorizedStateAfterAuth().finally(() => { window.__GV_AUTH_HYDRATION_PROMISE = null; });
-    if (window.__GV_APP_READY === true) {
-      window.__GV_AUTH_HYDRATION_PROMISE = run();
-      return window.__GV_AUTH_HYDRATION_PROMISE;
-    }
-    window.__GV_AUTH_HYDRATION_PROMISE = new Promise(resolve => {
-      window.addEventListener("gv-app-ready", () => resolve(run()), { once: true });
-    });
+    const run = () => hydrateAuthorizedStateAfterAuth("auth").finally(() => { window.__GV_AUTH_HYDRATION_PROMISE = null; });
+    window.__GV_AUTH_HYDRATION_PROMISE = run();
     return window.__GV_AUTH_HYDRATION_PROMISE;
   }
+
   function ensureDailyL300Host() {
     if (typeof document === "undefined") return null;
     const existing = document.getElementById("dailyL300Runs"); if (existing) return existing;
@@ -79,8 +64,8 @@
   }
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("submit", function(event){ if(event?.target?.id === "orderForm") reconcileOrderCounterBeforeCreate(); }, {capture:true});
-    window.addEventListener("gv-auth-state-changed", function(event){ if(event?.detail?.authenticated === true) scheduleAuthorizedHydration(); });
-    document.addEventListener("DOMContentLoaded", function(){ ensureDailyL300Host(); loadDailyL300Module(); loadCanonicalSyncRuntime(); scheduleAuthorizedHydration(); try{window.GVSync?.stopPolling?.();}catch(_){} }, {once:true});
+    // Authentication synchronization is owned by GVSync's lifecycle binding.
+    document.addEventListener("DOMContentLoaded", function(){ ensureDailyL300Host(); loadDailyL300Module(); loadCanonicalSyncRuntime(); try{window.GVSync?.stopPolling?.();}catch(_){} }, {once:true});
   }
 
   const originalAddEventListener = window.addEventListener.bind(window);
