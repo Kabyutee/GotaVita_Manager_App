@@ -3,39 +3,91 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 
 const root = process.cwd();
-const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const indexPath = path.join(root, "index.html");
+const index = fs.readFileSync(indexPath, "utf8");
 
 function collectFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.name === "node_modules" || entry.name === ".git") continue;
+    if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".playwright-ci") continue;
     if (entry.isDirectory()) out.push(...collectFiles(full));
-    else if (/\.(js|html)$/.test(entry.name)) out.push(full);
+    else if (/\.js$/.test(entry.name)) out.push(full);
   }
   return out;
 }
 
-const source = collectFiles(root).map((file) => fs.readFileSync(file, "utf8")).join("\n");
-const actions = new Set();
+function stripJsComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+const source = collectFiles(root)
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .map(stripJsComments)
+  .join("\n");
+
+const actionOccurrences = [];
 const actionRe = /data-action="([^"]+)"/g;
 let match;
-while ((match = actionRe.exec(index))) actions.add(match[1]);
+while ((match = actionRe.exec(index))) {
+  actionOccurrences.push({ action: match[1], index: match.index });
+}
 
-assert.ok(actions.size > 0, "The application must declare data-action controls.");
+assert.ok(actionOccurrences.length > 0, "The application must declare data-action controls.");
+
+const actions = new Set(actionOccurrences.map(({ action }) => action));
 
 const missing = [...actions].filter((action) => {
+  const escaped = action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const patterns = [
-    new RegExp(`(?:async\\s+)?function\\s+${action}\\b`),
-    new RegExp(`(?:window\\.)${action}\\s*=`),
-    new RegExp(`(?:^|[,{])\\s*${action}\\s*:\\s*(?:async\\s+)?function\\b`)
+    new RegExp(`(?:async\\s+)?function\\s+${escaped}\\b`),
+    new RegExp(`(?:window\\.)${escaped}\\s*=`),
+    new RegExp(`(?:^|[,{;])\\s*${escaped}\\s*:\\s*(?:async\\s+)?function\\b`)
   ];
   return !patterns.some((pattern) => pattern.test(source));
 });
 
 assert.deepEqual(missing, [], `UI actions without an implementation: ${missing.join(", ")}`);
 
-const requiredHeaderControls = ["syncNow", "undoLastAction", "toggleDarkMode"];
-for (const action of requiredHeaderControls) assert.ok(actions.has(action), `Missing required header action declaration: ${action}`);
+const argRe = /data-action-args=(?:"([^"]*)"|'([^']*)')/g;
+const malformedArgs = [];
+while ((match = argRe.exec(index))) {
+  const raw = decodeHtmlEntities(match[1] ?? match[2] ?? "");
+  try {
+    JSON.parse(raw);
+  } catch (error) {
+    malformedArgs.push({ raw, error: error.message });
+  }
+}
+assert.deepEqual(malformedArgs, [], `Malformed data-action-args: ${JSON.stringify(malformedArgs)}`);
 
-console.log(`UI action wiring contract: PASS (${actions.size} actions checked)`);
+const requiredHeaderControls = ["syncNow", "undoLastAction", "toggleDarkMode"];
+for (const action of requiredHeaderControls) {
+  assert.ok(actions.has(action), `Missing required header action declaration: ${action}`);
+}
+
+const requiredForms = [
+  "orderForm",
+  "orderEditForm",
+  "expenseForm",
+  "clientForm",
+  "employeeForm"
+];
+for (const id of requiredForms) {
+  assert.match(index, new RegExp(`id=["']${id}["']`), `Missing required business form: ${id}`);
+}
+
+console.log(`UI action wiring contract: PASS (${actions.size} actions, ${actionOccurrences.length} controls, action arguments validated)`);
