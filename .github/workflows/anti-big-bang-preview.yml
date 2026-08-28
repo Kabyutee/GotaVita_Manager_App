@@ -47,7 +47,7 @@ jobs:
           node --check worker.js
 
       - name: Install application dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
