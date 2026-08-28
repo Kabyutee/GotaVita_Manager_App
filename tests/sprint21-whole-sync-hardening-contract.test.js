@@ -16,6 +16,7 @@ assert.match(manager, /function orderTombstone\(row, timestamp\)/);
 assert.match(manager, /function applyCanonicalSnapshot\(nextState, canonical\)/);
 assert.match(manager, /function saveBaseline\(state, companyId\)/);
 assert.match(manager, /const finalRead = await fetchRemoteSet/);
+assert.match(manager, /if \(finalRead\.failures\.length\)/);
 assert.match(manager, /concurrentMutationDetected/);
 assert.match(manager, /window\.GVSync\s*=\s*Object\.freeze/);
 assert.match(manager, /window\.syncChangedResources\s*=\s*\(reason\) => window\.GVSync\.flush/);
