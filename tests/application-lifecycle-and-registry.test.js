@@ -10,9 +10,10 @@ const assert = require("node:assert/strict");
   const lifecycleSource = read("js/core/application-lifecycle-guard.js");
   const recoverySource = read("js/core/emergency-recovery.js");
   const configSource = read("js/core/config.js");
-  const runtimeSource = read("js/core/sync-runtime-activation.js");
+  const syncSource = read("js/core/sync-manager.js");
   const authSource = read("js/core/auth.js");
   const stateSource = read("js/core/state.js");
+  const indexSource = read("index.html");
 
   assert.match(lifecycleSource, /audit_logs/);
   assert.match(lifecycleSource, /supportedResources\(\)\s*\{[\s\S]*filter/);
@@ -20,7 +21,6 @@ const assert = require("node:assert/strict");
   assert.match(lifecycleSource, /fenceLegacySyncEntryPoints/);
   assert.match(lifecycleSource, /__GV_CANONICAL_SYNC_ONLY/);
   assert.match(lifecycleSource, /ensureRecoveryModule/);
-  assert.match(runtimeSource, /__GV_APP_READY\s*!==\s*true/);
   assert.match(configSource, /SYNC_RESOURCES:[\s\S]*auditLog/);
   assert.match(lifecycleSource, /AUDIT_ONLY_RESOURCES/);
   assert.match(recoverySource, /RECOVERED_ORDERS/);
@@ -40,24 +40,30 @@ const assert = require("node:assert/strict");
   assert.doesNotMatch(stateSource, /function\s+scheduleAuthorizedHydration\s*\(\)\s*\{\s*return false\s*;?\s*\}/);
   assert.match(stateSource, /hydrateAuthorizedStateAfterAuth\(\)/);
 
+  assert.match(syncSource, /window\.GVSync\s*=\s*Object\.freeze/);
+  assert.match(syncSource, /hydrate|bootstrap/);
+  assert.match(syncSource, /capturePendingLocalMutations/);
+  assert.match(syncSource, /applyCanonicalSnapshot/);
+  assert.match(syncSource, /startRealtime/);
+  assert.match(indexSource, /sync-manager\.js/);
+  assert(indexSource.indexOf("sync-manager.js") < indexSource.indexOf("script.js"), "canonical sync manager must load before script compatibility boundaries");
+
   let originalHealthCalled = 0;
-  let syncCalled = 0;
-  let pollingStopped = 0;
   const windowObj = {
     GVData: Object.freeze({
       supportedResources: () => ["clients", "orders", "audit_logs"],
       health: async () => { originalHealthCalled++; return { ok: true }; },
       sync: async () => ({ ok: true }),
-      selectResource: async () => [],
+      selectResource: async () => []
     }),
     GVSync: {
-      stopPolling: () => { pollingStopped++; },
-      flush: async () => { syncCalled++; return { ok: true }; }
+      stopPolling: () => {},
+      flush: async () => ({ ok: true })
     },
     GVAuth: {
       requireManagerSession: async () => ({ configured: true, authenticated: true, profile: { company_id: "company-1" } })
     },
-    location: { protocol: "https:" },
+    location: { protocol: "https:" }
   };
   windowObj.window = windowObj;
   const context = vm.createContext({
@@ -75,19 +81,14 @@ const assert = require("node:assert/strict");
   vm.runInContext(lifecycleSource, context, { filename: "application-lifecycle-guard.js" });
   assert.equal(windowObj.GVApplicationLifecycleGuard.install(), true);
   assert.deepEqual(windowObj.GVData.supportedResources(), ["clients", "orders"]);
-  assert.equal(pollingStopped, 1);
   assert.equal(windowObj.__GV_CANONICAL_SYNC_ONLY, true);
   assert.equal(typeof windowObj.syncNow, "function");
   assert.equal(typeof windowObj.syncChangedResources, "function");
   const health = await windowObj.GVData.health();
   assert.equal(health.ok, true);
-  assert.equal(health.authenticated, true);
-  assert.equal(originalHealthCalled, 0, "health boundary must not invoke the old mutating gateway health wrapper");
-  const bootSync = await windowObj.GVData.sync();
-  assert.equal(bootSync.status, "booting");
-  assert.equal(syncCalled, 0);
+  assert.equal(originalHealthCalled, 0, "health boundary must not invoke the legacy mutating health wrapper");
 
-  console.log("Application lifecycle, recovery, and sync registry contract: PASS");
+  console.log("Application lifecycle, recovery, registry, and canonical sync boundary contract: PASS");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

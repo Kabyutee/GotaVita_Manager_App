@@ -1,36 +1,47 @@
-const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const assert = require("node:assert/strict");
 
-const html = fs.readFileSync("index.html", "utf8");
-const syncManager = fs.readFileSync("js/core/sync-manager.js", "utf8");
-const syncStatus = fs.readFileSync("js/core/sync-status.js", "utf8");
-const authBridge = fs.readFileSync("js/core/sync-auth-startup-bridge.js", "utf8");
-const dataGateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
-const productionGuard = fs.readFileSync("js/core/production-guard.js", "utf8");
+const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
+const ui = fs.readFileSync("js/core/ui-bridge.js", "utf8");
+const worker = fs.readFileSync("worker.js", "utf8");
+const app = fs.readFileSync("script.js", "utf8");
 
-for (const script of [
-  "js/core/data-gateway.js",
-  "js/core/sync-manager.js",
-  "js/core/sync-status.js",
-  "js/core/production-guard.js"
-]) {
-  assert.ok(html.includes(`src=\"${script}\"`), `${script} must remain in the explicit core load chain`);
-}
+assert.match(manager, /gotavita_sync_baseline_v2/);
+assert.match(manager, /const POLL_MS = 5000/);
+assert.match(manager, /if \(inFlight\) return inFlight/);
+assert.match(manager, /if \(!navigator\.onLine\)/);
+assert.match(manager, /GVAuth\?\.isAuthorized/);
+assert.match(manager, /const finalRead = await fetchRemoteSet\(\[\.\.\.resources, "deleted_orders"\]\)/);
+assert.match(manager, /applyCanonicalSnapshot\(nextState, finalRead\.results\)/);
+assert.match(manager, /window\.GVSync\s*=\s*Object\.freeze/);
+assert.match(manager, /setInterval\(\(\) => flush\("poll"\)/);
+assert.match(manager, /window\.syncChangedResources\s*=\s*\(reason\) => window\.GVSync\.flush/);
+assert.match(manager, /window\.syncNow\s*=\s*\(\) => window\.GVSync\.flush/);
 
-assert.match(syncManager, /window\.GVSync\s*=\s*Object\.freeze/, "GVSync must remain the single public sync coordinator");
-assert.match(syncManager, /window\.GVConflictIntegration/, "GVSync must use the canonical conflict/sync integration");
-assert.match(syncManager, /window\.syncChangedResources\s*=\s*\(\)\s*=>\s*window\.GVSync\.flush\(\)/, "legacy syncChangedResources must delegate to GVSync");
-assert.match(syncManager, /setInterval\(\(\)\s*=>\s*\{\s*flush\(\)/, "GVSync must own the single background scheduler");
-assert.doesNotMatch(syncStatus, /setInterval\(/, "sync-status must not own another background scheduler");
-assert.doesNotMatch(syncStatus, /window\.GVSync\.poll\(\)/, "sync-status must not trigger synchronization");
-assert.doesNotMatch(authBridge, /setInterval\(/, "auth startup bridge must not own a synchronization timer");
-assert.doesNotMatch(syncManager, /window\.GVData\.sync\(/, "GVSync must not treat the gateway health hook as the sync transaction");
-assert.doesNotMatch(syncManager, /document\.querySelector\('script\[data-gv-order-number-reconciler/, "GVSync must not dynamically stack cloud-write wrappers");
-assert.doesNotMatch(productionGuard, /const\s+originalSync\s*=\s*window\.GVData\.sync/, "production guard must not decorate GVData.sync with a second sync transaction");
-assert.match(dataGateway, /async function sync\(/, "gateway must retain its transport-facing sync hook");
+assert.doesNotMatch(manager, /GVConflictIntegration/);
+assert.doesNotMatch(manager, /sync-cloud-write-reconciler/);
+assert.doesNotMatch(manager, /order-remote-pull-fix/);
+assert.doesNotMatch(manager, /sync-queue-authority/);
 
-const timerOwners = [syncManager, syncStatus, authBridge, productionGuard]
-  .reduce((count, source) => count + (source.match(/setInterval\s*\(/g) || []).length, 0);
-assert.equal(timerOwners, 1, "exactly one synchronization core timer may exist");
+assert.doesNotMatch(ui, /hydrateFromSupabase/);
+assert.doesNotMatch(ui, /syncCrossDevice/);
+assert.doesNotMatch(ui, /GVData\.sync/);
+assert.doesNotMatch(ui, /GVData\.selectResource/);
+assert.doesNotMatch(ui, /GVData\.upsertResource/);
+
+assert.doesNotMatch(worker, /sync-cloud-write-reconciler/);
+assert.doesNotMatch(worker, /order-remote-pull-fix/);
+assert.doesNotMatch(worker, /sync-p0-auth-hydration/);
+assert.doesNotMatch(worker, /sync-complete-runtime-repair/);
+assert.doesNotMatch(worker, /sync-p0-final-canonicalizer/);
+assert.doesNotMatch(worker, /sync-queue-authority/);
+
+// Critical UI bootstrap must not depend on auth/network/sync initialization.
+const uiDelegationPosition = app.indexOf("installUIEventDelegation();");
+const authInitPosition = app.indexOf("await window.GVAuth.init();");
+assert(uiDelegationPosition >= 0, "critical UI delegation bootstrap missing");
+assert(authInitPosition >= 0, "authentication initialization boundary missing");
+assert(uiDelegationPosition < authInitPosition, "critical UI delegation must initialize before async auth initialization");
+assert.match(app, /try \{\s*initSyncReliability\(\);\s*\} catch \(error\)/, "sync reliability startup must be failure-isolated");
 
 console.log("ANTI BIG BANG 5.0 sync architecture contract: PASS");

@@ -1,22 +1,22 @@
-const fs = require("fs");
-const source = fs.readFileSync("js/core/production-guard.js", "utf8");
-const integration = fs.readFileSync("js/core/conflict-resolution-integration.js", "utf8");
+const fs = require("node:fs");
+const assert = require("node:assert/strict");
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
+const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
+const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
-assert(/function\s+resolveConflictPolicy\s*\(/.test(source), "Conflict policy must expose a named resolver");
-assert(/local-newer/.test(source) && /remote-newer/.test(source), "Conflict policy must classify newer-side outcomes");
-assert(/indeterminate/.test(source), "Conflict policy must preserve indeterminate cases");
-assert(/deletion/.test(source), "Conflict policy must explicitly classify deletion cases");
-assert(/manual-review/.test(source), "Ambiguous conflicts must be routed to manual review");
-assert(/mutation:\s*false/.test(source), "Policy results must be side-effect free");
-assert(/does not\s+mutate|no automatic resolver|side-effect-free/i.test(source), "Policy contract must document non-mutating behavior");
-assert(/rowsEquivalent/.test(source) && /equivalent-records/.test(source), "Equivalent legacy rows must not be promoted to manual review");
-assert(/function\s+rowsEquivalent\s*\(/.test(integration), "Integration must compare rows without timestamp-only drift");
-assert(/both-match-baseline/.test(integration), "Baseline-equivalent rows must converge without manual review");
-assert(/remote-only-change-by-baseline/.test(integration), "Remote-only baseline changes must converge without timestamps");
-assert(/local-only-change-by-baseline/.test(integration), "Local-only baseline changes must converge without timestamps");
+assert.match(manager, /function localMutationWins\(entry, remoteRow\)/);
+assert.match(manager, /function mutationTime\(entry\)/);
+assert.match(manager, /function executeMutation\(entry, remoteRows, baseline(?:, remoteDeletedRows = \[\])?\)/);
+assert.match(manager, /gotavita_sync_baseline_v2/);
+assert.match(manager, /function orderTombstone\(row, timestamp\)/);
+assert.match(manager, /deleted_orders/);
+assert.match(manager, /function applyCanonicalSnapshot\(nextState, canonical\)/);
+assert.match(manager, /function saveBaseline\(state, companyId\)/);
+assert.match(manager, /finalRead/);
+assert.match(manager, /concurrentMutationDetected/);
+assert.doesNotMatch(manager, /gotavita_conflict_baseline_v1/);
+assert.doesNotMatch(manager, /GVConflictIntegration/);
+assert.match(gateway, /async function selectResource/);
+assert.match(gateway, /async function upsertResource/);
 
-console.log("Sprint 12 conflict resolution policy contract: PASS");
+console.log("Sprint 12 conflict resolution v2 contract: PASS");

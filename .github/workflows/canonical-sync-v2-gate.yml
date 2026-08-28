@@ -1,0 +1,57 @@
+name: Canonical Sync v2 Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-sync-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Syntax checks
+        run: |
+          node --check script.js
+          node --check js/core/sync-manager.js
+          node --check js/core/ui-bridge.js
+          node --check worker.js
+
+      - name: Canonical architecture contract
+        run: node tests/canonical-sync-v2-architecture.test.js
+
+      - name: Startup, convergence, adversarial safety, failure durability, and efficiency simulation
+        run: |
+          node tests/anti-big-bang-5-sync-architecture-contract.test.js
+          node tests/canonical-sync-v2-simulation.test.js
+          node tests/canonical-sync-v2-bootstrap-safety.test.js
+
+      - name: Existing sync contracts
+        run: |
+          node tests/phase4-cross-device-sync.test.js
+          node tests/sprint12-live-sync-polling-contract.test.js
+          node tests/sprint18-transaction-sync-readiness-contract.test.js
+          node tests/sprint21-whole-sync-hardening-contract.test.js
+
+      - name: Repository integrity
+        run: |
+          test -s index.html
+          test -s script.js
+          test -s js/core/data-gateway.js
+          test -s js/core/state.js
+          test -s js/modules/orders.js
+          test -s js/modules/clients.js
+          test -s js/modules/products.js
+          test -s js/modules/expenses.js
+          test -s js/modules/groups-routes.js
+          test -s js/modules/employees-payroll.js
+          test -s js/modules/reports.js
+          test -s js/modules/containers.js
+          test -s js/modules/backups.js

@@ -17,7 +17,7 @@ permissions:
 jobs:
   preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Resolve exact candidate SHA
         id: candidate
@@ -31,11 +31,13 @@ jobs:
           if [ -n "$INPUT_SHA" ]; then candidate="$INPUT_SHA"; fi
           if [ -z "$candidate" ]; then exit 1; fi
           echo "sha=$candidate" >> "$GITHUB_OUTPUT"
+
       - name: Checkout exact candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
+
       - name: Verify candidate syntax
         run: |
           node --check script.js
@@ -43,6 +45,19 @@ jobs:
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
           node --check worker.js
+
+      - name: Prepare pinned Playwright runner
+        run: |
+          set -euo pipefail
+          rm -rf .playwright-ci
+          mkdir -p .playwright-ci
+          printf '%s\n' '{"private":true}' > .playwright-ci/package.json
+          npm --prefix .playwright-ci install --no-save @playwright/test@1.55.0
+          .playwright-ci/node_modules/.bin/playwright --version
+
+      - name: Install Playwright browser
+        run: .playwright-ci/node_modules/.bin/playwright install --with-deps chromium
+
       - name: Deploy isolated candidate Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -54,6 +69,7 @@ jobs:
             deploy
             --name gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}
             --var GV_RELEASE_SHA:${{ steps.candidate.outputs.sha }}
+
       - name: Verify exact preview health
         env:
           EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
@@ -69,3 +85,19 @@ jobs:
             sleep 5
           done
           exit 1
+
+      - name: Diagnose New Order navigation path
+        env:
+          GOTAVITA_PRODUCTION_URL: https://gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}.carleugenetolentino22.workers.dev
+          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+          E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/new-order-navigation-diagnostic.spec.js --reporter=line
+
+      - name: Real Browser A/B convergence test
+        env:
+          GOTAVITA_PRODUCTION_URL: https://gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}.carleugenetolentino22.workers.dev
+          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+          E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line

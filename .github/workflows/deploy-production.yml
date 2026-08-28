@@ -11,7 +11,6 @@ permissions:
 
 concurrency:
   group: gotavita-production
-  # A newer main commit supersedes an older queued deployment.
   cancel-in-progress: true
 
 env:
@@ -28,6 +27,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: JARVIS evidence-first predeploy gate
+        run: |
+          node tests/jarvis-evidence-first-contract.test.js
+          node tests/jarvis-9-business-first-adaptive-workflow.test.js
+          node tests/anti-big-bang-7-adaptive-application-scan.test.js
+          node tests/jarvis-8-runtime-adaptation-audit.test.js
+          node tests/jarvis-whole-app-hardening-contract.test.js
+          node tests/anti-big-bang-6-application-connection-audit.test.js
+          node tests/anti-big-bang-4-system-audit.test.js
+          node tests/canonical-sync-v2-architecture.test.js
+          node tests/canonical-sync-v2-simulation.test.js
+          node tests/canonical-sync-v2-bootstrap-safety.test.js
+          node tests/sprint12-live-sync-polling-contract.test.js
+          node tests/sprint18-transaction-sync-readiness-contract.test.js
+          node tests/sprint20-sync-transaction-no-requeue-contract.test.js
+          node tests/sprint20-empty-resource-convergence-contract.test.js
+          node tests/sprint21-whole-sync-hardening-contract.test.js
+          node tests/sprint22-complete-runtime-sync-repair.test.js
+          node tests/ui-action-wiring-contract.test.js
 
       - name: Verify JavaScript syntax
         run: |
@@ -36,39 +56,11 @@ jobs:
           node --check js/core/data-gateway.js
           node --check js/core/ui-bridge.js
           node --check js/core/sync-manager.js
-          node --check js/core/conflict-resolution-integration.js
+          node --check js/core/application-lifecycle-guard.js
+          node --check js/core/sync-status.js
           node --check js/modules/groups-routes.js
+          node --check js/modules/daily-l300-runs.js
           node --check worker.js
-
-      - name: JARVIS 9.0 business-first adaptive workflow
-        env:
-          BASE_SHA: ${{ github.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: node tests/jarvis-9-business-first-adaptive-workflow.test.js
-
-      - name: Run full regression contracts
-        run: |
-          node tests/phase1-state-bridge.test.js
-          node tests/phase3-hydration-runtime.test.js
-          node tests/phase4-cross-device-sync.test.js
-          node tests/sprint11-release-readiness.test.js
-          node tests/sprint12-state-hydration-contract.test.js
-          node tests/sprint12-hydration-hardening.test.js
-          node tests/sprint12-hydration-ordering-contract.test.js
-          node tests/sprint12-state-ownership-contract.test.js
-          node tests/sprint12-schema-adapter-contract.test.js
-          node tests/sprint12-write-safety-contract.test.js
-          node tests/sprint12-controlled-write-activation-contract.test.js
-          node tests/sprint12-write-roundtrip-contract.test.js
-          node tests/sprint12-conflict-detection-contract.test.js
-          node tests/sprint12-conflict-policy-contract.test.js
-          node tests/sprint12-conflict-resolution-policy-contract.test.js
-          node tests/sprint12-controlled-conflict-integration-contract.test.js
-          node tests/sprint12-two-device-conflict-scenarios.test.js
-          node tests/sprint12-live-sync-polling-contract.test.js
-          node tests/sprint14-order-edit-group-contract.test.js
-          node tests/sprint15-production-regression-gate-contract.test.js
-          node tests/sprint26-order-remote-gap-protection.test.js
 
       - name: Deploy exact main commit to Cloudflare
         id: deploy
@@ -103,22 +95,25 @@ jobs:
           echo "Production Worker did not report expected release SHA $EXPECTED_SHA"
           exit 1
 
-      - name: Setup Node for production browser smoke
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Playwright for production browser smoke
+      - name: Prepare pinned Playwright runner
         run: |
-          npm install --no-save --no-package-lock @playwright/test@latest
-          npx playwright install --with-deps chromium
+          set -euo pipefail
+          rm -rf .playwright-ci
+          mkdir -p .playwright-ci
+          printf '%s\n' '{"private":true}' > .playwright-ci/package.json
+          npm --prefix .playwright-ci install --no-save @playwright/test@1.55.0
+          .playwright-ci/node_modules/.bin/playwright --version
+
+      - name: Install Playwright browser
+        run: .playwright-ci/node_modules/.bin/playwright install --with-deps chromium
 
       - name: Run production browser sync smoke
         env:
           GOTAVITA_PRODUCTION_URL: ${{ env.PRODUCTION_URL }}
           E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
           E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
-        run: npx playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
 
       - name: Upload production browser sync smoke report on failure
         if: failure()

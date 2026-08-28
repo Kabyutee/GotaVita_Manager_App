@@ -1,4 +1,4 @@
-/* GotaVita UI bridge — presentation boundary only. */
+/* GotaVita UI runtime v2 — presentation boundary only. */
 (function () {
   "use strict";
 
@@ -19,7 +19,7 @@
         form.__gvSubmitBound = true;
       }
     } catch (error) {
-      console.warn("GotaVita dynamic form binding skipped:", error?.message || error);
+      console.warn("GotaVita dynamic order form binding skipped:", error?.message || error);
     }
   }
 
@@ -42,5 +42,7 @@
     }
   });
 
-  window.addEventListener("DOMContentLoaded", rebindDynamicOrderForms, { once: true });
+  window.addEventListener("DOMContentLoaded", () => {
+    rebindDynamicOrderForms();
+  }, { once: true });
 })();

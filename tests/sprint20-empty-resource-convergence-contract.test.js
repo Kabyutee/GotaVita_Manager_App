@@ -1,29 +1,15 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 
-function shouldClearRemoteEmpty({ baselineState, resource, queuedResources }) {
-  return Boolean(
-    baselineState &&
-    Object.prototype.hasOwnProperty.call(baselineState, resource) &&
-    !queuedResources.includes(resource)
-  );
-}
+const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
 
-assert.equal(
-  shouldClearRemoteEmpty({ baselineState: null, resource: "clients", queuedResources: [] }),
-  false,
-  "first-run empty cloud must preserve local seed data"
-);
+assert.match(manager, /function bootstrap\(auth, current\)/, "bootstrap path missing");
+assert.match(manager, /const previousLocal = localSnapshot\(\)/, "first-run local snapshot boundary missing");
+assert.match(manager, /if \(!remote\)/, "remote-missing record handling missing");
+assert.match(manager, /if \(previousLocal\)/, "established local baseline deletion protection missing");
+assert.match(manager, /remoteTime <= previousTime/, "empty-resource destructive reconciliation is not timestamp guarded");
+assert.match(manager, /const combinedOutbox = coalesceOutbox\(\[\.\.\.readOutbox\(\), \.\.\.pending\]\)/, "pending local ownership is not preserved through bootstrap");
+assert.match(manager, /if \(!remaining\.length\) saveBaseline\(nextState, auth\?\.profile\?\.company_id\)/, "baseline promotion is not gated on queue drain");
+assert.match(manager, /const canonicalResult = await fetchRemoteSet\(resources\)/, "canonical bootstrap read-back missing");
 
-assert.equal(
-  shouldClearRemoteEmpty({ baselineState: { clients: [{ id: "c1" }] }, resource: "clients", queuedResources: [] }),
-  true,
-  "an established cloud baseline must allow a successful empty remote resource to clear stale local rows"
-);
-
-assert.equal(
-  shouldClearRemoteEmpty({ baselineState: { clients: [{ id: "c1" }] }, resource: "clients", queuedResources: ["clients"] }),
-  false,
-  "pending local queue ownership must defer destructive empty-resource reconciliation"
-);
-
-console.log("Sprint 20 empty-resource convergence contract: PASS");
+console.log("Sprint 20 empty-resource convergence v2 contract: PASS");

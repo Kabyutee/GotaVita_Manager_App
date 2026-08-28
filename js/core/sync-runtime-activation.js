@@ -1,50 +1,26 @@
-/* JARVIS runtime activation: load canonical sync boundaries only after the
-deferred application scripts have finished bootstrapping. */
+/* GotaVita Manager — Canonical Sync v2 runtime activation.
+ *
+ * Compatibility hook retained because state.js still references this path.
+ * It must never create a second synchronization coordinator.
+ * GVSync remains the sole owner of synchronization and state replacement.
+ */
 (function () {
   "use strict";
 
-  const MODULES = [
-    "/js/core/sync-cloud-write-reconciler.js",
-    "/js/core/sync-queue-authority.js",
-    "/js/core/sync-authority.js",
-    "/js/core/sync-tombstone-legacy-id-bridge.js",
-    "/js/core/order-mutation-transaction-guard.js",
-    "/js/core/order-remote-pull-fix.js"
-  ];
+  const marker = "__GV_CANONICAL_SYNC_RUNTIME_V2__";
+  if (window[marker]) return;
 
-  function load(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[data-gv-runtime-sync="${src}"]`)) {
-        resolve();
-        return;
-      }
+  window[marker] = Object.freeze({
+    version: 2,
+    installedAt: new Date().toISOString(),
+    coordinator: "GVSync",
+    compatibilityOnly: true
+  });
 
-      const script = document.createElement("script");
-      script.src = src;
-      script.defer = false;
-      script.dataset.gvRuntimeSync = src;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error(`Failed to load ${src}`));
-      (document.head || document.documentElement).appendChild(script);
-    });
-  }
-
-  async function activate() {
-    try {
-      for (const src of MODULES) await load(src);
-      if (window.__GV_APP_READY !== true) return;
-      if (window.GVSync?.flush) await window.GVSync.flush();
-    } catch (error) {
-      console.warn(
-        "GotaVita canonical sync runtime activation:",
-        error?.message || error
-      );
-    }
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", activate, { once: true });
-  } else {
-    activate();
+  // state.js invokes this historical loader for compatibility. The loader
+  // intentionally does not register another sync engine or mutate GVData.
+  // Canonical synchronization remains exclusively owned by GVSync.
+  if (window.__GV_APP_READY === true && window.GVSync?.flush) {
+    window.GVSync.flush("runtime-activation").catch(() => {});
   }
 })();
