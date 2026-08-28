@@ -56,6 +56,7 @@ const syncManager = read("js/core/sync-manager.js");
 const uiBridge = read("js/core/ui-bridge.js");
 const worker = read("worker.js");
 const index = read("index.html");
+const runtimeActivation = read("js/core/sync-runtime-activation.js");
 
 for (const required of [
   "index.html", "js/core/state.js", "js/core/config.js", "js/core/data-gateway.js", "js/core/sync-manager.js"
@@ -91,6 +92,21 @@ assert(!uiBridge.includes("GVData.selectResource"), "UI bridge still reads cloud
 assert(!uiBridge.includes("GVData.upsertResource"), "UI bridge still writes cloud data");
 assert(!uiBridge.includes("hydrateFromSupabase"), "UI bridge still owns hydration");
 
+assert(runtimeActivation.includes("coordinator: \"GVSync\""), "runtime activation must declare GVSync as coordinator");
+assert(runtimeActivation.includes("compatibilityOnly: true"), "runtime activation must remain compatibility-only");
+for (const retired of [
+  "sync-cloud-write-reconciler",
+  "order-remote-pull-fix",
+  "order-write-boundary-bridge",
+  "sync-p0-auth-hydration",
+  "sync-complete-runtime-repair",
+  "sync-p0-final-canonicalizer",
+  "group-membership-sync-bridge",
+  "realtime-channel-lifecycle-fix",
+  "sync-queue-authority",
+  "sync-authority"
+]) assert(!runtimeActivation.includes(retired), `runtime activation resurrects retired synchronization module: ${retired}`);
+
 assert(worker.includes("LEGACY_API_RETIRED"), "legacy API retirement boundary missing");
 for (const retired of [
   "sync-cloud-write-reconciler",
@@ -116,7 +132,6 @@ const staleLegacyFiles = [
   "js/core/sync-queue-authority.js",
   "js/core/sync-authority.js",
   "js/core/sync-auth-startup-bridge.js",
-  "js/core/sync-runtime-activation.js",
   "js/core/sync-p0-auth-hydration.js",
   "js/core/sync-p0-final-canonicalizer.js",
   "js/core/sync-complete-runtime-repair.js",
@@ -153,9 +168,8 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     `- Files scanned: **${summary.filesScanned}**`,
     `- Changed files: **${summary.changedFiles}**`,
     `- Synchronized resources scanned: **${summary.synchronizedResourcesScanned}**`,
-    "- Canonical synchronization authority: **GVSync v2**",
-    "- Retired synchronization modules: **excluded and absent**",
-    "- Existing-record protection: **ENFORCED**",
+    "- Canonical runtime: **GVSync only**",
+    "- Existing records: **PROTECTED**",
     "- Result: **PASS**",
     ""
   ].join("\n"));
