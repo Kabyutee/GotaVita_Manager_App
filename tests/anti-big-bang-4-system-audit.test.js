@@ -18,20 +18,28 @@ const architectureContract = read("tests/anti-big-bang-5-sync-architecture-contr
 
 // One runtime synchronization authority.
 assert(/window\.GVSync\s*=\s*Object\.freeze/.test(syncManager), "GVSync authority missing from sync manager");
-assert(/window\.syncChangedResources\s*=\s*\(\)\s*=>\s*window\.GVSync\.flush\(\)/.test(syncManager), "legacy sync entry point must delegate to GVSync");
-assert(/window\.syncNow\s*=\s*\(\)\s*=>\s*window\.GVSync\.flush\(\)/.test(syncManager), "manual sync entry point must delegate to GVSync");
+assert(/window\.syncChangedResources\s*=\s*\(reason\)\s*=>\s*window\.GVSync\.flush/.test(syncManager), "legacy sync entry point must delegate to GVSync");
+assert(/window\.syncNow\s*=\s*\(\)\s*=>\s*window\.GVSync\.flush/.test(syncManager), "manual sync entry point must delegate to GVSync");
 assert(!/setInterval\(/.test(syncStatus), "sync-status must remain presentation-only");
-assert(!/window\.GVData\.sync\(/.test(syncManager), "sync manager must not use the gateway health hook as the transaction authority");
+assert(!/window\.GVData\.sync\(/.test(syncManager), "sync manager must not use the gateway sync hook as transaction authority");
 assert(!/originalSync/.test(syncStatus), "legacy post-sync wrapper still exists");
 assert(!/originalSync\s*=\s*window\.GVData\.sync/.test(read("js/core/production-guard.js")), "production guard still wraps GVData.sync");
+assert(/gotavita_sync_outbox_v2/.test(syncManager), "durable mutation outbox missing");
+assert(/gotavita_sync_baseline_v2/.test(syncManager), "canonical v2 baseline missing");
+assert(/applyCanonicalSnapshot/.test(syncManager), "canonical remote-to-state commit missing");
+assert(/concurrentMutationDetected/.test(syncManager), "concurrent local mutation protection missing");
 
-// The UI bridge must use the explicit sync result contract for rendering.
-assert(/remoteChanged/.test(uiBridge), "remoteChanged render contract missing");
-assert(/stateChanged/.test(uiBridge), "stateChanged render contract missing");
-assert(/renderRequired/.test(uiBridge), "renderRequired render contract missing");
-assert(/failedResources/.test(uiBridge), "failed resource diagnostics missing");
-assert(/failedErrors/.test(uiBridge), "failed error diagnostics missing");
-assert(/remainingQueued/.test(uiBridge), "failed-resource queue preservation missing");
+// The UI bridge is presentation-only and may bind forms/rendering, but must not own cloud synchronization.
+assert(/window\.GVUI\s*=\s*Object\.freeze/.test(uiBridge), "UI presentation bridge missing");
+assert(/renderAll\(\)/.test(uiBridge), "UI render boundary missing");
+assert(/guardedSubmitHandler/.test(uiBridge), "dynamic Order form binding boundary missing");
+assert(!/GVData\.selectResource/.test(uiBridge), "UI bridge still performs cloud reads");
+assert(!/GVData\.upsertResource/.test(uiBridge), "UI bridge still performs cloud writes");
+
+// Sync status must never own the sync scheduler or the cloud transport.
+assert(!/setInterval\(/.test(syncStatus), "sync-status still owns a scheduler");
+assert(!/GVData\.selectResource/.test(syncStatus), "sync-status performs cloud reads");
+assert(!/GVData\.upsertResource/.test(syncStatus), "sync-status performs cloud writes");
 
 // Gateway remains the transport/schema/auth boundary.
 assert(/requireAuthenticatedManager/.test(gateway), "manager authorization guard missing");
@@ -40,7 +48,7 @@ assert(/upsert\(/.test(gateway), "cloud upsert path missing");
 assert(/onConflict/.test(gateway), "cloud conflict key missing");
 assert(/async function sync\(/.test(gateway), "gateway transport hook missing");
 
-// Production deployment must self-report and verify exact release SHA.
+// Production deployment must self-report and verify exact release SHA, while the risk gate never deploys production.
 assert(/GV_RELEASE_SHA/.test(worker), "Worker release SHA endpoint missing");
 assert(/EXPECTED_SHA/.test(prodWorkflow), "production workflow lacks exact SHA verification");
 assert(/Production deployment: NOT performed/.test(riskGate), "risk gate must not deploy production");
