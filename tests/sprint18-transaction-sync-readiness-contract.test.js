@@ -25,11 +25,12 @@ assert.match(gateway, /async function sync\(/);
 
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /window\.GVSync\s*=\s*Object\.freeze/);
-assert.match(manager, /Always read back from Supabase after the write\/reconciliation phase/);
+assert.match(manager, /const finalRead = await fetchRemoteSet/);
+assert.match(manager, /applyCanonicalSnapshot\(nextState, finalRead\.results\)/);
 assert.doesNotMatch(manager, /cloudSyncAdapterReady/);
 
 // script.js must retain local persistence; canonical synchronization now owns
-// remote transport and reconciliation rather than a disabled legacy adapter flag.
+// remote transport and reconciliation.
 assert.match(app, /function persistState\(/);
 
-console.log("Sprint 18 canonical synchronization readiness contract: PASS");
+console.log("Sprint 18 canonical synchronization readiness v2 contract: PASS");
