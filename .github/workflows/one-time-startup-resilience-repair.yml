@@ -30,13 +30,14 @@ jobs:
 
           old = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      if (\n        window.GVAuth\n      ) {\n        initSyncReliability();\n        await window.GVAuth.init();\n      }\n'''
           new = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      // Critical UI event delegation must not depend on auth/network/sync startup.\n      // A degraded synchronization subsystem must never make the already-loaded\n      // application controls inert.\n      installUIEventDelegation();\n\n      if (\n        window.GVAuth\n      ) {\n        try {\n          initSyncReliability();\n        } catch (error) {\n          console.warn(\n            "GotaVita sync reliability startup degraded:",\n            error?.message || error\n          );\n        }\n        await window.GVAuth.init();\n      }\n'''
-          if old not in text:
-              raise SystemExit('startup initialization pattern not found')
-          text = text.replace(old, new, 1)
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('startup resilience pattern not found')
           path.write_text(text)
           PY
 
-      - name: Verify source and behavior contracts
+      - name: Verify source contracts
         run: |
           node --check script.js
           node tests/anti-big-bang-4-system-audit.test.js
