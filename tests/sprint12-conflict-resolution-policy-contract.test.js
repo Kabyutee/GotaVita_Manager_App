@@ -6,7 +6,7 @@ const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 
 assert.match(manager, /function localMutationWins\(entry, remoteRow\)/);
 assert.match(manager, /function mutationTime\(entry\)/);
-assert.match(manager, /function executeMutation\(entry, remoteRows, baseline\)/);
+assert.match(manager, /function executeMutation\(entry, remoteRows, baseline(?:, remoteDeletedRows = \[\])?\)/);
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /function orderTombstone\(row, timestamp\)/);
 assert.match(manager, /deleted_orders/);
