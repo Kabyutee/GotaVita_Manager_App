@@ -1,0 +1,55 @@
+name: One-time startup resilience repair
+
+on:
+  push:
+    branches:
+      - fix/canonical-sync-v2
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message != 'fix: isolate critical UI bootstrap from sync startup'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch head
+        uses: actions/checkout@v4
+        with:
+          ref: fix/canonical-sync-v2
+          fetch-depth: 1
+
+      - name: Apply startup resilience repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('script.js')
+          text = path.read_text()
+
+          old = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      if (\n        window.GVAuth\n      ) {\n        initSyncReliability();\n        await window.GVAuth.init();\n      }\n'''
+          new = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      // Critical UI event delegation must not depend on auth/network/sync startup.\n      // A degraded synchronization subsystem must never make the already-loaded\n      // application controls inert.\n      installUIEventDelegation();\n\n      if (\n        window.GVAuth\n      ) {\n        try {\n          initSyncReliability();\n        } catch (error) {\n          console.warn(\n            "GotaVita sync reliability startup degraded:",\n            error?.message || error\n          );\n        }\n        await window.GVAuth.init();\n      }\n'''
+          if old not in text:
+              raise SystemExit('startup initialization pattern not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Verify source and behavior contracts
+        run: |
+          node --check script.js
+          node tests/anti-big-bang-4-system-audit.test.js
+          node tests/canonical-sync-v2-simulation.test.js
+          node tests/canonical-sync-v2-bootstrap-safety.test.js
+
+      - name: Persist proven repair and remove one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/one-time-startup-resilience-repair.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add script.js .github/workflows/one-time-startup-resilience-repair.yml
+          git commit -m 'fix: isolate critical UI bootstrap from sync startup'
+          git push origin HEAD:fix/canonical-sync-v2
