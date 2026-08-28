@@ -33,9 +33,10 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await page.locator('[data-tab="orderlog"]').click();
   await activePanel(page, 'panel-orderlog');
   for (const sub of ['completed', 'all', 'receivables', 'active']) {
-    await page.locator(`[data-sub="${sub}"]`).click();
+    const button = page.locator(`[data-sub="${sub}"]`);
+    await button.click();
     await expect(page.locator(`#sub-${sub}`)).toBeVisible();
-    await expect(page.locator(`[data-sub="${sub}"]`)).toHaveAttribute('aria-selected', 'true');
+    await expect(button).toHaveClass(/active/);
   }
   await page.locator('#orderDateFilter').selectOption('month');
   await page.locator('#orderDateFilter').selectOption('custom');
@@ -68,9 +69,10 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await page.locator('[data-tab="clients"]').click();
   await activePanel(page, 'panel-clients');
   for (const sub of ['top', 'containers', 'directory']) {
-    await page.locator(`[data-client-sub="${sub}"]`).click();
+    const button = page.locator(`[data-client-sub="${sub}"]`);
+    await button.click();
     await expect(page.locator(`#client-sub-${sub}`)).toBeVisible();
-    await expect(page.locator(`[data-client-sub="${sub}"]`)).toHaveClass(/active/);
+    await expect(button).toHaveClass(/active/);
   }
   await page.locator('#clientGroupFilter').selectOption('Commercial');
   await page.locator('#clientGroupFilter').selectOption('');
