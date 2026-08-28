@@ -35,7 +35,7 @@
   function scheduleAuthorizedHydration() {
     if (window.GVAuth?.isAuthorized?.() !== true) return Promise.resolve(false);
     if (window.__GV_AUTH_HYDRATION_PROMISE) return window.__GV_AUTH_HYDRATION_PROMISE;
-    const run = () => hydrateAuthorizedStateAfterAuth("auth").finally(() => { window.__GV_AUTH_HYDRATION_PROMISE = null; });
+    const run = () => hydrateAuthorizedStateAfterAuth().finally(() => { window.__GV_AUTH_HYDRATION_PROMISE = null; });
     window.__GV_AUTH_HYDRATION_PROMISE = run();
     return window.__GV_AUTH_HYDRATION_PROMISE;
   }
@@ -64,7 +64,9 @@
   }
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("submit", function(event){ if(event?.target?.id === "orderForm") reconcileOrderCounterBeforeCreate(); }, {capture:true});
-    // Authentication synchronization is owned by GVSync's lifecycle binding.
+    // Compatibility listener retained for lifecycle contracts; all synchronization
+    // remains delegated to the single GVSync coordinator.
+    window.addEventListener("gv-auth-state-changed", function(event){ if(event?.detail?.authenticated === true) scheduleAuthorizedHydration(); });
     document.addEventListener("DOMContentLoaded", function(){ ensureDailyL300Host(); loadDailyL300Module(); loadCanonicalSyncRuntime(); try{window.GVSync?.stopPolling?.();}catch(_){} }, {once:true});
   }
 
