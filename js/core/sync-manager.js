@@ -5,8 +5,9 @@
  *  - GVSync is the only module allowed to reconcile remote data into state.
  *  - Realtime/network/focus/manual events only request a sync.
  *  - One baseline is used for dirty detection and convergence.
- *  - Remote reads are committed atomically after reconciliation.
- *  - Audit history is append-only and is not part of business-state hydration.
+ *  - Remote state is re-read after writes before local state is committed.
+ *  - Order deletion uses durable deleted_orders evidence.
+ *  - Audit history is append-only and is not business-state hydration data.
  */
 (function () {
   "use strict";
@@ -34,17 +35,8 @@
   });
 
   const LEGACY_DELETE_RESOURCES = new Set([
-    "clients",
-    "products",
-    "employees",
-    "orders",
-    "payments",
-    "expenses",
-    "payroll_records",
-    "order_groups",
-    "delivery_routes",
-    "daily_reports",
-    "deleted_orders"
+    "clients", "products", "employees", "orders", "payments", "expenses",
+    "payroll_records", "order_groups", "delivery_routes", "daily_reports", "deleted_orders"
   ]);
 
   let timer = null;
@@ -61,51 +53,12 @@
       if (!raw) return fallback;
       const value = JSON.parse(raw);
       return value ?? fallback;
-    } catch (_) {
-      return fallback;
-    }
+    } catch (_) { return fallback; }
   }
 
   function writeJson(key, value) {
-    try {
-      window.localStorage?.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function readBaseline() {
-    return readJson(BASELINE_KEY, {
-      version: 2,
-      companyId: null,
-      savedAt: 0,
-      state: {}
-    });
-  }
-
-  function writeBaseline(state, companyId) {
-    const resources = {};
-    for (const stateName of Object.values(RESOURCE_MAP)) {
-      resources[stateName] = Array.isArray(state?.[stateName])
-        ? clone(state[stateName])
-        : [];
-    }
-    return writeJson(BASELINE_KEY, {
-      version: 2,
-      companyId: companyId || null,
-      savedAt: Date.now(),
-      state: resources
-    });
-  }
-
-  function setMeta(patch) {
-    const current = readJson(META_KEY, {});
-    writeJson(META_KEY, {
-      ...current,
-      ...patch,
-      updatedAt: new Date().toISOString()
-    });
+    try { window.localStorage?.setItem(key, JSON.stringify(value)); return true; }
+    catch (_) { return false; }
   }
 
   function clone(value) {
@@ -122,28 +75,45 @@
     return JSON.stringify(value);
   }
 
-  function resourceStateName(resource) {
-    return RESOURCE_MAP[resource] || resource;
+  function readBaseline() {
+    return readJson(BASELINE_KEY, { version: 2, companyId: null, savedAt: 0, state: {} });
   }
+
+  function writeBaseline(state, companyId) {
+    const resources = {};
+    for (const stateName of Object.values(RESOURCE_MAP)) {
+      resources[stateName] = Array.isArray(state?.[stateName]) ? clone(state[stateName]) : [];
+    }
+    return writeJson(BASELINE_KEY, {
+      version: 2,
+      companyId: companyId || null,
+      savedAt: Date.now(),
+      state: resources
+    });
+  }
+
+  function setMeta(patch) {
+    const current = readJson(META_KEY, {});
+    writeJson(META_KEY, { ...current, ...patch, updatedAt: new Date().toISOString() });
+  }
+
+  function resourceStateName(resource) { return RESOURCE_MAP[resource] || resource; }
 
   function stableKey(row, index = 0) {
     const legacy = row?.legacy_id ?? row?.legacyId;
     if (legacy != null && String(legacy).trim()) return `legacy:${String(legacy).trim()}`;
-
-    if (row?.groupLegacyId != null && row?.orderLegacyId != null) {
-      return `group:${String(row.groupLegacyId)}::${String(row.orderLegacyId)}`;
-    }
-
-    if (row?.routeLegacyId != null && row?.orderLegacyId != null) {
-      return `route:${String(row.routeLegacyId)}::${String(row.orderLegacyId)}`;
-    }
-
+    if (row?.groupLegacyId != null && row?.orderLegacyId != null) return `group:${String(row.groupLegacyId)}::${String(row.orderLegacyId)}`;
+    if (row?.routeLegacyId != null && row?.orderLegacyId != null) return `route:${String(row.routeLegacyId)}::${String(row.orderLegacyId)}`;
     if (row?.id != null && String(row.id).trim()) return `id:${String(row.id).trim()}`;
     return `index:${index}`;
   }
 
+  function rawIdentity(row) {
+    return String(row?.legacy_id ?? row?.legacyId ?? row?.id ?? "").trim();
+  }
+
   function rowTime(row) {
-    const raw = row?.updatedAt ?? row?.updated_at ?? row?.createdAt ?? row?.created_at ?? row?.date ?? row?.order_date;
+    const raw = row?.updatedAt ?? row?.updated_at ?? row?.deletedAt ?? row?.archivedAt ?? row?.createdAt ?? row?.created_at ?? row?.date ?? row?.order_date;
     if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
     const parsed = Date.parse(String(raw || ""));
     return Number.isFinite(parsed) ? parsed : 0;
@@ -156,9 +126,7 @@
     return copy;
   }
 
-  function rowsEqual(a, b) {
-    return stableJson(comparable(a)) === stableJson(comparable(b));
-  }
+  function rowsEqual(a, b) { return stableJson(comparable(a)) === stableJson(comparable(b)); }
 
   function index(rows) {
     const map = new Map();
@@ -182,9 +150,7 @@
       try {
         if (typeof window.GVUI?.renderAll === "function") window.GVUI.renderAll();
         else if (typeof window.renderAll === "function") window.renderAll();
-      } catch (error) {
-        console.warn("GotaVita canonical sync render:", error?.message || error);
-      }
+      } catch (error) { console.warn("GotaVita canonical sync render:", error?.message || error); }
     }, RELEASE_RENDER_MS);
   }
 
@@ -192,9 +158,7 @@
     try {
       const active = document.activeElement;
       return Boolean(active?.closest?.("input:not([type='checkbox']), select, textarea, button"));
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { return false; }
   }
 
   async function requireManager() {
@@ -204,11 +168,8 @@
 
   function supportedResources() {
     const list = window.GVData?.supportedResources?.();
-    return (Array.isArray(list) ? list : Object.keys(RESOURCE_MAP)).filter((resource) => resource !== "audit_logs");
-  }
-
-  async function selectRemote(resource) {
-    return Array.isArray(await window.GVData.selectResource(resource)) ? await window.GVData.selectResource(resource) : [];
+    const source = Array.isArray(list) ? list : Object.keys(RESOURCE_MAP);
+    return source.filter((resource) => resource !== "audit_logs");
   }
 
   async function fetchRemoteSet(resources) {
@@ -217,23 +178,6 @@
       return [resource, Array.isArray(rows) ? rows : []];
     }));
     return Object.fromEntries(entries);
-  }
-
-  function getLocalChanges(resource, localRows, baselineRows) {
-    const local = index(localRows);
-    const baseline = index(baselineRows);
-    const changed = [];
-
-    for (const [key, row] of local.entries()) {
-      const prior = baseline.get(key);
-      if (!prior || !rowsEqual(row, prior)) changed.push({ key, row, prior });
-    }
-
-    for (const [key, prior] of baseline.entries()) {
-      if (!local.has(key)) changed.push({ key, row: null, prior });
-    }
-
-    return changed;
   }
 
   function chooseWinner(localRow, remoteRow) {
@@ -255,27 +199,24 @@
         return true;
       }
     }
-
     if (resource === "order_group_items" && typeof window.GVData.deleteOrderGroupItem === "function") {
       await window.GVData.deleteOrderGroupItem(row.groupLegacyId ?? row.group_legacy_id, row.orderLegacyId ?? row.order_legacy_id);
       return true;
     }
-
     if (resource === "delivery_route_items" && typeof window.GVData.deleteDeliveryRouteItem === "function") {
       await window.GVData.deleteDeliveryRouteItem(row.routeLegacyId ?? row.route_legacy_id, row.orderLegacyId ?? row.order_legacy_id);
       return true;
     }
-
     return false;
   }
 
   function makeOrderTombstone(row) {
-    const id = row?.legacy_id ?? row?.legacyId ?? row?.id;
-    if (id == null) return null;
+    const id = rawIdentity(row);
+    if (!id) return null;
     const now = new Date().toISOString();
     return {
       id,
-      legacy_id: String(id),
+      legacy_id: id,
       deleted: true,
       archivedAt: now,
       deletedAt: now,
@@ -285,12 +226,20 @@
     };
   }
 
+  function tombstoneMap(rows) {
+    const map = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const id = rawIdentity(row);
+      if (id) map.set(`legacy:${id}`, row);
+    }
+    return map;
+  }
+
   function rebuildDerivedMembership(state) {
     const groups = Array.isArray(state.orderGroups) ? state.orderGroups : [];
     const routes = Array.isArray(state.deliveryRoutes) ? state.deliveryRoutes : [];
     const groupMap = new Map(groups.map((g) => [String(g.id), g]));
     const routeMap = new Map(routes.map((r) => [String(r.id), r]));
-
     for (const group of groups) group.orderIds = [];
     for (const route of routes) route.orderIds = [];
 
@@ -323,75 +272,78 @@
       const stateName = resourceStateName(resource);
       const remoteRows = remote[resource] || [];
       const localRows = Array.isArray(current[stateName]) ? current[stateName] : [];
-
-      // Supabase is canonical when a resource already has cloud data.
-      // A local-only resource is preserved and uploaded when the cloud is empty.
       if (remoteRows.length) {
         if (stableJson(remoteRows) !== stableJson(localRows)) changed = true;
         next[stateName] = remoteRows;
       } else if (localRows.length) {
         await window.GVData.upsertResource(resource, localRows);
-        const refreshed = await window.GVData.selectResource(resource);
-        next[stateName] = refreshed;
+        next[stateName] = await window.GVData.selectResource(resource);
         changed = true;
-      } else {
-        next[stateName] = [];
-      }
+      } else next[stateName] = [];
     }
 
+    // The first canonical snapshot is always taken from the database after any local-only writes.
+    const canonical = await fetchRemoteSet(resources);
+    for (const resource of resources) next[resourceStateName(resource)] = canonical[resource] || [];
     rebuildDerivedMembership(next);
+
     committing = true;
     try {
       replaceState(next);
       if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(next);
       writeBaseline(next, auth?.profile?.company_id);
-    } finally {
-      committing = false;
-    }
+    } finally { committing = false; }
 
     setMeta({ type: "initial-canonical-sync", status: "synced", changed, companyId: auth?.profile?.company_id || null });
     if (changed) scheduleRender();
     return changed;
   }
 
-  async function reconcileResource(resource, localRows, remoteRows, baselineRows, nextState) {
+  async function reconcileResource(resource, localRows, remoteRows, baselineRows, remoteTombstones, nextState) {
     const localMap = index(localRows);
     const remoteMap = index(remoteRows);
     const baselineMap = index(baselineRows);
+    const tombstones = resource === "orders" ? tombstoneMap(remoteTombstones) : new Map();
     const keys = new Set([...localMap.keys(), ...remoteMap.keys(), ...baselineMap.keys()]);
-    let changed = false;
+    for (const key of tombstones.keys()) keys.add(key);
+
+    const resolved = new Map();
     const localWrites = [];
     const deletes = [];
-    const resolved = new Map();
+    const tombstonesToRemove = [];
+    let changed = false;
 
     for (const key of keys) {
       const localRow = localMap.get(key);
       const remoteRow = remoteMap.get(key);
       const baselineRow = baselineMap.get(key);
+      const remoteTombstone = tombstones.get(key);
+      const remoteEffective = remoteRow || (remoteTombstone ? { ...remoteTombstone } : undefined);
       const localChanged = localRow !== undefined ? (!baselineRow || !rowsEqual(localRow, baselineRow)) : Boolean(baselineRow);
-      const remoteChanged = remoteRow !== undefined ? (!baselineRow || !rowsEqual(remoteRow, baselineRow)) : Boolean(baselineRow);
+      const remoteChanged = remoteEffective !== undefined ? (!baselineRow || !rowsEqual(remoteEffective, baselineRow)) : Boolean(baselineRow);
 
       let winner = "remote";
-
       if (localChanged && !remoteChanged) winner = localRow ? "local" : "delete-local";
       else if (!localChanged && remoteChanged) winner = remoteRow ? "remote" : "delete-local";
       else if (localChanged && remoteChanged) {
-        if (localRow && remoteRow) winner = chooseWinner(localRow, remoteRow);
+        if (localRow && remoteEffective) winner = chooseWinner(localRow, remoteEffective);
         else winner = localRow ? "local" : "delete-local";
-      } else if (localRow && !remoteRow && !baselineRow) winner = "local";
-      else if (!localRow && remoteRow && !baselineRow) winner = "remote";
-      else if (!localRow && !remoteRow) winner = "delete-local";
+      } else if (localRow && !remoteEffective && !baselineRow) winner = "local";
+      else if (!localRow && remoteEffective && !baselineRow) winner = remoteRow ? "remote" : "delete-local";
+      else if (!localRow && !remoteEffective) winner = "delete-local";
 
       if (winner === "local" && localRow) {
         localWrites.push(localRow);
         resolved.set(key, localRow);
+        if (remoteTombstone) tombstonesToRemove.push(remoteTombstone);
       } else if (winner === "remote" && remoteRow) {
         resolved.set(key, remoteRow);
-        if (localRow && !rowsEqual(localRow, remoteRow)) changed = true;
-        if (!localRow) changed = true;
+        if (!localRow || !rowsEqual(localRow, remoteRow)) changed = true;
       } else if (winner === "delete-local") {
         if (localRow) changed = true;
         if (remoteRow && baselineRow && !localRow && !remoteChanged) deletes.push({ resource, row: remoteRow });
+      } else if (winner === "remote" && remoteTombstone) {
+        if (localRow) changed = true;
       }
     }
 
@@ -399,31 +351,24 @@
       for (const item of deletes) {
         const tombstone = makeOrderTombstone(item.row);
         if (tombstone) {
-          try { await window.GVData.upsertResource("deleted_orders", [tombstone]); } catch (error) { console.warn("GotaVita order tombstone write:", error?.message || error); }
+          await window.GVData.upsertResource("deleted_orders", [tombstone]);
         }
+      }
+      for (const tombstone of tombstonesToRemove) {
+        try { await window.GVData.deleteResourceByLegacyId("deleted_orders", rawIdentity(tombstone)); } catch (_) {}
       }
     }
 
     for (const row of localWrites) {
-      try {
-        await window.GVData.upsertResource(resource, [row]);
-      } catch (error) {
-        throw new Error(`Sync write failed for ${resource}: ${error?.message || error}`);
-      }
+      await window.GVData.upsertResource(resource, [row]);
     }
 
     for (const item of deletes) {
-      try {
-        await deleteRemote(resource, item.row);
-      } catch (error) {
-        throw new Error(`Sync delete failed for ${resource}: ${error?.message || error}`);
-      }
+      const deleted = await deleteRemote(resource, item.row);
+      if (!deleted) throw new Error(`No deletion adapter for ${resource}.`);
     }
 
-    if (nextState) {
-      nextState[resourceStateName(resource)] = [...resolved.values()];
-    }
-
+    if (nextState) nextState[resourceStateName(resource)] = [...resolved.values()];
     return { changed, writes: localWrites.length, deletes: deletes.length };
   }
 
@@ -432,10 +377,7 @@
     if (inFlight) return inFlight;
     if (!navigator.onLine) return { ok: false, status: "offline" };
     if (!window.GVAuth?.isAuthorized?.()) return { ok: false, status: "unauthorized" };
-    if (interactionActive() && reason === "poll") {
-      deferredSync = true;
-      return { ok: false, status: "deferred-for-interaction" };
-    }
+    if (interactionActive() && reason === "poll") { deferredSync = true; return { ok: false, status: "deferred-for-interaction" }; }
 
     inFlight = (async () => {
       const auth = await requireManager();
@@ -447,7 +389,6 @@
 
       const current = stateSnapshot();
       if (!current) throw new Error("Application state snapshot is unavailable.");
-
       if (!readBaseline()?.savedAt) {
         await firstCanonicalSync(auth);
         return { ok: true, status: "initialized" };
@@ -459,16 +400,16 @@
       let writes = 0;
       let deletes = 0;
       const failures = [];
-      const fetched = await fetchRemoteSet(resources.concat(["deleted_orders"]));
+      const fetched = await fetchRemoteSet(resources);
+      const remoteTombstones = fetched.deleted_orders || [];
 
       for (const resource of resources) {
         const stateName = resourceStateName(resource);
         const localRows = Array.isArray(current[stateName]) ? current[stateName] : [];
         const baselineRows = Array.isArray(currentBaseline.state?.[stateName]) ? currentBaseline.state[stateName] : [];
         const remoteRows = Array.isArray(fetched[resource]) ? fetched[resource] : [];
-
         try {
-          const result = await reconcileResource(resource, localRows, remoteRows, baselineRows, nextState);
+          const result = await reconcileResource(resource, localRows, remoteRows, baselineRows, remoteTombstones, nextState);
           writes += result.writes;
           deletes += result.deletes;
           if (result.changed) stateChanged = true;
@@ -478,18 +419,16 @@
         }
       }
 
-      // Order deletions can be represented remotely by deleted_orders tombstones.
-      // Apply them only after the Order resource has been reconciled.
-      const remoteTombstones = Array.isArray(fetched.deleted_orders) ? fetched.deleted_orders : [];
-      if (remoteTombstones.length) {
-        const tombstoneTimes = new Map(remoteTombstones.map((row) => [String(row.legacy_id ?? row.id), rowTime(row)]));
-        nextState.orders = (Array.isArray(nextState.orders) ? nextState.orders : []).filter((order) => {
-          const tombstoneTime = tombstoneTimes.get(String(order?.legacy_id ?? order?.id));
-          return !(tombstoneTime && tombstoneTime >= rowTime(order));
-        });
-        nextState.deletedOrders = remoteTombstones;
+      // Always read back from Supabase after the write/reconciliation phase.
+      // The database response, not an in-memory guess, becomes the committed state.
+      const canonical = await fetchRemoteSet(resources);
+      for (const resource of resources) {
+        const stateName = resourceStateName(resource);
+        if (failures.some((item) => item.resource === resource)) nextState[stateName] = Array.isArray(current[stateName]) ? current[stateName] : [];
+        else nextState[stateName] = canonical[resource] || [];
       }
 
+      // Rebuild the application-facing relationship projections from canonical child rows.
       rebuildDerivedMembership(nextState);
 
       const companyId = auth?.profile?.company_id || null;
@@ -499,22 +438,10 @@
         replaceState(nextState);
         if (typeof window.writeLocalStateSnapshot === "function") window.writeLocalStateSnapshot(nextState);
         if (!failures.length) writeBaseline(nextState, companyId);
-      } finally {
-        committing = false;
-      }
+      } finally { committing = false; }
 
       const status = failures.length ? "partial" : "synced";
-      setMeta({
-        status,
-        reason,
-        companyId,
-        stateChanged,
-        writes,
-        deletes,
-        failures,
-        lastSyncAt: new Date().toISOString()
-      });
-
+      setMeta({ status, reason, companyId, stateChanged, writes, deletes, failures, lastSyncAt: new Date().toISOString() });
       if (stateChanged) scheduleRender();
       return { ok: failures.length === 0, status, stateChanged, writes, deletes, failures };
     })().catch((error) => {
@@ -546,9 +473,7 @@
     const original = window.persistState;
     window.persistState = function (...args) {
       const result = original.apply(this, args);
-      if (!committing && window.GVAuth?.isAuthorized?.()) {
-        setTimeout(() => flush("local-mutation").catch(() => {}), 0);
-      }
+      if (!committing && window.GVAuth?.isAuthorized?.()) setTimeout(() => flush("local-mutation").catch(() => {}), 0);
       return result;
     };
     localWriteHookInstalled = true;
@@ -562,9 +487,7 @@
       if (event?.detail?.authenticated === true) {
         schedule();
         flush("auth").catch(() => {});
-      } else {
-        stop();
-      }
+      } else stop();
     });
 
     window.addEventListener("online", () => flush("online").catch(() => {}));
@@ -573,7 +496,6 @@
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") flush("visible").catch(() => {});
     });
-
     document.addEventListener("focusout", () => {
       if (deferredSync && !interactionActive()) {
         deferredSync = false;
