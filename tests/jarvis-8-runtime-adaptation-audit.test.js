@@ -43,6 +43,7 @@ const registry = registryResources();
 const sync = read("js/core/sync-manager.js");
 const gateway = read("js/core/data-gateway.js");
 const status = read("js/core/sync-status.js");
+const runtimeActivation = read("js/core/sync-runtime-activation.js");
 
 for (const required of ["js/core/config.js", "js/core/data-gateway.js", "js/core/sync-manager.js", "script.js"]) {
   assert(exists(required), `runtime foundation missing: ${required}`);
@@ -60,6 +61,26 @@ assert(!/GVConflictIntegration/.test(sync), "legacy conflict engine remains in c
 assert(!/queueSyncResources/.test(sync), "legacy resource queue remains in canonical coordinator");
 assert(!/setInterval\(.*sync-status/i.test(status), "sync-status must not own synchronization scheduling");
 assert(/async function selectResource/.test(gateway) && /async function upsertResource/.test(gateway), "gateway CRUD boundary missing");
+
+assert(/coordinator:\s*"GVSync"/.test(runtimeActivation), "runtime activation must bind to GVSync");
+assert(/compatibilityOnly:\s*true/.test(runtimeActivation), "runtime activation must be compatibility-only");
+for (const legacy of [
+  "sync-cloud-write-reconciler",
+  "order-remote-pull-fix",
+  "order-write-boundary-bridge",
+  "sync-queue-authority",
+  "sync-authority",
+  "sync-auth-startup-bridge",
+  "sync-p0-auth-hydration",
+  "sync-p0-final-canonicalizer",
+  "sync-complete-runtime-repair",
+  "remote-canonical-field-bridge",
+  "group-membership-sync-bridge",
+  "realtime-channel-lifecycle-fix",
+  "sync-tombstone-legacy-id-bridge",
+  "order-delete-reconciliation-bridge",
+  "client-delete-bridge"
+]) assert(!runtimeActivation.includes(legacy), `runtime activation resurrects retired synchronization module: ${legacy}`);
 
 const mappingByState = {
   orderGroups: "order_groups", orderGroupItems: "order_group_items", deliveryRoutes: "delivery_routes",
@@ -108,7 +129,6 @@ const retired = [
   "js/core/sync-queue-authority.js",
   "js/core/sync-authority.js",
   "js/core/sync-auth-startup-bridge.js",
-  "js/core/sync-runtime-activation.js",
   "js/core/sync-p0-auth-hydration.js",
   "js/core/sync-p0-final-canonicalizer.js",
   "js/core/sync-complete-runtime-repair.js",
