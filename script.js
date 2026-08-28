@@ -8101,7 +8101,6 @@ if (!authorized) {
 
       initProductionHardening();
       installDuplicateOperationGuards();
-      installUIEventDelegation();
       installProfessionalPolish();
       installBulkSelectionUX();
       installSearchOptimization();
