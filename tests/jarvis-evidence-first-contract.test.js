@@ -15,8 +15,9 @@ assert(riskGate.includes("JARVIS 8.0 runtime adaptation audit"), "JARVIS 8 runti
 assert(riskGate.includes("JARVIS whole-app hardening contract"), "whole-app hardening gate missing");
 assert(riskGate.includes("node tests/ui-action-wiring-contract.test.js"), "high-risk path must validate UI action wiring");
 assert(riskGate.includes("node tests/canonical-sync-v2-simulation.test.js"), "high-risk path must run deterministic convergence simulation");
+assert(riskGate.includes("node tests/canonical-sync-v2-bootstrap-safety.test.js"), "high-risk path must run first-run bootstrap safety simulation");
 assert(riskGate.includes("Production deployment: NOT performed by this workflow"), "risk gate must never deploy production");
-assert(riskGate.includes("No \\\"optimized\\\" or \\\"fixed\\\" claim without concrete evidence") || riskGate.includes("concrete evidence"), "risk gate must retain evidence-first policy");
+assert(riskGate.includes("concrete evidence"), "risk gate must retain evidence-first policy");
 
 assert(preview.includes("Verify exact preview health"), "isolated preview must verify deployed release identity");
 assert(preview.includes("Real Browser A/B convergence test"), "isolated preview must execute the real browser convergence test");
@@ -28,6 +29,7 @@ assert(!integrity.includes("node --check js/core/conflict-resolution-integration
 
 assert(exists("tests/ui-action-wiring-contract.test.js"), "UI action contract file missing");
 assert(uiActions.includes("requiredHeaderControls"), "UI action contract lost required header controls");
+assert(exists("tests/canonical-sync-v2-bootstrap-safety.test.js"), "bootstrap safety simulation missing");
 assert(sync.includes("capturePendingLocalMutations"), "canonical mutation capture missing");
 assert(sync.includes("concurrentMutationDetected"), "concurrency protection missing");
 assert(sync.includes("applyCanonicalSnapshot"), "canonical state commit missing");
@@ -39,6 +41,7 @@ console.log(JSON.stringify({
   fullApplicationAudit: true,
   uiActionWiring: true,
   deterministicSyncSimulation: true,
+  firstRunBootstrapSafety: true,
   isolatedBrowserEvidence: true,
   releaseIdentityVerification: true,
   productionBlockedUntilEvidence: true,
