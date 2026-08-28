@@ -35,6 +35,8 @@ test('production safe UI interactions execute without browser errors', async ({ 
   for (const sub of ['completed', 'all', 'receivables', 'active']) {
     await page.locator(`[data-sub="${sub}"]`).click();
     await expect(page.locator(`#sub-${sub}`)).toBeVisible();
+    await expect(page.locator(`[data-sub="${sub}"]`)).toHaveAttribute('aria-selected', 'true');
+    expect(await page.locator('main .subpanel').filter({ has: page.locator('[aria-selected="true"]') }).count()).toBeGreaterThanOrEqual(0);
   }
   await page.locator('#orderDateFilter').selectOption('month');
   await page.locator('#orderDateFilter').selectOption('custom');
@@ -69,6 +71,7 @@ test('production safe UI interactions execute without browser errors', async ({ 
   for (const sub of ['top', 'containers', 'directory']) {
     await page.locator(`[data-client-sub="${sub}"]`).click();
     await expect(page.locator(`#client-sub-${sub}`)).toBeVisible();
+    await expect(page.locator(`[data-client-sub="${sub}"]`)).toHaveClass(/active/);
   }
   await page.locator('#clientGroupFilter').selectOption('Commercial');
   await page.locator('#clientGroupFilter').selectOption('');
@@ -108,10 +111,12 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await expect(page.locator('#sub-receivables')).toBeVisible();
   await page.locator('[data-tab="dashboard"]').click();
   await page.locator('[data-action="openPeriodReport"]').first().click();
-  await expect(page.locator('.modal:visible')).toHaveCount(1);
   const visibleModal = page.locator('.modal:visible').first();
+  await expect(visibleModal).toHaveCount(1);
   const close = visibleModal.locator('[data-action="closeModal"]').first();
-  if (await close.count()) await close.click();
+  await expect(close).toHaveCount(1);
+  await close.click();
+  await expect(visibleModal).toBeHidden();
   console.log('[UI interaction] dashboard modal paths PASS');
 
   await page.locator('[data-action="toggleDarkMode"]').click();
