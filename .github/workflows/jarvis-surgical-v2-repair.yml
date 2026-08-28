@@ -1,0 +1,70 @@
+name: JARVIS Surgical v2 Repair
+
+on:
+  push:
+    branches:
+      - fix/canonical-sync-v2
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message != 'ci: apply JARVIS surgical v2 repair'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply surgical coordinator fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/core/sync-manager.js')
+          text = path.read_text()
+
+          old = '''  async function fetchRemoteSet(resources) {\n    const results = {};\n    const failures = [];\n    await Promise.all(resources.map(async (resource) => {'''
+          new = '''  async function fetchRemoteSet(resources) {\n    const results = {};\n    const failures = [];\n    const uniqueResources = [...new Set(resources)];\n    await Promise.all(uniqueResources.map(async (resource) => {'''
+          if old not in text:
+              raise SystemExit('fetchRemoteSet pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''  async function executeMutation(entry, remoteRows, baseline) {\n    const remoteRow = rowMap(entry.resource, remoteRows).get(entry.key);\n    const previous = baselineRow(entry.resource, baseline, entry.key);'''
+          new = '''  function remoteOrderTombstone(remoteDeletedRows, key) {\n    return rowMap("deleted_orders", remoteDeletedRows).get(key);\n  }\n\n  async function executeMutation(entry, remoteRows, baseline, remoteDeletedRows = []) {\n    const remoteRow = rowMap(entry.resource, remoteRows).get(entry.key);\n    const previous = baselineRow(entry.resource, baseline, entry.key);\n    const remoteTombstone = entry.resource === "orders" ? remoteOrderTombstone(remoteDeletedRows, entry.key) : null;\n    if (remoteTombstone && rowTime(remoteTombstone) >= mutationTime(entry)) {\n      return { remoteWon: true, applied: false, remoteTombstone: true };\n    }'''
+          if old not in text:
+              raise SystemExit('executeMutation pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = 'executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline)'
+          new = 'executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline, remoteFirst.results["deleted_orders"] || [])'
+          if old not in text:
+              raise SystemExit('bootstrap executeMutation call not found')
+          text = text.replace(old, new, 1)
+
+          old = 'executeMutation(entry, remoteFirst.results[entry.resource] || [], baseline)'
+          new = 'executeMutation(entry, remoteFirst.results[entry.resource] || [], baseline, remoteFirst.results["deleted_orders"] || [])'
+          if old not in text:
+              raise SystemExit('flush executeMutation call not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          print('Applied JARVIS surgical v2 repair.')
+          PY
+
+      - name: Verify syntax and contracts
+        run: |
+          node --check js/core/sync-manager.js
+          node tests/canonical-sync-v2-simulation.test.js
+
+      - name: Commit repair and remove surgical workflow
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/jarvis-surgical-v2-repair.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/core/sync-manager.js .github/workflows/jarvis-surgical-v2-repair.yml
+          git diff --cached --quiet && { echo 'No surgical changes were needed.'; exit 0; }
+          git commit -m 'ci: apply JARVIS surgical v2 repair'
+          git push origin HEAD:fix/canonical-sync-v2
