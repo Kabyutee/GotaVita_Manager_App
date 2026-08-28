@@ -34,6 +34,9 @@ deferred application scripts have finished bootstrapping. */
       for (const src of MODULES) await load(src);
       if (window.__GV_APP_READY !== true) return;
       if (window.GVSync?.flush) await window.GVSync.flush();
+      if (window.GVOrderRemotePullFix?.pull) {
+        await window.GVOrderRemotePullFix.pull();
+      }
     } catch (error) {
       console.warn(
         "GotaVita canonical sync runtime activation:",
