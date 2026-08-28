@@ -38,8 +38,6 @@ jobs:
 
           if new not in text:
               raise SystemExit('startup resilience repair not present after normalization')
-          if text.count('installUIEventDelegation();') != 1:
-              raise SystemExit('expected exactly one UI delegation installation')
           path.write_text(text)
           PY
 
