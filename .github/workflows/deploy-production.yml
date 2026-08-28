@@ -11,7 +11,6 @@ permissions:
 
 concurrency:
   group: gotavita-production
-  # A newer main commit supersedes an older queued deployment.
   cancel-in-progress: true
 
 env:
@@ -97,17 +96,24 @@ jobs:
           exit 1
 
       - name: Prepare pinned Playwright runner
-        run: npx --yes @playwright/test@1.55.0 --version
+        run: |
+          set -euo pipefail
+          rm -rf .playwright-ci
+          mkdir -p .playwright-ci
+          printf '%s\n' '{"private":true}' > .playwright-ci/package.json
+          npm --prefix .playwright-ci install --no-save @playwright/test@1.55.0
+          .playwright-ci/node_modules/.bin/playwright --version
 
       - name: Install Playwright browser
-        run: npx --yes @playwright/test@1.55.0 install --with-deps chromium
+        run: .playwright-ci/node_modules/.bin/playwright install --with-deps chromium
 
       - name: Run production browser sync smoke
         env:
           GOTAVITA_PRODUCTION_URL: ${{ env.PRODUCTION_URL }}
           E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
           E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
-        run: npx --yes @playwright/test@1.55.0 test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
 
       - name: Upload production browser sync smoke report on failure
         if: failure()
