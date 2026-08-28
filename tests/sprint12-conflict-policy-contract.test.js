@@ -7,12 +7,14 @@ const gateway = fs.readFileSync("js/core/data-gateway.js", "utf8");
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /function localMutationWins\(entry, remoteRow\)/);
 assert.match(manager, /function mutationTime\(entry\)/);
-assert.match(manager, /function executeMutation\(entry, remoteRows, baseline\)/);
+assert.match(manager, /function executeMutation\(entry, remoteRows, baseline, remoteDeletedRows = \[\]\)/);
 assert.match(manager, /Always read back|finalRead|canonicalResult/);
 assert.match(manager, /function applyCanonicalSnapshot\(nextState, canonical\)/);
 assert.match(manager, /function saveBaseline\(state, companyId\)/);
 assert.match(manager, /window\.GVData\.upsertResource\(entry\.resource, \[clone\(entry\.row\)\]\)/);
 assert.match(manager, /concurrentMutationDetected/);
+assert.match(manager, /remoteTombstone/);
+assert.match(manager, /uniqueResources = \[\.\.\.new Set\(resources\)\]/);
 assert.doesNotMatch(manager, /GVConflictIntegration/);
 assert.doesNotMatch(manager, /gotavita_conflict_baseline_v1/);
 
