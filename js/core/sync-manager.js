@@ -62,6 +62,7 @@
   let initialized = false;
   let committing = false;
   let deferredSync = false;
+  let outboxSequence = 0;
 
   function clone(value) {
     if (value == null) return value;
@@ -88,6 +89,19 @@
       ...patch,
       updatedAt: new Date().toISOString()
     });
+  }
+
+  function createQueueId() {
+    try {
+      if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+      if (typeof crypto?.getRandomValues === "function") {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+      }
+    } catch (_) {}
+    outboxSequence += 1;
+    return `${Date.now().toString(36)}-${outboxSequence.toString(36)}`;
   }
 
   function stableJson(value) {
@@ -199,10 +213,10 @@
       const after = rowMap(resource, current?.[stateKey] || []);
       for (const [key, row] of after) {
         const old = before.get(key);
-        if (!old || !rowsEqual(resource, old, row)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "upsert", row: clone(row), createdAt: capturedAt, mutationAt: rowMutationTimestamp(row, capturedAt) });
+        if (!old || !rowsEqual(resource, old, row)) changes.push({ version: 2, id: createQueueId(), resource, key, operation: "upsert", row: clone(row), createdAt: capturedAt, mutationAt: rowMutationTimestamp(row, capturedAt) });
       }
       for (const [key, old] of before) {
-        if (!after.has(key)) changes.push({ version: 2, id: `${resource}:${key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, resource, key, operation: "delete", row: clone(old), createdAt: capturedAt, mutationAt: capturedAt });
+        if (!after.has(key)) changes.push({ version: 2, id: createQueueId(), resource, key, operation: "delete", row: clone(old), createdAt: capturedAt, mutationAt: capturedAt });
       }
     }
     return changes;
