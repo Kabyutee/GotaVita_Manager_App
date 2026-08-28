@@ -109,3 +109,11 @@ jobs:
           E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
           NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
         run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-full-ui-navigation-smoke.spec.js --reporter=line
+
+      - name: Full application UI interaction smoke
+        env:
+          GOTAVITA_PRODUCTION_URL: https://gotavita-manager-pr-${{ github.event.pull_request.number || 'manual' }}.carleugenetolentino22.workers.dev
+          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+          E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-full-ui-interaction-smoke.spec.js --reporter=line
