@@ -38,7 +38,7 @@ test('diagnose New Order navigation path', async ({ page }) => {
   await page.locator('[data-tab="neworder"]').click();
   await page.waitForTimeout(250);
 
-  const afterClick = await page.evaluate(() => {
+  const afterClickBase = await page.evaluate(() => {
     const panel = document.querySelector('#panel-neworder');
     const tab = document.querySelector('[data-tab="neworder"]');
     const form = document.querySelector('#orderForm');
@@ -55,12 +55,11 @@ test('diagnose New Order navigation path', async ({ page }) => {
       formDisplay: form ? getComputedStyle(form).display : null,
       formVisibility: form ? getComputedStyle(form).visibility : null,
       switchTabType: typeof window.switchTab,
-      inlinePanelStyle: panel?.getAttribute('style') || null,
-      browserErrors,
-      pageErrors
+      inlinePanelStyle: panel?.getAttribute('style') || null
     };
   });
 
+  const afterClick = { ...afterClickBase, browserErrors: browserErrors.slice(), pageErrors: pageErrors.slice() };
   let direct = null;
   if (!afterClick.panelActive || afterClick.panelAriaHidden !== 'false' || afterClick.formVisibility === 'hidden' || afterClick.formDisplay === 'none') {
     direct = await page.evaluate(() => {
