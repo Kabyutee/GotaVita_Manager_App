@@ -79,7 +79,14 @@ test('production safe UI interactions execute without browser errors', async ({ 
   await page.locator('#clientSort').selectOption('revenue-desc');
   await page.locator('#clientSearchInput').fill('zzzz-ui-smoke');
   await page.locator('#clientSearchInput').fill('');
-  await page.locator('[data-action="setContainerSort"]').selectOption('gallons');
+
+  const containersTab = page.locator('[data-client-sub="containers"]');
+  await containersTab.click();
+  await expect(page.locator('#client-sub-containers')).toBeVisible();
+  await expect(containersTab).toHaveClass(/active/);
+  const containerSort = page.locator('[data-action="setContainerSort"]');
+  await expect(containerSort).toBeVisible();
+  await containerSort.selectOption('gallons');
   await page.locator('[data-action="renderUncollectedContainers"]').click();
   console.log('[UI interaction] client subtabs/filters PASS');
 
