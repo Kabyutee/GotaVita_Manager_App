@@ -33,14 +33,17 @@ jobs:
              '''  function remoteOrderTombstone(remoteDeletedRows, key) {\n    return rowMap("deleted_orders", remoteDeletedRows).get(key);\n  }\n\n  async function executeMutation(entry, remoteRows, baseline, remoteDeletedRows = []) {\n    const remoteRow = rowMap(entry.resource, remoteRows).get(entry.key);\n    const previous = baselineRow(entry.resource, baseline, entry.key);\n    const remoteTombstone = entry.resource === "orders" ? remoteOrderTombstone(remoteDeletedRows, entry.key) : null;\n    if (remoteTombstone && rowTime(remoteTombstone) >= mutationTime(entry)) {\n      return { remoteWon: true, applied: false, remoteTombstone: true };\n    }'''),
             ('executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline)',
              'executeMutation(entry, remoteFirst.results[entry.resource] || [], bootstrapBaseline, remoteFirst.results["deleted_orders"] || [])'),
-            ('executeMutation(entry, remoteFirst.results[entry.resource] || [], baseline)',
-             'executeMutation(entry, remoteFirst.results[entry.resource] || [], baseline, remoteFirst.results["deleted_orders"] || [])')
+            ('executeMutation(entry, firstRead.results[entry.resource] || [], baseline)',
+             'executeMutation(entry, firstRead.results[entry.resource] || [], baseline, firstRead.results["deleted_orders"] || [])')
           ]
 
           for old, new in replacements:
-              if old not in text:
-                  raise SystemExit(f'Expected surgical pattern not found: {old[:80]}')
-              text = text.replace(old, new, 1)
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif new in text:
+                  continue
+              else:
+                  raise SystemExit(f'Expected surgical pattern not found: {old[:100]}')
 
           path.write_text(text)
           PY
