@@ -29,6 +29,9 @@ jobs:
       - name: Deterministic convergence simulation
         run: node tests/canonical-sync-v2-simulation.test.js
 
+      - name: First-run bootstrap safety simulation
+        run: node tests/canonical-sync-v2-bootstrap-safety.test.js
+
       - name: Existing sync contracts
         run: |
           node tests/phase4-cross-device-sync.test.js
