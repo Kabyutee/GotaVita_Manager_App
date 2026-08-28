@@ -52,7 +52,7 @@ assert(/async function sync\(/.test(gateway), "gateway transport hook missing");
 assert(/GV_RELEASE_SHA/.test(worker), "Worker release SHA endpoint missing");
 assert(/EXPECTED_SHA/.test(prodWorkflow), "production workflow lacks exact SHA verification");
 assert(/Production deployment: NOT performed/.test(riskGate), "risk gate must not deploy production");
-assert(/GVSync/.test(architectureContract), "architecture contract must explicitly enforce canonical GVSync authority");
-assert(/window\.GVSync\s*=\s*Object\.freeze/.test(architectureContract) || /canonical.*coordinator/i.test(architectureContract), "architecture contract must define a canonical coordinator");
+assert(/window\.GVSync\s*=\s*Object\.freeze/.test(architectureContract), "architecture contract must enforce the canonical GVSync authority");
+assert(/window\.syncChangedResources\s*=\s*\(reason\)\s*=>\s*window\.GVSync\.flush/.test(architectureContract), "architecture contract must enforce GVSync delegation");
 
 console.log("ANTI BIG BANG 5.0 system audit passed.");
