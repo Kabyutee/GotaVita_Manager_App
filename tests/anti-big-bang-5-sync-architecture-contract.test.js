@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
 const ui = fs.readFileSync("js/core/ui-bridge.js", "utf8");
 const worker = fs.readFileSync("worker.js", "utf8");
+const app = fs.readFileSync("script.js", "utf8");
 
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /const POLL_MS = 5000/);
@@ -13,7 +14,7 @@ assert.match(manager, /GVAuth\?\.isAuthorized/);
 assert.match(manager, /Always read back from Supabase after the write\/reconciliation phase/);
 assert.match(manager, /window\.GVSync\s*=\s*Object\.freeze/);
 assert.match(manager, /setInterval\(\(\) => flush\("poll"\)/);
-assert.match(manager, /window\.syncChangedResources\s*=\s*\(\) => window\.GVSync\.flush/);
+assert.match(manager, /window\.syncChangedResources\s*=\s*\(reason\) => window\.GVSync\.flush/);
 assert.match(manager, /window\.syncNow\s*=\s*\(\) => window\.GVSync\.flush/);
 
 assert.doesNotMatch(manager, /GVConflictIntegration/);
@@ -33,5 +34,13 @@ assert.doesNotMatch(worker, /sync-p0-auth-hydration/);
 assert.doesNotMatch(worker, /sync-complete-runtime-repair/);
 assert.doesNotMatch(worker, /sync-p0-final-canonicalizer/);
 assert.doesNotMatch(worker, /sync-queue-authority/);
+
+// Critical UI bootstrap must not depend on auth/network/sync initialization.
+const uiDelegationPosition = app.indexOf("installUIEventDelegation();");
+const authInitPosition = app.indexOf("await window.GVAuth.init();");
+assert(uiDelegationPosition >= 0, "critical UI delegation bootstrap missing");
+assert(authInitPosition >= 0, "authentication initialization boundary missing");
+assert(uiDelegationPosition < authInitPosition, "critical UI delegation must initialize before async auth initialization");
+assert.match(app, /try \{\s*initSyncReliability\(\);\s*\} catch \(error\)/, "sync reliability startup must be failure-isolated");
 
 console.log("ANTI BIG BANG 5.0 sync architecture contract: PASS");
