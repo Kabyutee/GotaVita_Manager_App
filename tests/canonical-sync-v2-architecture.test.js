@@ -6,6 +6,7 @@ const worker = fs.readFileSync("worker.js", "utf8");
 const manager = fs.readFileSync("js/core/sync-manager.js", "utf8");
 const ui = fs.readFileSync("js/core/ui-bridge.js", "utf8");
 const status = fs.readFileSync("js/core/sync-status.js", "utf8");
+const runtimeActivation = fs.readFileSync("js/core/sync-runtime-activation.js", "utf8");
 
 assert.match(manager, /gotavita_sync_baseline_v2/);
 assert.match(manager, /gotavita_sync_outbox_v2/);
@@ -45,6 +46,10 @@ assert.doesNotMatch(status, /setInterval\(/);
 assert.doesNotMatch(status, /GVData\.selectResource/);
 assert.doesNotMatch(status, /GVData\.upsertResource/);
 
+assert.match(runtimeActivation, /coordinator:\s*"GVSync"/);
+assert.match(runtimeActivation, /compatibilityOnly:\s*true/);
+assert.doesNotMatch(runtimeActivation, /sync-cloud-write-reconciler|order-remote-pull-fix|sync-queue-authority|sync-authority/);
+
 for (const file of [
   "sync-cloud-write-reconciler.js",
   "order-remote-pull-fix.js",
@@ -52,7 +57,6 @@ for (const file of [
   "sync-queue-authority.js",
   "sync-authority.js",
   "sync-auth-startup-bridge.js",
-  "sync-runtime-activation.js",
   "sync-p0-auth-hydration.js",
   "sync-p0-final-canonicalizer.js",
   "sync-complete-runtime-repair.js",
