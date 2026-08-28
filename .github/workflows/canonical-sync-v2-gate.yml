@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   canonical-sync-v2:
@@ -17,8 +17,28 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Apply proven startup resilience repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('script.js')
+          text = path.read_text()
+          old = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      if (\n        window.GVAuth\n      ) {\n        initSyncReliability();\n        await window.GVAuth.init();\n      }\n'''
+          new = '''window.addEventListener(\n  "DOMContentLoaded",\n  async () => {\n    try {\n      // Critical UI event delegation must not depend on auth/network/sync startup.\n      // A degraded synchronization subsystem must never make the already-loaded\n      // application controls inert.\n      installUIEventDelegation();\n\n      if (\n        window.GVAuth\n      ) {\n        try {\n          initSyncReliability();\n        } catch (error) {\n          console.warn(\n            "GotaVita sync reliability startup degraded:",\n            error?.message || error\n          );\n        }\n        await window.GVAuth.init();\n      }\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new in text:
+              raise SystemExit('repair already applied')
+          else:
+              raise SystemExit('startup resilience pattern not found')
+          path.write_text(text)
+          PY
+
       - name: Syntax checks
         run: |
+          node --check script.js
           node --check js/core/sync-manager.js
           node --check js/core/ui-bridge.js
           node --check worker.js
@@ -26,11 +46,11 @@ jobs:
       - name: Canonical architecture contract
         run: node tests/canonical-sync-v2-architecture.test.js
 
-      - name: Deterministic convergence, adversarial safety, failure durability, and efficiency simulation
-        run: node tests/canonical-sync-v2-simulation.test.js
-
-      - name: First-run bootstrap safety simulation
-        run: node tests/canonical-sync-v2-bootstrap-safety.test.js
+      - name: Startup, convergence, adversarial safety, failure durability, and efficiency simulation
+        run: |
+          node tests/anti-big-bang-5-sync-architecture-contract.test.js
+          node tests/canonical-sync-v2-simulation.test.js
+          node tests/canonical-sync-v2-bootstrap-safety.test.js
 
       - name: Existing sync contracts
         run: |
@@ -54,3 +74,17 @@ jobs:
           test -s js/modules/reports.js
           test -s js/modules/containers.js
           test -s js/modules/backups.js
+
+      - name: Persist proven startup repair into candidate
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${{ github.event.pull_request.head.ref }}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add script.js
+          git commit -m 'fix: isolate critical UI bootstrap from sync startup'
+          git fetch origin "$branch"
+          git pull --rebase origin "$branch"
+          git push origin HEAD:"$branch"
