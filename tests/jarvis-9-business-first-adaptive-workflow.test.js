@@ -41,8 +41,12 @@ if (changedApplicationText) {
   assert(!/localStorage\.clear\s*\(/.test(changedApplicationText),"PR introduces localStorage.clear(); existing records must remain available");
   assert(!/indexedDB\.deleteDatabase\s*\(/.test(changedApplicationText),"PR introduces IndexedDB deletion; existing records must remain available");
 }
-assert(/GVData|syncChangedResources|persistState/.test(sync+gateway+script),"sync/persistence boundary missing");
-assert(/hydrateFirstBaseline\(|integration\.run\(|renderRemoteState\(/.test(sync+script),"remote convergence/hydration boundary missing");
+assert(/gotavita_sync_baseline_v2/.test(sync),"canonical v2 baseline missing");
+assert(/gotavita_sync_outbox_v2/.test(sync),"durable mutation outbox missing");
+assert(/window\.GVSync\s*=\s*Object\.freeze/.test(sync),"canonical GVSync boundary missing");
+assert(/capturePendingLocalMutations|executeMutation|finalRead/.test(sync),"mutation/readback convergence boundary missing");
+assert(/startRealtime|requestRealtimeSync/.test(sync),"Realtime invalidation boundary missing");
+assert(!/GVConflictIntegration/.test(sync),"legacy conflict engine still owns canonical synchronization");
 assert(routes.length===3,"three daily L300 route slots are not represented");
 assert(scenarios.length===11,"business scenario registry incomplete");
 const summary={processor:"JARVIS 9.0",mode:"business-first adaptive workflow",changedFiles:changed.length,existingRecordProtection:"ENFORCED",dailyL300Routes:routes,protectedBusinessScenarios:scenarios,result:"PASS"};
