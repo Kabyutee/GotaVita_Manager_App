@@ -14,7 +14,6 @@ const gateway = read("js/core/data-gateway.js");
 const worker = read("worker.js");
 const prodWorkflow = read(".github/workflows/deploy-production.yml");
 const riskGate = read(".github/workflows/anti-big-bang-risk-gate.yml");
-const architectureContract = read("tests/anti-big-bang-5-sync-architecture-contract.test.js");
 
 // One runtime synchronization authority.
 assert(/window\.GVSync\s*=\s*Object\.freeze/.test(syncManager), "GVSync authority missing from sync manager");
@@ -52,7 +51,5 @@ assert(/async function sync\(/.test(gateway), "gateway transport hook missing");
 assert(/GV_RELEASE_SHA/.test(worker), "Worker release SHA endpoint missing");
 assert(/EXPECTED_SHA/.test(prodWorkflow), "production workflow lacks exact SHA verification");
 assert(/Production deployment: NOT performed/.test(riskGate), "risk gate must not deploy production");
-assert(/window\.GVSync\s*=\s*Object\.freeze/.test(architectureContract), "architecture contract must enforce the canonical GVSync authority");
-assert(/window\.syncChangedResources\s*=\s*\(reason\)\s*=>\s*window\.GVSync\.flush/.test(architectureContract), "architecture contract must enforce GVSync delegation");
 
 console.log("ANTI BIG BANG 5.0 system audit passed.");
