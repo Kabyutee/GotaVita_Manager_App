@@ -14,7 +14,7 @@ assert.match(manager, /executeMutation/);
 assert.match(manager, /const finalRead = await fetchRemoteSet\(\[\.\.\.resources, "deleted_orders"\]\)/);
 assert.match(manager, /replaceState\(nextState\)/);
 assert.match(manager, /saveBaseline\(nextState, auth\?\.profile\?\.company_id\)/);
-assert.match(manager, /applyOrderTombstones/);
+assert.match(manager, /applyCanonicalSnapshot/);
 assert.match(manager, /orderTombstone/);
 assert.match(manager, /deleted_orders/);
 assert.match(manager, /setInterval\(\(\) => flush\("poll"\)/);
