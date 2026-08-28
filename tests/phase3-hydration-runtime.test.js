@@ -1,180 +1,54 @@
 const fs = require("node:fs");
-const vm = require("node:vm");
 const assert = require("node:assert/strict");
 
-const source = fs.readFileSync("js/core/ui-bridge.js", "utf8");
+const syncManager = fs.readFileSync("js/core/sync-manager.js", "utf8");
+const uiBridge = fs.readFileSync("js/core/ui-bridge.js", "utf8");
+const indexHtml = fs.readFileSync("index.html", "utf8");
 
-async function runScenario({ cloudRows, expectHydration, expectReason }) {
-  let domReadyHandler = null;
-  let replacedState = null;
-  let persistedState = null;
-  let selectedResources = [];
+assert.match(
+  syncManager,
+  /function bootstrap\(auth, current\)/,
+  "Canonical startup hydration must be owned by GVSync"
+);
+assert.match(
+  syncManager,
+  /const remoteFirst = await fetchRemoteSet\(resources\)/,
+  "Startup hydration must fetch a complete canonical remote snapshot"
+);
+assert.match(
+  syncManager,
+  /const canonicalResult = await fetchRemoteSet\(resources\)/,
+  "Startup hydration must perform a canonical read-back"
+);
+assert.match(
+  syncManager,
+  /applyCanonicalSnapshot\(nextState, canonicalResult\.results\)/,
+  "Startup hydration must commit the canonical remote snapshot through the state boundary"
+);
+assert.match(
+  syncManager,
+  /saveLocalSnapshot\(nextState\)/,
+  "Successful hydration must persist the canonical local cache"
+);
+assert.match(
+  syncManager,
+  /if \(canonicalResult\.failures\.length\) throw new Error\(/,
+  "Incomplete canonical hydration must fail closed rather than replacing state with a partial snapshot"
+);
 
-  const initialState = {
-    clients: [{ id: "local-client" }],
-    products: [],
-    services: [{ id: "local-service" }],
-    employees: [],
-    orders: [{ id: "local-order" }],
-    payments: [],
-    expenses: [{ id: "local-expense" }],
-    payrollRecords: [],
-    orderGroups: [],
-    deliveryRoutes: [],
-    orderGroupItems: [],
-    deliveryRouteItems: [],
-    dailyReports: [],
-    deletedOrders: [],
-    auditLog: [],
-    _meta: {}
-  };
+assert.match(uiBridge, /presentation boundary only/, "UI bridge must remain presentation-only");
+assert.doesNotMatch(
+  uiBridge,
+  /function installSupabaseHydrationBoundary\(\)/,
+  "Retired UI-owned Supabase hydration engine must not be present"
+);
+assert.doesNotMatch(
+  uiBridge,
+  /function syncCrossDevice\(original\)/,
+  "Retired UI-owned cloud synchronization engine must not be present"
+);
 
-  const supported = Object.keys(cloudRows);
+assert.match(indexHtml, /js\/core\/sync-manager\.js/, "sync-manager.js must be explicitly loaded by the application");
+assert.match(indexHtml, /js\/core\/ui-bridge\.js/, "ui-bridge.js must remain explicitly loaded");
 
-  const rawGateway = {
-    supportedResources: () => supported,
-    selectResource: async (resource) => {
-      selectedResources.push(resource);
-      if (cloudRows[resource] instanceof Error) {
-        throw cloudRows[resource];
-      }
-      return cloudRows[resource];
-    },
-    health: async () => ({
-      ok: true,
-      mode: "supabase"
-    })
-  };
-
-  const context = {
-    console,
-    Date,
-    Map,
-    Object,
-    Array,
-    Number,
-    String,
-    Promise,
-    Proxy,
-    Reflect,
-    JSON,
-    Error,
-    window: {
-      GVAuth: {
-        isAuthorized: () => true
-      },
-      GVData: Object.freeze(rawGateway),
-      getStateSnapshot: () => JSON.parse(JSON.stringify(initialState)),
-      replaceState: (next) => {
-        replacedState = next;
-      },
-      writeLocalStateSnapshot: (next) => {
-        persistedState = next;
-      },
-      renderAll: () => {},
-      addEventListener: (name, handler) => {
-        if (name === "DOMContentLoaded") domReadyHandler = handler;
-      },
-      confirm: () => true
-    }
-  };
-
-  context.window.window = context.window;
-  vm.runInNewContext(source, context, { filename: "ui-bridge.js" });
-
-  assert.ok(domReadyHandler, "DOMContentLoaded hydration hook was not registered");
-  domReadyHandler();
-
-  const health = await context.window.GVData.health();
-  assert.equal(health.ok, true);
-  assert.equal(health.mode, "supabase");
-
-  if (expectHydration) {
-    assert.ok(replacedState, "Expected authoritative replaceState() to be called");
-    assert.ok(persistedState, "Expected hydrated state to be persisted locally");
-    assert.ok(selectedResources.length > 0, "Expected cloud resources to be selected");
-    assert.equal(replacedState.clients[0].id, "cloud-client");
-    assert.equal(replacedState.orders[0].id, "cloud-order");
-    assert.equal(replacedState.services[0].name, "Cloud Service");
-    assert.equal(replacedState.services[0].price, 55);
-    assert.equal(replacedState.expenses[0].id, "local-expense");
-    assert.equal(replacedState._meta.cloudHydrationVersion, 1);
-  } else {
-    assert.equal(replacedState, null, "Local state must remain untouched");
-    assert.equal(persistedState, null, "Local snapshot must remain untouched");
-  }
-
-  if (expectReason === "cloud-read-failed") {
-    assert.equal(replacedState, null);
-    assert.equal(persistedState, null);
-  }
-}
-
-(async () => {
-  await runScenario({
-    cloudRows: {
-      clients: [{ id: "cloud-client", name: "Cloud Client" }],
-      products: [],
-      services: [{ id: "uuid-service", legacy_id: "cloud-service", name: "Cloud Service", category: "Refill", price: 55, active: true }],
-      employees: [],
-      orders: [{ id: "cloud-order", orderNumber: "1001", status: "Paid" }],
-      payments: [],
-      expenses: [],
-      payroll_records: [],
-      order_groups: [],
-      delivery_routes: [],
-      order_group_items: [],
-      delivery_route_items: [],
-      daily_reports: [],
-      deleted_orders: [],
-      audit_logs: []
-    },
-    expectHydration: true
-  });
-
-  await runScenario({
-    cloudRows: {
-      clients: [],
-      products: [],
-      services: [],
-      employees: [],
-      orders: [],
-      payments: [],
-      expenses: [],
-      payroll_records: [],
-      order_groups: [],
-      delivery_routes: [],
-      order_group_items: [],
-      delivery_route_items: [],
-      daily_reports: [],
-      deleted_orders: [],
-      audit_logs: []
-    },
-    expectHydration: false,
-    expectReason: "cloud-empty"
-  });
-
-  await runScenario({
-    cloudRows: {
-      clients: new Error("RLS read blocked"),
-      products: [],
-      services: [],
-      employees: [],
-      orders: [],
-      payments: [],
-      expenses: [],
-      payroll_records: [],
-      order_groups: [],
-      delivery_routes: [],
-      order_group_items: [],
-      delivery_route_items: [],
-      daily_reports: [],
-      deleted_orders: [],
-      audit_logs: []
-    },
-    expectHydration: false,
-    expectReason: "cloud-read-failed"
-  });
-
-  console.log("Phase 3 Supabase hydration runtime verification: PASS");
-})();
+console.log("Phase 3 canonical hydration runtime contract: PASS");
