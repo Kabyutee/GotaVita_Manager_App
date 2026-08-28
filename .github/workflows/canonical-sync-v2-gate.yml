@@ -26,7 +26,7 @@ jobs:
       - name: Canonical architecture contract
         run: node tests/canonical-sync-v2-architecture.test.js
 
-      - name: Deterministic convergence simulation
+      - name: Deterministic convergence, adversarial safety, failure durability, and efficiency simulation
         run: node tests/canonical-sync-v2-simulation.test.js
 
       - name: First-run bootstrap safety simulation
