@@ -56,10 +56,42 @@
     (document.head || document.documentElement).appendChild(script);
   }
 
+  function loadRuntimeHardeningModules() {
+    const modules = [
+      ["application-lifecycle-guard", () => window.GVApplicationLifecycleGuard?.install?.()],
+      ["persist-resource-queue-bridge", null],
+      ["order-mutation-transaction-guard", null],
+      ["client-archive-sync-bridge", null],
+      ["employee-status-sync-bridge", null],
+      ["form-submit-delegation", null]
+    ];
+
+    const load = (name, callback) => new Promise((resolve) => {
+      if (document.querySelector(`script[data-gv-runtime-module="${name}"]`)) { resolve(); return; }
+      const script = document.createElement("script");
+      script.src = `/js/core/${name}.js`;
+      script.defer = false;
+      script.dataset.gvRuntimeModule = name;
+      script.onload = () => { try { callback?.(); } catch (_) {} resolve(); };
+      script.onerror = () => { console.warn(`GotaVita runtime module failed to load: ${name}`); resolve(); };
+      (document.head || document.documentElement).appendChild(script);
+    });
+
+    // These modules patch already-defined application handlers. Loading them
+    // sequentially after the application has booted makes their activation
+    // deterministic and prevents races between independent deferred scripts.
+    let chain = Promise.resolve();
+    for (const [name, callback] of modules) chain = chain.then(() => load(name, callback));
+    return chain;
+  }
+
   function run() { const result = diagnostics(); try { localStorage.setItem("gotavita_production_guard_last", JSON.stringify({ at: new Date().toISOString(), ok: result.ok, checks: result.checks })); } catch (_) {} return result; }
 
   window.GVConflictDetector = Object.freeze({ detect, resolveConflictPolicy, rowKey, rowUpdatedAt, rowDeletedAt, isDeleted, parseTime });
   window.GVProductionGuard = Object.freeze({ diagnostics, run, isLocal, cloudConfigured });
-  window.addEventListener("DOMContentLoaded", () => { try { loadClientDirectorySafety(); } catch (_) {} }, { once: true });
+  window.addEventListener("DOMContentLoaded", () => {
+    try { loadClientDirectorySafety(); } catch (_) {}
+    try { loadRuntimeHardeningModules(); } catch (error) { console.warn("GotaVita runtime hardening bootstrap failed:", error?.message || error); }
+  }, { once: true });
   window.addEventListener("load", () => { try { run(); } catch (_) {} }, { once: true });
 })();
