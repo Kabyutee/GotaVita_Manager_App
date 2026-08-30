@@ -20,6 +20,20 @@
   window.startSyncReliability = () => {};
   window.initSyncReliability = () => {};
 
+  // Compatibility-only bridge for older code that still reads window.state.
+  // This is a getter backed by the canonical snapshot boundary, so no second
+  // mutable application-state object is introduced and replacements remain visible.
+  try {
+    Object.defineProperty(window, "state", {
+      configurable: true,
+      enumerable: false,
+      get: () =>
+        typeof window.getStateSnapshot === "function"
+          ? window.getStateSnapshot()
+          : null
+    });
+  } catch (_) {}
+
   try {
     if (typeof window.stopSyncReliability === "function") {
       window.stopSyncReliability();
