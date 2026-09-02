@@ -48,6 +48,7 @@ jobs:
           node tests/sprint21-whole-sync-hardening-contract.test.js
           node tests/sprint22-complete-runtime-sync-repair.test.js
           node tests/ui-action-wiring-contract.test.js
+          node tests/order-status-consistency.test.js
 
       - name: Verify JavaScript syntax
         run: |
@@ -59,6 +60,7 @@ jobs:
           node --check js/core/application-lifecycle-guard.js
           node --check js/core/sync-status.js
           node --check js/modules/groups-routes.js
+          node --check js/modules/orders.js
           node --check js/modules/daily-l300-runs.js
           node --check worker.js
 
