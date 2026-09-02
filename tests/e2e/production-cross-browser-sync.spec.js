@@ -155,7 +155,7 @@ test('production Browser A/B order create-edit-status-delete convergence at stat
     await expect.poll(() => matching(a, edited).then(rows => rows[0]?.status), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Unpaid');
     await expect.poll(() => matching(a, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Out for Delivery');
     await expect.poll(() => remoteOrders(a, edited).then(rows => rows[0]?.status), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Unpaid');
-    await expect.poll(() => remoteOrders(a, edited).then(rows => rows[0]?.legacy_payload?.deliveryStatus), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Out for Delivery');
+    await expect.poll(() => remoteOrders(a, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Out for Delivery');
     await expect.poll(() => matching(b, edited).then(rows => rows[0]?.status), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Unpaid');
     await expect.poll(() => matching(b, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Out for Delivery');
     console.log('[Smoke] Paid -> Revert to Unpaid delivery/status consistency PASS');
