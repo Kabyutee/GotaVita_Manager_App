@@ -23,7 +23,6 @@ test('destructive actions abort before mutation when safety backup fails', async
     const appState = window.GVData.getState();
     const originalBackup = window.makeAutoBackup;
     const originalConfirm = window.requestConfirmation;
-    const nativeFileReader = window.FileReader;
 
     // Use in-memory-only records; this test must not touch production data.
     appState.expenses = [{ id: 'guard-expense', amount: 100, category: 'Test', employeeId: null }];
@@ -37,8 +36,8 @@ test('destructive actions abort before mutation when safety backup fails', async
       await window.deleteDailyReport('guard-report');
       await window.resetToSeed();
 
-      // importData() performs its destructive replacement inside a FileReader
-      // callback, so the safety boundary must remain active until onload runs.
+      // importData() validates first, then must create a verified safety backup
+      // before replacing application state with the uploaded payload.
       const importPayload = {
         clients: [],
         products: [],
@@ -64,9 +63,7 @@ test('destructive actions abort before mutation when safety backup fails', async
         reportStillPresent: appState.dailyReports.some((x) => x.id === 'guard-report'),
         guardLoaded: window.__GV_DESTRUCTIVE_SAFETY_GUARD__ === true,
         importDidNotReplaceState: appState.expenses.some((x) => x.id === 'guard-expense') &&
-          !appState.expenses.some((x) => x.id === 'imported-expense'),
-        fileReaderGuardInstalled: typeof window.FileReader === 'function' &&
-          window.FileReader.prototype === nativeFileReader.prototype
+          !appState.expenses.some((x) => x.id === 'imported-expense')
       };
     } finally {
       window.makeAutoBackup = originalBackup;
@@ -80,7 +77,6 @@ test('destructive actions abort before mutation when safety backup fails', async
     expenseStillPresent: true,
     reportStillPresent: true,
     guardLoaded: true,
-    importDidNotReplaceState: true,
-    fileReaderGuardInstalled: true
+    importDidNotReplaceState: true
   });
 });
