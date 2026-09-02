@@ -421,7 +421,5 @@ function updateOrderStatus(id, status) {
 
 
 function revertOrderToUnpaid(id) {
-  saveStateForUndo();
-  const o = state.orders.find((x) => x.id === id); if (o) o.status = "Unpaid";
-  persistState(); renderPartial("orders"); showToast("Reverted to unpaid.");
+  return updateOrderStatus(id, "Unpaid");
 }
