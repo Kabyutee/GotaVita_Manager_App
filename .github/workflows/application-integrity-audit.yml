@@ -23,9 +23,14 @@ jobs:
           node --check js/core/sync-manager.js
           node --check js/core/application-lifecycle-guard.js
           node --check js/core/sync-status.js
+          node --check js/core/canonical-runtime-alias-finalizer.js
+          node --check js/modules/groups-routes.js
 
       - name: Check application lifecycle and sync registry
         run: node tests/application-lifecycle-and-registry.test.js
 
       - name: Check whole-application UI action wiring
         run: node tests/ui-action-wiring-contract.test.js
+
+      - name: Check canonical group membership persistence
+        run: node tests/group-membership-canonical-persistence.test.js

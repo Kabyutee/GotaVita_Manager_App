@@ -115,6 +115,14 @@ jobs:
           NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
         run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-cross-browser-sync.spec.js --reporter=line
 
+      - name: Run production Group assignment smoke
+        env:
+          GOTAVITA_PRODUCTION_URL: ${{ env.PRODUCTION_URL }}
+          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
+          E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+          NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
+        run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-group-assignment-smoke.spec.js --reporter=line
+
       - name: Run full application UI navigation smoke
         env:
           GOTAVITA_PRODUCTION_URL: ${{ env.PRODUCTION_URL }}

@@ -116,7 +116,7 @@ function assignOrdersToGroup(orderIds, groupName) {
   state.orderGroups.forEach((g) => { g.orderIds = (g.orderIds || []).filter((x) => !orderIds.some((id) => idsEqual(x, id))); });
   let g = state.orderGroups.find((g) => String(g.name).toLowerCase() === String(groupName).toLowerCase());
   if (!g) { g = { id: newGroupLegacyId(), name: groupName, orderIds: [] }; state.orderGroups.push(g); }
-  const eligibleIds = orderIds.filter((id) => {
+  const eligibleIds = orderIds.map(String).filter((id) => {
     const order = state.orders.find(o => idsEqual(o.id, id));
     return order && order.status !== "Cancelled";
   });
@@ -126,7 +126,7 @@ function assignOrdersToGroup(orderIds, groupName) {
 }
 
 function openGroupPicker(orderIds) {
-  groupPickerOrderIds = orderIds;
+  groupPickerOrderIds = orderIds.map(String);
   const currentGroup = orderIds.length === 1 ? groupOf(orderIds[0]) : "";
   $("groupPickerTitle").textContent = orderIds.length === 1
     ? `Assign Order #${(state.orders.find((o) => o.id === orderIds[0]) || {}).orderNumber || ""} to Group`
@@ -136,7 +136,8 @@ function openGroupPicker(orderIds) {
   if (state.orderGroups.length) {
     html += state.orderGroups.map((g) => {
       const isCur = g.name === currentGroup;
-      return `<button class="gp-item-btn ${isCur ? "current" : ""}" type="button" data-action="assignOrdersToGroup" data-action-args='[[${orderIds.join(",")}],${jsAttrArg(g.name)}]'>
+      const args = JSON.stringify([groupPickerOrderIds, g.name]);
+      return `<button class="gp-item-btn ${isCur ? "current" : ""}" type="button" data-action="assignOrdersToGroup" data-action-args='${jsAttrArg(args)}'>
         <span>📦 ${esc(g.name)}</span>
         <small class="emp-meta">${(g.orderIds || []).length} orders ${isCur ? "(current)" : ""}</small>
       </button>`;
