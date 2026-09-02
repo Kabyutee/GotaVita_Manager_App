@@ -23,8 +23,9 @@ test('destructive actions abort before mutation when safety backup fails', async
     const appState = window.GVData.getState();
     const originalBackup = window.makeAutoBackup;
     const originalConfirm = window.requestConfirmation;
-    const originalFileReader = window.FileReader;
+    const nativeFileReader = window.FileReader;
 
+    // Use in-memory-only records; this test must not touch production data.
     appState.expenses = [{ id: 'guard-expense', amount: 100, category: 'Test', employeeId: null }];
     appState.dailyReports = [{ id: 'guard-report', type: 'Daily', date: new Date().toISOString(), revenue: 0, expense: 0, net: 0, note: 'guard' }];
 
@@ -64,12 +65,12 @@ test('destructive actions abort before mutation when safety backup fails', async
         guardLoaded: window.__GV_DESTRUCTIVE_SAFETY_GUARD__ === true,
         importDidNotReplaceState: appState.expenses.some((x) => x.id === 'guard-expense') &&
           !appState.expenses.some((x) => x.id === 'imported-expense'),
-        fileReaderRestored: window.FileReader === originalFileReader
+        fileReaderGuardInstalled: typeof window.FileReader === 'function' &&
+          window.FileReader.prototype === nativeFileReader.prototype
       };
     } finally {
       window.makeAutoBackup = originalBackup;
       window.requestConfirmation = originalConfirm;
-      window.FileReader = originalFileReader;
       appState.expenses = [];
       appState.dailyReports = [];
     }
@@ -80,6 +81,6 @@ test('destructive actions abort before mutation when safety backup fails', async
     reportStillPresent: true,
     guardLoaded: true,
     importDidNotReplaceState: true,
-    fileReaderRestored: true
+    fileReaderGuardInstalled: true
   });
 });
