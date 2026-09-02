@@ -14,19 +14,26 @@
         throw new Error("Safety backup service is unavailable; destructive action blocked.");
       }
 
-      // These handlers already perform their own confirmation. We wrap the
-      // backup primitive so a failed safety backup becomes a hard stop.
+      // These handlers already perform their own confirmation and call
+      // makeAutoBackup(false) immediately before mutating state. Turn a backup
+      // failure into a thrown exception at that exact boundary so mutation
+      // cannot continue.
       const nativeBackup = window.makeAutoBackup;
-      let backupFailed = false;
       window.makeAutoBackup = function (...backupArgs) {
         const result = nativeBackup.apply(this, backupArgs);
-        if (result === false) backupFailed = true;
+        if (result === false) {
+          throw new Error("Safety backup could not be created; destructive action cancelled.");
+        }
         return result;
       };
 
       try {
-        const result = await original.apply(this, args);
-        return backupFailed ? undefined : result;
+        return await original.apply(this, args);
+      } catch (error) {
+        if (typeof window.showToast === "function" && /Safety backup could not be created|Safety backup service is unavailable/.test(String(error?.message || ""))) {
+          window.showToast(String(error.message), "error");
+        }
+        return undefined;
       } finally {
         window.makeAutoBackup = nativeBackup;
       }
