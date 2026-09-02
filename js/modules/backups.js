@@ -124,7 +124,10 @@ function importData(e) {
       const s = checked.summary;
       if (await requestConfirmation({title:"Import validated data", message:"Overwrite the current data with this validated backup?", details:`Clients: ${s.clients}\nProducts: ${s.products}\nOrders: ${s.orders}\nExpenses: ${s.expenses}\nEmployees: ${s.employees}\nGroups: ${s.groups}\n\nA safety backup will be created first.`, confirmLabel:"Import Data", tone:"warning"})) {
         saveStateForUndo();
-        makeAutoBackup(false);
+        if (!makeAutoBackup(false)) {
+          showToast("Import cancelled: safety backup could not be created.", "error");
+          return;
+        }
         replaceState(checked.data);
         audit("import", "system", "", { source: file.name, summary: s, integrity: checked.integrity });
         persistState();

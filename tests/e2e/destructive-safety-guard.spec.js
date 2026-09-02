@@ -34,10 +34,36 @@ test('destructive actions abort before mutation when safety backup fails', async
     try {
       await window.deleteExpense('guard-expense');
       await window.deleteDailyReport('guard-report');
+      await window.resetToSeed();
+
+      // importData() validates first, then must create a verified safety backup
+      // before replacing application state with the uploaded payload.
+      const importPayload = {
+        clients: [],
+        products: [],
+        orders: [],
+        expenses: [{ id: 'imported-expense', amount: 1, category: 'Imported', employeeId: null }],
+        employees: [],
+        orderGroups: [],
+        dailyReports: []
+      };
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      const file = new File([JSON.stringify(importPayload)], 'guard-import.json', { type: 'application/json' });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files = transfer.files;
+      document.body.appendChild(fileInput);
+      window.importData({ target: fileInput });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      fileInput.remove();
+
       return {
         expenseStillPresent: appState.expenses.some((x) => x.id === 'guard-expense'),
         reportStillPresent: appState.dailyReports.some((x) => x.id === 'guard-report'),
-        guardLoaded: window.__GV_DESTRUCTIVE_SAFETY_GUARD__ === true
+        guardLoaded: window.__GV_DESTRUCTIVE_SAFETY_GUARD__ === true,
+        importDidNotReplaceState: appState.expenses.some((x) => x.id === 'guard-expense') &&
+          !appState.expenses.some((x) => x.id === 'imported-expense')
       };
     } finally {
       window.makeAutoBackup = originalBackup;
@@ -50,6 +76,7 @@ test('destructive actions abort before mutation when safety backup fails', async
   expect(result).toEqual({
     expenseStillPresent: true,
     reportStillPresent: true,
-    guardLoaded: true
+    guardLoaded: true,
+    importDidNotReplaceState: true
   });
 });
