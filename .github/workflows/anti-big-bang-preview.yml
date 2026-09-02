@@ -33,7 +33,7 @@ jobs:
           echo "sha=$candidate" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
@@ -59,7 +59,7 @@ jobs:
         run: .playwright-ci/node_modules/.bin/playwright install --with-deps chromium
 
       - name: Deploy isolated candidate Worker
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
