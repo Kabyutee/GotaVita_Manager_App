@@ -64,7 +64,7 @@ jobs:
           deployment=false
           workflow=false
           architecture=false
-          full_audit=true
+          full_audit=false
 
           for file in "${files[@]}"; do
             case "$file" in
@@ -83,6 +83,9 @@ jobs:
                 ;;
               *.html|*.css|js/modules/*)
                 ui=true
+                ;;
+              *)
+                full_audit=true
                 ;;
             esac
           done
@@ -103,10 +106,10 @@ jobs:
             echo "deployment=$deployment"
             echo "workflow=$workflow"
             echo "architecture=$architecture"
-            echo "full_audit=true"
+            echo "full_audit=$full_audit"
           } >> "$GITHUB_OUTPUT"
 
-          echo "JARVIS evidence-first + JARVIS 9.0 + JARVIS 7.0 + JARVIS 8.0 + ANTI BIG BANG 6.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture full_audit=true"
+          echo "JARVIS evidence-first + JARVIS 9.0 + JARVIS 7.0 + JARVIS 8.0 + ANTI BIG BANG 6.0 risk=$risk ui=$ui sync=$sync data=$data deployment=$deployment workflow=$workflow architecture=$architecture full_audit=$full_audit"
 
       - name: Low-risk fast gate
         if: steps.risk.outputs.risk == 'low'
