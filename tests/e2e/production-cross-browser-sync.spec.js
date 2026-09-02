@@ -138,8 +138,6 @@ test('production Browser A/B order create-edit-status-delete convergence at stat
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] edit A + remote canonical + B state PASS');
 
-    // Exercise the real Paid -> Revert to Unpaid UI path. The Revert action
-    // must also reset deliveryStatus from Delivered back to Out for Delivery.
     await a.locator('[data-tab="orderlog"]').click();
     await a.locator('[data-sub="all"]').click();
     const allRow = a.locator('#allOrdersTableBody tr').filter({ hasText: edited }).first();
