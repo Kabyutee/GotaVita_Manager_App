@@ -43,6 +43,33 @@ async function remoteDeletedOrders(page, marker) {
   }, marker);
 }
 
+async function cleanupCreatedOrder(page, orderId, marker) {
+  if (!orderId) return;
+  try {
+    const live = await matching(page, marker);
+    if (live.some((row) => String(row?.id) === String(orderId))) {
+      await page.locator('[data-tab="orderlog"]').click();
+      await page.locator('[data-sub="all"]').click();
+      await page.evaluate((id) => { void window.deleteOrder(id); }, orderId);
+      await expect(page.locator('#confirmModal')).toBeVisible({ timeout: 10000 });
+      await page.locator('#confirmModalAccept').click();
+      await expect(page.locator('#confirmModal')).toBeHidden({ timeout: 10000 });
+    }
+
+    await expect.poll(() => remoteOrders(page, marker).then(rows => rows.filter((row) => String(row?.id) === String(orderId)).length), {
+      timeout: 30000,
+      intervals: [1000, 2000, 3000]
+    }).toBe(0);
+
+    await expect.poll(() => remoteDeletedOrders(page, marker).then(rows => rows.length), {
+      timeout: 30000,
+      intervals: [1000, 2000, 3000]
+    }).toBeGreaterThan(0);
+  } catch (error) {
+    console.warn('[Smoke] production order cleanup failed:', error?.message || error);
+  }
+}
+
 test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
   test.setTimeout(180000);
   const contextA = await browser.newContext();
@@ -51,6 +78,7 @@ test('production Browser A/B order create-edit-delete convergence at state bound
   const b = await contextB.newPage();
   const marker = `E2E-SYNC-${Date.now()}`;
   const edited = `${marker}-EDITED`;
+  let createdOrderId = null;
 
   a.on('dialog', dialog => dialog.accept());
   b.on('dialog', dialog => dialog.accept());
@@ -88,6 +116,7 @@ test('production Browser A/B order create-edit-delete convergence at state bound
 
     await expect.poll(() => matching(a, marker).then(rows => rows.length), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe(1);
     const created = (await matching(a, marker))[0];
+    createdOrderId = created.id;
     expect(created?.id).toBeTruthy();
     expect(created?.orderNumber).toBeTruthy();
     await expect.poll(() => remoteOrders(a, marker).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
@@ -109,8 +138,6 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] edit A + remote canonical + B state PASS');
 
-    // deleteOrder intentionally waits for the application's custom confirmation modal.
-    // Start it without awaiting so Playwright can confirm the real UI action.
     await a.evaluate((id) => { void window.deleteOrder(id); }, created.id);
     await expect(a.locator('#confirmModal')).toBeVisible();
     await expect(a.locator('#confirmModalAccept')).toBeVisible();
@@ -122,6 +149,7 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
     console.log('[Smoke] delete A + remote tombstone + B convergence PASS');
   } finally {
+    await cleanupCreatedOrder(a, createdOrderId, marker);
     await Promise.allSettled([contextA.close(), contextB.close()]);
   }
 });
