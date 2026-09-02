@@ -134,7 +134,7 @@ jobs:
       - name: Run safe full application UI interaction smoke
         env:
           GOTAVITA_PRODUCTION_URL: ${{ env.PRODUCTION_URL }}
-          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_PASSWORD }}
+          E2E_MANAGER_EMAIL: ${{ secrets.E2E_MANAGER_EMAIL }}
           E2E_MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
           NODE_PATH: ${{ github.workspace }}/.playwright-ci/node_modules
         run: .playwright-ci/node_modules/.bin/playwright test tests/e2e/production-full-ui-interaction-smoke.spec.js --reporter=line
