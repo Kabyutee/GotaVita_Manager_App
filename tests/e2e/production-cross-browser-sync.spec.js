@@ -39,7 +39,7 @@ async function remoteOrders(page, marker) {
 async function remoteDeletedOrders(page, marker) {
   return page.evaluate(async (needle) => {
     const rows = await window.GVData.selectResource('deleted_orders');
-    return rows.filter(o => String(o?.legacy_payload?.address || '').includes(needle) || String(o?.legacy_id || '') === String(needle));
+    return rows.filter(o => String(o?.address || '').includes(needle) || String(o?.notes || '').includes(needle) || String(o?.legacy_payload?.address || '').includes(needle));
   }, marker);
 }
 
@@ -70,7 +70,7 @@ async function cleanupCreatedOrder(page, orderId, marker) {
   }
 }
 
-test('production Browser A/B order create-edit-delete convergence at state boundary', async ({ browser }) => {
+test('production Browser A/B order create-edit-status-delete convergence at state boundary', async ({ browser }) => {
   test.setTimeout(180000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -137,6 +137,28 @@ test('production Browser A/B order create-edit-delete convergence at state bound
     expect((await remoteOrders(a, edited))[0]?.updatedAt).toBeTruthy();
     await expect.poll(() => matching(b, edited).then(rows => rows.length), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(1);
     console.log('[Smoke] edit A + remote canonical + B state PASS');
+
+    // Exercise the real Paid -> Revert to Unpaid UI path. The Revert action
+    // must also reset deliveryStatus from Delivered back to Out for Delivery.
+    await a.locator('[data-tab="orderlog"]').click();
+    await a.locator('[data-sub="all"]').click();
+    const allRow = a.locator('#allOrdersTableBody tr').filter({ hasText: edited }).first();
+    await expect(allRow).toBeVisible();
+    await allRow.locator('[data-action="updateOrderStatus"]').click();
+    await expect.poll(() => matching(a, edited).then(rows => rows[0]?.status), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Paid');
+    await expect.poll(() => matching(a, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Delivered');
+
+    await a.locator('[data-sub="completed"]').click();
+    const completedRow = a.locator('#billingTableBody tr').filter({ hasText: edited }).first();
+    await expect(completedRow).toBeVisible();
+    await completedRow.locator('[data-action="revertOrderToUnpaid"]').click();
+    await expect.poll(() => matching(a, edited).then(rows => rows[0]?.status), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Unpaid');
+    await expect.poll(() => matching(a, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 20000, intervals: [500, 1000, 2000] }).toBe('Out for Delivery');
+    await expect.poll(() => remoteOrders(a, edited).then(rows => rows[0]?.status), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Unpaid');
+    await expect.poll(() => remoteOrders(a, edited).then(rows => rows[0]?.legacy_payload?.deliveryStatus), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Out for Delivery');
+    await expect.poll(() => matching(b, edited).then(rows => rows[0]?.status), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Unpaid');
+    await expect.poll(() => matching(b, edited).then(rows => rows[0]?.deliveryStatus), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe('Out for Delivery');
+    console.log('[Smoke] Paid -> Revert to Unpaid delivery/status consistency PASS');
 
     await a.evaluate((id) => { void window.deleteOrder(id); }, created.id);
     await expect(a.locator('#confirmModal')).toBeVisible();
