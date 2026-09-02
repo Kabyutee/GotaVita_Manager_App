@@ -11,7 +11,8 @@ assert.match(groups, /function assignOrdersToGroup\s*\(/, "Group assignment hand
 assert.match(groups, /function removeOrderFromGroup\s*\(/, "Single-order group removal handler must exist.");
 assert.match(groups, /function removeSelectedFromGroup\s*\(/, "Selected-order group removal handler must exist.");
 assert.match(groups, /editOrderGroup/, "Existing-order group editing must expose a delivery-group selector.");
-assert.match(groups, /JSON\.stringify\(\[groupPickerOrderIds, g\.name\]\)/, "Group picker arguments must be serialized as valid JSON.");
+assert.ok(groups.includes("const args = [groupPickerOrderIds, g.name];"), "Group picker arguments must remain an array before attribute encoding.");
+assert.ok(groups.includes("data-action-args='${jsAttrArg(args)}'"), "Group picker arguments must use the shared JSON-safe attribute encoder.");
 
 assert.match(finalizer, /function reconcileGroupMembershipForPersistence\s*\(/, "Canonical persistence must reconcile derived group membership.");
 assert.match(finalizer, /orderGroupItems/, "Canonical persistence guard must operate on order_group_items state.");

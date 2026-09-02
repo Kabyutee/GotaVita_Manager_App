@@ -136,7 +136,7 @@ function openGroupPicker(orderIds) {
   if (state.orderGroups.length) {
     html += state.orderGroups.map((g) => {
       const isCur = g.name === currentGroup;
-      const args = JSON.stringify([groupPickerOrderIds, g.name]);
+      const args = [groupPickerOrderIds, g.name];
       return `<button class="gp-item-btn ${isCur ? "current" : ""}" type="button" data-action="assignOrdersToGroup" data-action-args='${jsAttrArg(args)}'>
         <span>📦 ${esc(g.name)}</span>
         <small class="emp-meta">${(g.orderIds || []).length} orders ${isCur ? "(current)" : ""}</small>

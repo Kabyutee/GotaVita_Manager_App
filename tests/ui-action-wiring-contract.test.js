@@ -74,6 +74,19 @@ while ((match = argRe.exec(index))) {
 }
 assert.deepEqual(malformedArgs, [], `Malformed data-action-args: ${JSON.stringify(malformedArgs)}`);
 
+// Guard against the double-stringified argument shape that breaks runtime dispatch.
+const groupsRoutes = fs.readFileSync(path.join(root, "js/modules/groups-routes.js"), "utf8");
+assert.doesNotMatch(
+  groupsRoutes,
+  /const\s+args\s*=\s*JSON\.stringify\(\[groupPickerOrderIds,\s*g\.name\]\)/,
+  "Group Picker action arguments must remain an array before jsAttrArg encoding."
+);
+assert.match(
+  groupsRoutes,
+  /const\s+args\s*=\s*\[groupPickerOrderIds,\s*g\.name\]/,
+  "Group Picker action arguments must be passed to jsAttrArg as an array."
+);
+
 const requiredHeaderControls = ["syncNow", "undoLastAction", "toggleDarkMode"];
 for (const action of requiredHeaderControls) {
   assert.ok(actions.has(action), `Missing required header action declaration: ${action}`);
