@@ -25,6 +25,7 @@ jobs:
           node --check js/core/sync-status.js
           node --check js/core/canonical-runtime-alias-finalizer.js
           node --check js/modules/groups-routes.js
+          node --check js/modules/orders.js
 
       - name: Check application lifecycle and sync registry
         run: node tests/application-lifecycle-and-registry.test.js
@@ -34,3 +35,6 @@ jobs:
 
       - name: Check canonical group membership persistence
         run: node tests/group-membership-canonical-persistence.test.js
+
+      - name: Check order status consistency
+        run: node tests/order-status-consistency.test.js
