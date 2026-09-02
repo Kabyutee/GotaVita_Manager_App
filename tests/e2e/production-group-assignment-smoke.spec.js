@@ -44,6 +44,45 @@ async function clickDisbandGroup(page, groupName) {
   await expect(page.locator('.group-card').filter({ hasText: groupName })).toHaveCount(0);
 }
 
+async function cleanupTemporaryGroup(page, groupName) {
+  if (!groupName) return;
+  try {
+    await page.locator('[data-tab="groups"]').click();
+    const card = page.locator('.group-card').filter({ hasText: groupName }).first();
+    if (await card.count()) {
+      await clickDisbandGroup(page, groupName);
+    }
+    await expect.poll(() => page.evaluate(async (name) => {
+      const groups = await window.GVData.selectResource('order_groups');
+      return groups.filter((row) => String(row?.name || '') === String(name)).length;
+    }, groupName), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
+  } catch (error) {
+    console.warn('[Group Smoke] production group cleanup failed:', groupName, error?.message || error);
+  }
+}
+
+async function cleanupTemporaryOrder(page, orderId, marker) {
+  if (!orderId) return;
+  try {
+    const state = await snapshot(page);
+    if (state?.orders?.some((o) => String(o.id) === String(orderId))) {
+      await page.locator('[data-tab="orderlog"]').click();
+      await page.locator('[data-sub="all"]').click();
+      await page.evaluate((id) => { void window.deleteOrder(id); }, orderId);
+      await expect(page.locator('#confirmModal')).toBeVisible({ timeout: 10000 });
+      await page.locator('#confirmModalAccept').click();
+      await expect(page.locator('#confirmModal')).toBeHidden({ timeout: 10000 });
+    }
+
+    await expect.poll(() => page.evaluate(async (needle) => {
+      const rows = await window.GVData.selectResource('orders');
+      return rows.filter((o) => String(o?.address || '').includes(needle) || String(o?.notes || '').includes(needle)).length;
+    }, marker), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
+  } catch (error) {
+    console.warn('[Group Smoke] production order cleanup failed:', error?.message || error);
+  }
+}
+
 test('production Group assignment, edit/reassign, and manager membership persistence', async ({ page }) => {
   test.setTimeout(180000);
   const pageErrors = [];
@@ -57,7 +96,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
   try {
     await login(page);
 
-    // Create two temporary groups through the real Routes/Groups UI.
     await page.locator('[data-tab="groups"]').click();
     await expect(page.locator('#panel-groups')).toBeVisible();
     await page.locator('#newGroupName').fill(groupA);
@@ -67,7 +105,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
     await page.locator('[data-action="createGroup"]').click();
     await expect(page.locator('.group-card').filter({ hasText: groupB })).toBeVisible();
 
-    // Create one disposable real order for membership testing.
     await page.locator('[data-tab="neworder"]').click();
     await expect(page.locator('#orderForm')).toBeVisible();
     await expect.poll(() => page.locator('#clientSelect option').count(), { timeout: 30000 }).toBeGreaterThan(1);
@@ -87,7 +124,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
     expect(orderId).toBeTruthy();
     console.log('[Group Smoke] disposable order created', { orderNumber: created.orderNumber });
 
-    // Use the real bulk Group picker. This exercises dynamic data-action-args serialization.
     await page.locator('[data-tab="orderlog"]').click();
     await page.locator('[data-sub="all"]').click();
     await expect(page.locator(`.all-order-checkbox[value="${orderId}"]`)).toBeVisible();
@@ -105,7 +141,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
     await expect.poll(() => remoteGroupMembership(page, groupA, orderId).then((x) => Boolean(x.item)), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBeTruthy();
     console.log('[Group Smoke] assign via picker + local child row + remote child row PASS');
 
-    // Edit the order and move it to a second group through the injected group selector.
     await page.evaluate((id) => window.openOrderEditor(id), orderId);
     await expect(page.locator('#orderEditModal')).toBeVisible();
     await expect(page.locator('#editOrderGroup')).toBeVisible();
@@ -124,7 +159,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
     await expect.poll(() => remoteGroupMembership(page, groupB, orderId).then((x) => Boolean(x.item)), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBeTruthy();
     console.log('[Group Smoke] edit/reassign + remote membership move PASS');
 
-    // Use Manage Orders to remove the order from the second group.
     await page.locator('[data-tab="groups"]').click();
     const groupBCard = page.locator('.group-card').filter({ hasText: groupB }).first();
     await groupBCard.locator('[data-action="openGroupManager"]').click();
@@ -142,7 +176,6 @@ test('production Group assignment, edit/reassign, and manager membership persist
     await expect.poll(() => remoteGroupMembership(page, groupB, orderId).then((x) => Boolean(x.item)), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBeFalsy();
     console.log('[Group Smoke] Manage Orders removal + remote deletion PASS');
 
-    // Delete the temporary order through the real destructive workflow.
     await page.locator('[data-tab="orderlog"]').click();
     await page.locator('[data-sub="all"]').click();
     await page.evaluate((id) => { void window.deleteOrder(id); }, orderId);
@@ -150,9 +183,12 @@ test('production Group assignment, edit/reassign, and manager membership persist
     await page.locator('#confirmModalAccept').click();
     await expect(page.locator('#confirmModal')).toBeHidden();
     await expect.poll(() => snapshot(page).then((s) => (s?.orders || []).some((o) => String(o.id) === String(orderId))), { timeout: 30000, intervals: [500, 1000, 2000] }).toBeFalsy();
+    await expect.poll(() => page.evaluate(async (needle) => {
+      const rows = await window.GVData.selectResource('orders');
+      return rows.filter((o) => String(o?.address || '').includes(needle) || String(o?.notes || '').includes(needle)).length;
+    }, marker), { timeout: 30000, intervals: [1000, 2000, 3000] }).toBe(0);
     console.log('[Group Smoke] temporary order cleanup PASS');
 
-    // Remove the temporary groups through the real Groups UI.
     await page.locator('[data-tab="groups"]').click();
     await clickDisbandGroup(page, groupA);
     await clickDisbandGroup(page, groupB);
@@ -167,14 +203,8 @@ test('production Group assignment, edit/reassign, and manager membership persist
 
     expect(pageErrors, `Unexpected browser page errors: ${pageErrors.join(' | ')}`).toEqual([]);
   } finally {
-    if (orderId) {
-      try {
-        const state = await snapshot(page);
-        if (state?.orders?.some((o) => String(o.id) === String(orderId))) {
-          await page.evaluate((id) => { void window.deleteOrder(id); }, orderId);
-          if (await page.locator('#confirmModal').isVisible().catch(() => false)) await page.locator('#confirmModalAccept').click();
-        }
-      } catch (_) {}
-    }
+    await cleanupTemporaryOrder(page, orderId, marker);
+    await cleanupTemporaryGroup(page, groupA);
+    await cleanupTemporaryGroup(page, groupB);
   }
 });
