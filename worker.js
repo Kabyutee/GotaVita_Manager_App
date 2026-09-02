@@ -1,9 +1,5 @@
 /**
  * GotaVita Manager — Cloudflare Workers static asset entry point.
- *
- * The Worker serves the exact application dependency graph committed in the
- * repository. Synchronization is application code, not Worker-side HTML
- * injection. This keeps production behavior identical to preview/source.
  */
 
 function jsonResponse(payload, status = 200) {
@@ -63,21 +59,23 @@ function bustLocalScriptUrls(html, releaseSha) {
   );
 }
 
+function injectSafetyGuard(html, releaseSha) {
+  const version = encodeURIComponent(String(releaseSha || "unknown").trim() || "unknown");
+  const tag = `<script src="/js/core/destructive-safety-guard.js?gv_release=${version}" defer></script>`;
+  return html.includes("destructive-safety-guard.js") ? html : html.replace(/<\/head>/i, `${tag}</head>`);
+}
+
 async function serveApplicationAsset(request, env) {
   const response = await env.ASSETS.fetch(request);
   const contentType = response.headers.get("content-type") || "";
-  const pathname = new URL(request.url).pathname;
 
   if (request.method === "GET" && contentType.toLowerCase().includes("text/html")) {
     const html = await response.text();
     const releaseSha = String(env.GV_RELEASE_SHA || "unknown").trim() || "unknown";
-    return withNoStore(response, bustLocalScriptUrls(html, releaseSha));
+    return withNoStore(response, injectSafetyGuard(bustLocalScriptUrls(html, releaseSha), releaseSha));
   }
 
-  if (request.method === "GET" || request.method === "HEAD") {
-    return withNoStore(response);
-  }
-
+  if (request.method === "GET" || request.method === "HEAD") return withNoStore(response);
   return response;
 }
 
