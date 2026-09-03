@@ -1,0 +1,67 @@
+{
+  "contractVersion": 1,
+  "baseline": "4eb4a0d1e7a81f0fc6836dd839fd80972508f3fa",
+  "authModel": "manager-only",
+  "canonicalState": "GV_STATE",
+  "canonicalSyncCoordinator": "GVSync",
+  "canonicalTransport": "GVData",
+  "persistencePath": [
+    "UI/feature module",
+    "in-memory GV_STATE",
+    "local persistence / dirty queue",
+    "GVSync",
+    "GVData",
+    "Supabase",
+    "remote reconciliation",
+    "state replacement",
+    "UI render"
+  ],
+  "failureRules": {
+    "remoteReadFailure": "preserve local state and pending queue; allow a later authorized retry",
+    "remoteWriteFailure": "preserve local state and pending queue; do not claim convergence",
+    "partialHydration": "do not install partial application state",
+    "unauthorized": "do not hydrate or mutate cloud-backed application state",
+    "conflict": "reconcile deterministically before state replacement"
+  },
+  "historicalInvariants": [
+    "completed transactions are immutable historical records unless an explicit business correction workflow exists",
+    "future master-price changes never rewrite historical order prices",
+    "reports for closed periods are snapshots, not live views of mutable current settings",
+    "derived projections may be rebuilt from canonical child resources without losing historical identity"
+  ],
+  "protectedSyncResources": [
+    "products",
+    "clients",
+    "services",
+    "orders",
+    "payments",
+    "expenses",
+    "payrollRecords",
+    "employees",
+    "orderGroups",
+    "deliveryRoutes",
+    "orderGroupItems",
+    "deliveryRouteItems",
+    "dailyReports",
+    "deletedOrders",
+    "auditLog"
+  ],
+  "ownershipRules": {
+    "applicationState": "GV_STATE / replaceState",
+    "remoteSyncScheduling": "GVSync",
+    "supabaseTransport": "GVData",
+    "authorization": "GVAuth",
+    "businessModules": "feature modules mutate through the state/persistence boundary; they do not become sync coordinators",
+    "historicalTruth": "persisted transaction/report snapshots"
+  },
+  "upgradeRules": [
+    "manager-only authentication remains",
+    "no second application-state store may be introduced",
+    "no feature may bypass GVSync for synchronization scheduling",
+    "no feature may bypass GVData for Supabase transport",
+    "new synchronized collections must be registered centrally before use",
+    "new relational collections must define canonical parent/child ownership and reconciliation behavior",
+    "production changes require preview certification before release",
+    "each sprint must ship with deterministic automated regression evidence"
+  ]
+}
