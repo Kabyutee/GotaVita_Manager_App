@@ -27,6 +27,9 @@ jobs:
           node --check js/modules/groups-routes.js
           node --check js/modules/orders.js
 
+      - name: Check Sprint 1 architecture behavior contract
+        run: node tests/sprint1-architecture-behavior-contract.test.js
+
       - name: Check application lifecycle and sync registry
         run: node tests/application-lifecycle-and-registry.test.js
 
